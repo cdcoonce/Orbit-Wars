@@ -106,6 +106,31 @@ def classify_enemy(target: Planet, ships_to_send: int, eta: int) -> str:
     return "HARDENED_ENEMY"
 
 
+def detect_threats(
+    my_planets: list[Planet],
+    fleets: list[Fleet],
+    player: int,
+    angular_velocity: float,
+) -> list:
+    threats = []
+    seen: set[tuple[int, int]] = set()
+    for fleet in fleets:
+        if fleet.owner == player:
+            continue
+        speed = fleet_speed(fleet.ships)
+        for t in range(1, PARAMS["threat_eta_window"] + 1):
+            fleet_x = fleet.x + t * speed * math.cos(fleet.angle)
+            fleet_y = fleet.y + t * speed * math.sin(fleet.angle)
+            for planet in my_planets:
+                if (fleet.id, planet.id) in seen:
+                    continue
+                px, py = predict_planet_position(planet, angular_velocity, t)
+                if distance(fleet_x, fleet_y, px, py) < PARAMS["threat_radius"]:
+                    threats.append(Threat(planet_id=planet.id, incoming_ships=fleet.ships, eta=t))
+                    seen.add((fleet.id, planet.id))
+    return threats
+
+
 def my_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner == player]
 

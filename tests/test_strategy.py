@@ -156,3 +156,33 @@ def test_classify_enemy_hardened():
     # expected_defenders = 15; ratio below contested_ratio
     ships_to_send = int(15 * PARAMS["contested_ratio"]) - 1
     assert classify_enemy(target, ships_to_send, eta) == "HARDENED_ENEMY"
+
+
+from src.strategy import detect_threats
+
+
+def make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=0.0, from_planet_id=99, ships=10):
+    return Fleet(id, owner, x, y, angle, from_planet_id, ships)
+
+
+def test_detect_threats_inbound():
+    # Static planet at (90, 50); fleet at (70, 50) heading right → will arrive
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    fleet = make_fleet(owner=1, x=70.0, y=50.0, angle=0.0, ships=10)
+    threats = detect_threats([planet], [fleet], player=0, angular_velocity=0.03)
+    assert any(t.planet_id == 1 for t in threats)
+
+
+def test_detect_threats_ignores_passing():
+    # Fleet heading left (angle=pi), moving away from planet at (90, 50)
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    fleet = make_fleet(owner=1, x=70.0, y=50.0, angle=math.pi, ships=10)
+    threats = detect_threats([planet], [fleet], player=0, angular_velocity=0.03)
+    assert not any(t.planet_id == 1 for t in threats)
+
+
+def test_detect_threats_ignores_own_fleets():
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    own_fleet = make_fleet(owner=0, x=70.0, y=50.0, angle=0.0, ships=10)
+    threats = detect_threats([planet], [own_fleet], player=0, angular_velocity=0.03)
+    assert len(threats) == 0
