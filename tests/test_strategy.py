@@ -107,3 +107,46 @@ def test_classify_own_factory():
 def test_classify_own_outpost():
     planet = make_planet(ships=10, production=1)
     assert classify_own(planet, []) == "OUTPOST"
+
+
+from src.strategy import classify_enemy, classify_neutral
+
+
+def test_classify_neutral_easy():
+    target = make_planet(owner=-1, ships=10)
+    ships_to_send = int(10 * PARAMS["weak_ratio"]) + 1
+    assert classify_neutral(target, ships_to_send) == "EASY_NEUTRAL"
+
+
+def test_classify_neutral_hard():
+    target = make_planet(owner=-1, ships=100)
+    assert classify_neutral(target, 10) == "HARD_NEUTRAL"
+
+
+def test_classify_neutral_zero_ships():
+    target = make_planet(owner=-1, ships=0)
+    assert classify_neutral(target, 1) == "EASY_NEUTRAL"
+
+
+def test_classify_enemy_soft():
+    target = make_planet(owner=1, ships=5, production=1)
+    eta = 10
+    # expected_defenders = 5 + 1*10 = 15
+    ships_to_send = int(15 * PARAMS["weak_ratio"]) + 1
+    assert classify_enemy(target, ships_to_send, eta) == "SOFT_ENEMY"
+
+
+def test_classify_enemy_contested():
+    target = make_planet(owner=1, ships=5, production=1)
+    eta = 10
+    # expected_defenders = 15; ratio between contested_ratio and weak_ratio
+    ships_to_send = int(15 * PARAMS["contested_ratio"]) + 1
+    assert classify_enemy(target, ships_to_send, eta) == "CONTESTED_ENEMY"
+
+
+def test_classify_enemy_hardened():
+    target = make_planet(owner=1, ships=5, production=1)
+    eta = 10
+    # expected_defenders = 15; ratio below contested_ratio
+    ships_to_send = int(15 * PARAMS["contested_ratio"]) - 1
+    assert classify_enemy(target, ships_to_send, eta) == "HARDENED_ENEMY"

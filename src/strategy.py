@@ -85,6 +85,27 @@ def classify_own(planet: Planet, threats: list) -> str:
     return "OUTPOST"
 
 
+def classify_neutral(target: Planet, ships_to_send: int) -> str:
+    if target.ships == 0:
+        return "EASY_NEUTRAL"
+    ratio = ships_to_send / target.ships
+    if ratio > PARAMS["weak_ratio"]:
+        return "EASY_NEUTRAL"
+    return "HARD_NEUTRAL"
+
+
+def classify_enemy(target: Planet, ships_to_send: int, eta: int) -> str:
+    expected_defenders = target.ships + target.production * eta
+    if expected_defenders == 0:
+        return "SOFT_ENEMY"
+    ratio = ships_to_send / expected_defenders
+    if ratio > PARAMS["weak_ratio"]:
+        return "SOFT_ENEMY"
+    if ratio > PARAMS["contested_ratio"]:
+        return "CONTESTED_ENEMY"
+    return "HARDENED_ENEMY"
+
+
 def my_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner == player]
 
