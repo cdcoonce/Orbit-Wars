@@ -2,7 +2,7 @@ import math  # noqa: F401
 import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
-from src.strategy import PARAMS, Threat, is_stationary, value_tier  # noqa: F401
+from src.strategy import PARAMS, Threat, is_stationary, value_tier, classify_own  # noqa: F401
 from src.strategy import can_capture, intercept
 
 
@@ -71,3 +71,39 @@ def test_intercept_returns_three_tuple():
     assert isinstance(future_y, float)
     assert isinstance(eta, int)
     assert eta >= 1
+
+
+# --- classify_own ---
+
+def test_classify_own_threatened():
+    planet = make_planet(id=1, ships=50, production=5)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=10)]
+    assert classify_own(planet, threats) == "THREATENED"
+
+
+def test_classify_own_threatened_overrides_fortress():
+    planet = make_planet(
+        id=1,
+        ships=PARAMS["fortress_min_ships"],
+        production=PARAMS["fortress_min_production"],
+    )
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=10)]
+    assert classify_own(planet, threats) == "THREATENED"
+
+
+def test_classify_own_fortress():
+    planet = make_planet(
+        ships=PARAMS["fortress_min_ships"],
+        production=PARAMS["fortress_min_production"],
+    )
+    assert classify_own(planet, []) == "FORTRESS"
+
+
+def test_classify_own_factory():
+    planet = make_planet(ships=10, production=PARAMS["factory_min_production"])
+    assert classify_own(planet, []) == "FACTORY"
+
+
+def test_classify_own_outpost():
+    planet = make_planet(ships=10, production=1)
+    assert classify_own(planet, []) == "OUTPOST"

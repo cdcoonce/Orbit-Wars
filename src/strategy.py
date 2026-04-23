@@ -72,6 +72,19 @@ def value_tier(planet: Planet) -> str:
     return "LOW"
 
 
+def classify_own(planet: Planet, threats: list) -> str:
+    if any(t.planet_id == planet.id for t in threats):
+        return "THREATENED"
+    if (
+        planet.ships >= PARAMS["fortress_min_ships"]
+        and planet.production >= PARAMS["fortress_min_production"]
+    ):
+        return "FORTRESS"
+    if planet.production >= PARAMS["factory_min_production"]:
+        return "FACTORY"
+    return "OUTPOST"
+
+
 def my_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner == player]
 
