@@ -25,6 +25,7 @@ PARAMS = {
     "factory_min_production": 3,
     # Target value classification
     "high_value_production": 4,
+    "medium_value_production": 2,
     "stationary_value_bonus": 1,
     # Threat level ratios (ships_to_send / expected_defenders)
     "weak_ratio": 1.5,
@@ -66,7 +67,7 @@ def value_tier(planet: Planet) -> str:
         prod += PARAMS["stationary_value_bonus"]
     if prod >= PARAMS["high_value_production"]:
         return "HIGH"
-    if prod >= 2:
+    if prod >= PARAMS["medium_value_production"]:
         return "MEDIUM"
     return "LOW"
 
