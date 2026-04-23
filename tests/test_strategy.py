@@ -2,8 +2,10 @@ import math  # noqa: F401
 import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
-from src.strategy import PARAMS, Threat, is_stationary, value_tier, classify_own  # noqa: F401
+from src.strategy import PARAMS, Threat, is_stationary, value_tier  # noqa: F401
 from src.strategy import can_capture, intercept
+from src.strategy import classify_own
+from src.strategy import classify_enemy, classify_neutral
 
 
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2):
@@ -109,9 +111,6 @@ def test_classify_own_outpost():
     assert classify_own(planet, []) == "OUTPOST"
 
 
-from src.strategy import classify_enemy, classify_neutral
-
-
 def test_classify_neutral_easy():
     target = make_planet(owner=-1, ships=10)
     ships_to_send = int(10 * PARAMS["weak_ratio"]) + 1
@@ -139,9 +138,16 @@ def test_classify_enemy_soft():
 def test_classify_enemy_contested():
     target = make_planet(owner=1, ships=5, production=1)
     eta = 10
-    # expected_defenders = 15; ratio between contested_ratio and weak_ratio
-    ships_to_send = int(15 * PARAMS["contested_ratio"]) + 1
+    # expected_defenders = 15; use midpoint between contested and weak ratios
+    midpoint = (PARAMS["contested_ratio"] + PARAMS["weak_ratio"]) / 2
+    ships_to_send = int(15 * midpoint) + 1
+    assert PARAMS["contested_ratio"] < ships_to_send / 15 < PARAMS["weak_ratio"]
     assert classify_enemy(target, ships_to_send, eta) == "CONTESTED_ENEMY"
+
+
+def test_classify_enemy_zero_defenders():
+    target = make_planet(owner=1, ships=0, production=0)
+    assert classify_enemy(target, ships_to_send=1, eta=10) == "SOFT_ENEMY"
 
 
 def test_classify_enemy_hardened():
