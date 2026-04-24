@@ -248,6 +248,8 @@ def test_plan_expansion_fortress_attacks_soft_enemy():
     moves = plan_expansion([fortress], [], [soft_enemy], own_classes, angular_velocity=0.03)
     assert len(moves) == 1
     assert moves[0][0] == 0
+    expected_ships = max(1, int(60 * PARAMS["send_fractions"][("FORTRESS", "SOFT_ENEMY")]))
+    assert moves[0][2] == expected_ships
 
 
 def test_plan_expansion_outpost_skips_hard_neutral():
@@ -280,4 +282,13 @@ def test_plan_expansion_skips_threatened():
     target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
     own_classes = {0: "THREATENED"}
     moves = plan_expansion([planet], [target], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 0
+
+
+def test_plan_expansion_outpost_skips_easy_neutral_high_value():
+    outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+    # ships=0 → EASY_NEUTRAL via dispatch matrix; production=4 → HIGH value → OUTPOST gate blocks
+    high_value_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([outpost], [high_value_neutral], [], own_classes, angular_velocity=0.03)
     assert len(moves) == 0

@@ -184,9 +184,9 @@ def plan_expansion(
 
         for target in targets:
             if target.owner == -1:
-                tgt_class = classify_neutral(target, probe_ships)
                 if src_class == "OUTPOST" and value_tier(target) != "LOW":
                     continue
+                tgt_class = classify_neutral(target, probe_ships)
             else:
                 _, _, probe_eta = intercept(source, target, angular_velocity, probe_ships)
                 tgt_class = classify_enemy(target, probe_ships, probe_eta)
