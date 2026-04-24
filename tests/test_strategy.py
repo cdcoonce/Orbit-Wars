@@ -6,6 +6,7 @@ from src.strategy import PARAMS, Threat, is_stationary, value_tier  # noqa: F401
 from src.strategy import can_capture, intercept
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
+from src.strategy import detect_threats
 
 
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2):
@@ -157,8 +158,6 @@ def test_classify_enemy_hardened():
     ships_to_send = int(15 * PARAMS["contested_ratio"]) - 1
     assert classify_enemy(target, ships_to_send, eta) == "HARDENED_ENEMY"
 
-
-from src.strategy import detect_threats
 
 
 def make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=0.0, from_planet_id=99, ships=10):
