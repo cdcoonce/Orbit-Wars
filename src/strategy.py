@@ -151,9 +151,8 @@ def handle_threats(
             ships_to_send = int(source.ships * PARAMS["defense_reinforce_fraction"])
             if ships_to_send < PARAMS["min_garrison"]:
                 continue
-            _, _, eta = intercept(source, target, angular_velocity, ships_to_send)
+            future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
             if eta <= threat.eta - PARAMS["eta_buffer"]:
-                future_x, future_y, _ = intercept(source, target, angular_velocity, ships_to_send)
                 angle = angle_to_target(source.x, source.y, future_x, future_y)
                 moves.append([source.id, angle, ships_to_send])
                 already_used.add(source.id)

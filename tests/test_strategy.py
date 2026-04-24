@@ -218,3 +218,21 @@ def test_handle_threats_skips_outpost():
     own_classes = {1: "THREATENED", 2: "OUTPOST"}
     moves = handle_threats(threats, [threatened, outpost], own_classes, angular_velocity=0.03)
     assert len(moves) == 0
+
+
+def test_handle_threats_already_used_not_reused():
+    # Two threats, only one eligible fortress — should only produce one move
+    threatened1 = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    threatened2 = make_planet(id=3, owner=0, x=88.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [
+        Threat(planet_id=1, incoming_ships=30, eta=20),
+        Threat(planet_id=3, incoming_ships=30, eta=20),
+    ]
+    own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED"}
+    moves = handle_threats(
+        threats, [threatened1, fortress, threatened2], own_classes, angular_velocity=0.03
+    )
+    # Fortress assigned to first threat, then blocked for second → only 1 move
+    assert len(moves) == 1
+    assert moves[0][0] == 2
