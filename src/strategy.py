@@ -131,6 +131,36 @@ def detect_threats(
     return threats
 
 
+def handle_threats(
+    threats: list,
+    owned: list[Planet],
+    own_classes: dict,
+    angular_velocity: float,
+) -> list[list]:
+    moves = []
+    already_used: set[int] = set()
+    for threat in threats:
+        target = next((p for p in owned if p.id == threat.planet_id), None)
+        if target is None:
+            continue
+        for source in owned:
+            if source.id == threat.planet_id or source.id in already_used:
+                continue
+            if own_classes.get(source.id) not in ("FORTRESS", "FACTORY"):
+                continue
+            ships_to_send = int(source.ships * PARAMS["defense_reinforce_fraction"])
+            if ships_to_send < PARAMS["min_garrison"]:
+                continue
+            _, _, eta = intercept(source, target, angular_velocity, ships_to_send)
+            if eta <= threat.eta - PARAMS["eta_buffer"]:
+                future_x, future_y, _ = intercept(source, target, angular_velocity, ships_to_send)
+                angle = angle_to_target(source.x, source.y, future_x, future_y)
+                moves.append([source.id, angle, ships_to_send])
+                already_used.add(source.id)
+                break
+    return moves
+
+
 def my_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner == player]
 

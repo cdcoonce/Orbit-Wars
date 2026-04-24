@@ -7,6 +7,7 @@ from src.strategy import can_capture, intercept
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
+from src.strategy import handle_threats
 
 
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2):
@@ -185,3 +186,35 @@ def test_detect_threats_ignores_own_fleets():
     own_fleet = make_fleet(owner=0, x=70.0, y=50.0, angle=0.0, ships=10)
     threats = detect_threats([planet], [own_fleet], player=0, angular_velocity=0.03)
     assert len(threats) == 0
+
+
+# --- handle_threats ---
+
+def test_handle_threats_reinforces_when_able():
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # Fortress at (70, 50): distance=20, arrives in ~8 turns <= threat.eta(20)-buffer(5)=15
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    moves = handle_threats(threats, [threatened, fortress], own_classes, angular_velocity=0.03)
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+
+
+def test_handle_threats_skips_when_too_slow():
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # Far fortress at (10, 50): distance=80, ETA ~31 > threat.eta(20)-buffer(5)=15
+    far_fortress = make_planet(id=2, owner=0, x=10.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    moves = handle_threats(threats, [threatened, far_fortress], own_classes, angular_velocity=0.03)
+    assert len(moves) == 0
+
+
+def test_handle_threats_skips_outpost():
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    outpost = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=1)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "OUTPOST"}
+    moves = handle_threats(threats, [threatened, outpost], own_classes, angular_velocity=0.03)
+    assert len(moves) == 0
