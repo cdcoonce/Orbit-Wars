@@ -292,3 +292,22 @@ def test_plan_expansion_outpost_skips_easy_neutral_high_value():
     own_classes = {0: "OUTPOST"}
     moves = plan_expansion([outpost], [high_value_neutral], [], own_classes, angular_velocity=0.03)
     assert len(moves) == 0
+
+
+from src.strategy import plan_moves
+
+
+def test_plan_moves_returns_moves():
+    owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
+    moves = plan_moves([owned, neutral], fleets=[], player=0, angular_velocity=0.03)
+    assert len(moves) >= 1
+    assert moves[0][0] == 0
+    assert isinstance(moves[0][1], float)
+    assert isinstance(moves[0][2], int)
+
+
+def test_plan_moves_no_owned_planets():
+    neutral = make_planet(id=0, owner=-1, x=70.0, y=50.0, ships=10, production=2)
+    moves = plan_moves([neutral], fleets=[], player=0, angular_velocity=0.03)
+    assert moves == []

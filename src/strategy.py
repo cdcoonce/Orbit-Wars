@@ -218,6 +218,32 @@ def plan_expansion(
     return moves
 
 
+def plan_moves(
+    planets: list[Planet],
+    fleets: list[Fleet],
+    player: int,
+    angular_velocity: float,
+) -> list[list]:
+    owned = my_planets(planets, player)
+    neutrals = neutral_planets(planets)
+    enemies = enemy_planets(planets, player)
+
+    if not owned:
+        return []
+
+    threats = detect_threats(owned, fleets, player, angular_velocity)
+    own_classes = {p.id: classify_own(p, threats) for p in owned}
+
+    defense_moves = handle_threats(threats, owned, own_classes, angular_velocity)
+    defense_used = {m[0] for m in defense_moves}
+
+    expansion_owned = [p for p in owned if p.id not in defense_used]
+    expansion_classes = {k: v for k, v in own_classes.items() if k not in defense_used}
+    expansion_moves = plan_expansion(expansion_owned, neutrals, enemies, expansion_classes, angular_velocity)
+
+    return defense_moves + expansion_moves
+
+
 def my_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner == player]
 
@@ -251,58 +277,3 @@ def can_capture(ships_to_send: int, target: Planet, eta: int) -> bool:
     else:
         expected_defenders = target.ships + target.production * eta
     return ships_to_send > expected_defenders
-
-
-def target_score(
-    source: Planet, target: Planet, angular_velocity: float, ships_to_send: int
-) -> float:
-    """Score a candidate target. Higher = more desirable. Returns -inf if uncapturable.
-    Uses eta (turns to arrive) in denominator to penalise travel time directly."""
-    future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
-    if not can_capture(ships_to_send, target, eta):
-        return float("-inf")
-    return target.production / (eta + 1)
-
-
-def greedy_expand(
-    planets: list[Planet],
-    fleets: list[Fleet],
-    player: int,
-    angular_velocity: float,
-) -> list[list]:
-    """
-    Phase 1 strategy: greedy expansion.
-
-    Each owned planet with enough ships sends half its garrison toward the
-    highest-scoring capturable target (neutral first, then enemy). Uses orbit
-    prediction with iterated ETA to aim at where the target will actually be.
-    """
-    owned = my_planets(planets, player)
-    targets = neutral_planets(planets) + enemy_planets(planets, player)
-
-    if not owned or not targets:
-        return []
-
-    moves = []
-    for source in owned:
-        if source.ships < 15:
-            continue
-
-        ships_to_send = source.ships // 2
-
-        best_score = float("-inf")
-        best = None
-        for t in targets:
-            s = target_score(source, t, angular_velocity, ships_to_send)
-            if s > best_score:
-                best_score = s
-                best = t
-
-        if best is None:
-            continue
-
-        future_x, future_y, _ = intercept(source, best, angular_velocity, ships_to_send)
-        angle = angle_to_target(source.x, source.y, future_x, future_y)
-        moves.append([source.id, angle, ships_to_send])
-
-    return moves

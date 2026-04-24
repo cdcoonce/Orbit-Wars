@@ -1,6 +1,6 @@
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet
 
-from .strategy import greedy_expand
+from .strategy import plan_moves
 
 
 def agent(obs: dict) -> list[list]:
@@ -9,4 +9,4 @@ def agent(obs: dict) -> list[list]:
     player = obs.get("player", 0)
     angular_velocity = obs.get("angular_velocity", 0.0)
 
-    return greedy_expand(planets, fleets, player, angular_velocity)
+    return plan_moves(planets, fleets, player, angular_velocity)
