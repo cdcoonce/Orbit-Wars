@@ -9,6 +9,7 @@ from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
 from src.strategy import handle_threats
 from src.strategy import plan_expansion
+from src.strategy import plan_moves
 
 
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2):
@@ -292,9 +293,6 @@ def test_plan_expansion_outpost_skips_easy_neutral_high_value():
     own_classes = {0: "OUTPOST"}
     moves = plan_expansion([outpost], [high_value_neutral], [], own_classes, angular_velocity=0.03)
     assert len(moves) == 0
-
-
-from src.strategy import plan_moves
 
 
 def test_plan_moves_returns_moves():

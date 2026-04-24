@@ -147,6 +147,8 @@ def handle_threats(
             if source.id == threat.planet_id or source.id in already_used:
                 continue
             if own_classes.get(source.id) not in ("FORTRESS", "FACTORY"):
+                # classify_own returns "THREATENED" (not "FORTRESS") when a fleet is inbound,
+                # so THREATENED planets are naturally excluded here
                 continue
             ships_to_send = int(source.ships * PARAMS["defense_reinforce_fraction"])
             if ships_to_send < PARAMS["min_garrison"]:
