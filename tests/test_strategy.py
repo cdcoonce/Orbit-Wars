@@ -8,6 +8,7 @@ from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
 from src.strategy import handle_threats
+from src.strategy import plan_expansion
 
 
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2):
@@ -236,3 +237,47 @@ def test_handle_threats_already_used_not_reused():
     # Fortress assigned to first threat, then blocked for second → only 1 move
     assert len(moves) == 1
     assert moves[0][0] == 2
+
+
+# --- plan_expansion ---
+
+def test_plan_expansion_fortress_attacks_soft_enemy():
+    fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    soft_enemy = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=1, production=1)
+    own_classes = {0: "FORTRESS"}
+    moves = plan_expansion([fortress], [], [soft_enemy], own_classes, angular_velocity=0.03)
+    assert len(moves) == 1
+    assert moves[0][0] == 0
+
+
+def test_plan_expansion_outpost_skips_hard_neutral():
+    outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+    hard_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=100, production=2)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([outpost], [hard_neutral], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 0
+
+
+def test_plan_expansion_outpost_takes_easy_low_neutral():
+    outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+    easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([outpost], [easy_low], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 1
+    assert moves[0][0] == 0
+
+
+def test_plan_expansion_skips_below_min_garrison():
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=PARAMS["min_garrison"] - 1)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
+    own_classes = {0: "FORTRESS"}
+    moves = plan_expansion([planet], [target], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 0
+
+
+def test_plan_expansion_skips_threatened():
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
+    own_classes = {0: "THREATENED"}
+    moves = plan_expansion([planet], [target], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 0

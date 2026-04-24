@@ -160,6 +160,64 @@ def handle_threats(
     return moves
 
 
+def plan_expansion(
+    owned: list[Planet],
+    neutrals: list[Planet],
+    enemies: list[Planet],
+    own_classes: dict,
+    angular_velocity: float,
+) -> list[list]:
+    moves = []
+    targets = neutrals + enemies
+
+    for source in owned:
+        src_class = own_classes.get(source.id, "OUTPOST")
+        if src_class == "THREATENED":
+            continue
+        if source.ships < PARAMS["min_garrison"]:
+            continue
+
+        probe_ships = source.ships // 2
+        best_score = float("-inf")
+        best_target = None
+        best_fraction = None
+
+        for target in targets:
+            if target.owner == -1:
+                tgt_class = classify_neutral(target, probe_ships)
+                if src_class == "OUTPOST" and value_tier(target) != "LOW":
+                    continue
+            else:
+                _, _, probe_eta = intercept(source, target, angular_velocity, probe_ships)
+                tgt_class = classify_enemy(target, probe_ships, probe_eta)
+
+            fraction = PARAMS["send_fractions"].get((src_class, tgt_class))
+            if fraction is None:
+                continue
+
+            ships_to_send = max(1, int(source.ships * fraction))
+            _, _, eta = intercept(source, target, angular_velocity, ships_to_send)
+            if not can_capture(ships_to_send, target, eta):
+                continue
+
+            bonus = PARAMS["stationary_value_bonus"] if is_stationary(target) else 0
+            score = (target.production + bonus) / (eta + 1)
+            if score > best_score:
+                best_score = score
+                best_target = target
+                best_fraction = fraction
+
+        if best_target is None:
+            continue
+
+        ships_to_send = max(1, int(source.ships * best_fraction))
+        future_x, future_y, _ = intercept(source, best_target, angular_velocity, ships_to_send)
+        angle = angle_to_target(source.x, source.y, future_x, future_y)
+        moves.append([source.id, angle, ships_to_send])
+
+    return moves
+
+
 def my_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner == player]
 
