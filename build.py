@@ -2,8 +2,9 @@
 Bundle src/ into a single submission.py for Kaggle submission.
 
 Reads math_utils.py, strategy.py, and agent.py in dependency order, strips
-relative imports and kaggle_environments imports (available in Kaggle runtime),
-then concatenates into submission.py with a header comment.
+relative imports (from .module import ...) and deduplicates kaggle_environments
+imports into a single block at the top. The kaggle_environments package is
+installed in the Kaggle runtime but must still be imported explicitly.
 """
 
 import re
@@ -17,10 +18,28 @@ SRC_FILES = [
     Path("src/agent.py"),
 ]
 
-RELATIVE_IMPORT_RE = re.compile(r"^\s*from \.[^\s]+ import .*\n?", re.MULTILINE)
+# Matches a full multi-line `from .something import (...)` or single-line form.
+RELATIVE_IMPORT_RE = re.compile(
+    r"from \.[^\s]+\s+import\s*\([^)]*\)\s*\n|"
+    r"^\s*from \.[^\s]+ import [^\n]+\n?",
+    re.MULTILINE | re.DOTALL,
+)
+
+# Matches a full multi-line `from kaggle_environments... import (\n  ...\n)` block.
 KAGGLE_IMPORT_RE = re.compile(
-    r"^\s*from kaggle_environments(?:\.envs\.orbit_wars\.orbit_wars)? import .*\n?",
-    re.MULTILINE,
+    r"from kaggle_environments[^\n]*import\s*\([^)]*\)\s*\n|"
+    r"from kaggle_environments[^\n]*import[^\n]*\n",
+    re.DOTALL,
+)
+
+KAGGLE_IMPORTS_BLOCK = (
+    "from kaggle_environments.envs.orbit_wars.orbit_wars import (\n"
+    "    CENTER,\n"
+    "    ROTATION_RADIUS_LIMIT,\n"
+    "    SUN_RADIUS,\n"
+    "    Fleet,\n"
+    "    Planet,\n"
+    ")\n"
 )
 
 
@@ -30,7 +49,7 @@ def strip_imports(source: str) -> str:
     return source
 
 
-chunks = [HEADER]
+chunks = [HEADER, KAGGLE_IMPORTS_BLOCK, "\n"]
 for path in SRC_FILES:
     source = path.read_text()
     cleaned = strip_imports(source)

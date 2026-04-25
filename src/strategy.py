@@ -12,6 +12,7 @@ from .math_utils import (
     angle_to_target,
     distance,
     fleet_speed,
+    path_crosses_sun,
     predict_planet_position,
     turns_to_arrive,
 )
@@ -43,6 +44,7 @@ PARAMS = {
         ("FACTORY",  "CONTESTED_ENEMY"): None,
         ("FACTORY",  "HARDENED_ENEMY"):  None,
         ("OUTPOST",  "EASY_NEUTRAL"):    0.40,
+        ("OUTPOST",  "SOFT_ENEMY"):      0.40,
     },
     # Defense
     "threat_radius": 5.0,
@@ -51,7 +53,16 @@ PARAMS = {
     "eta_buffer": 5,
     # Minimums
     "min_garrison": 15,
+    # Aggression scaling over game length
+    "aggression_max": 1.0,
+    "aggression_min": 0.6,
+    "game_length": 500,
 }
+
+
+def aggression(turn: int) -> float:
+    t = min(turn, PARAMS["game_length"]) / PARAMS["game_length"]
+    return PARAMS["aggression_max"] - t * (PARAMS["aggression_max"] - PARAMS["aggression_min"])
 
 
 def is_stationary(planet: Planet) -> bool:
@@ -155,6 +166,8 @@ def handle_threats(
                 continue
             future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
             if eta <= threat.eta - PARAMS["eta_buffer"]:
+                if path_crosses_sun(source.x, source.y, future_x, future_y):
+                    continue
                 angle = angle_to_target(source.x, source.y, future_x, future_y)
                 moves.append([source.id, angle, ships_to_send])
                 already_used.add(source.id)
@@ -168,15 +181,17 @@ def plan_expansion(
     enemies: list[Planet],
     own_classes: dict,
     angular_velocity: float,
+    agg: float = 1.0,
 ) -> list[list]:
     moves = []
     targets = neutrals + enemies
+    min_garrison = int(PARAMS["min_garrison"] / agg)
 
     for source in owned:
         src_class = own_classes.get(source.id, "OUTPOST")
         if src_class == "THREATENED":
             continue
-        if source.ships < PARAMS["min_garrison"]:
+        if source.ships < min_garrison:
             continue
 
         probe_ships = source.ships // 2
@@ -197,13 +212,15 @@ def plan_expansion(
             if fraction is None:
                 continue
 
-            ships_to_send = max(1, int(source.ships * fraction))
-            _, _, eta = intercept(source, target, angular_velocity, ships_to_send)
+            ships_to_send = max(1, int(source.ships * fraction * agg))
+            future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
             if not can_capture(ships_to_send, target, eta):
+                continue
+            if path_crosses_sun(source.x, source.y, future_x, future_y):
                 continue
 
             bonus = PARAMS["stationary_value_bonus"] if is_stationary(target) else 0
-            score = (target.production + bonus) / (eta + 1)
+            score = (target.production + bonus) / (eta + 1) ** 2
             if score > best_score:
                 best_score = score
                 best_target = target
@@ -212,7 +229,7 @@ def plan_expansion(
         if best_target is None:
             continue
 
-        ships_to_send = max(1, int(source.ships * best_fraction))
+        ships_to_send = max(1, int(source.ships * best_fraction * agg))
         future_x, future_y, _ = intercept(source, best_target, angular_velocity, ships_to_send)
         angle = angle_to_target(source.x, source.y, future_x, future_y)
         moves.append([source.id, angle, ships_to_send])
@@ -225,6 +242,7 @@ def plan_moves(
     fleets: list[Fleet],
     player: int,
     angular_velocity: float,
+    turn: int = 0,
 ) -> list[list]:
     owned = my_planets(planets, player)
     neutrals = neutral_planets(planets)
@@ -233,6 +251,7 @@ def plan_moves(
     if not owned:
         return []
 
+    agg = aggression(turn)
     threats = detect_threats(owned, fleets, player, angular_velocity)
     own_classes = {p.id: classify_own(p, threats) for p in owned}
 
@@ -241,7 +260,7 @@ def plan_moves(
 
     expansion_owned = [p for p in owned if p.id not in defense_used]
     expansion_classes = {k: v for k, v in own_classes.items() if k not in defense_used}
-    expansion_moves = plan_expansion(expansion_owned, neutrals, enemies, expansion_classes, angular_velocity)
+    expansion_moves = plan_expansion(expansion_owned, neutrals, enemies, expansion_classes, angular_velocity, agg)
 
     return defense_moves + expansion_moves
 

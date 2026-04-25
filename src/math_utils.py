@@ -69,6 +69,21 @@ def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
     return 1.0 + (max_speed - 1.0) * (math.log(num_ships) / math.log(1000)) ** 1.5
 
 
+def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
+    """True if the segment from (x1,y1) to (x2,y2) passes within SUN_RADIUS of CENTER."""
+    dx = x2 - x1
+    dy = y2 - y1
+    fx = x1 - CENTER
+    fy = y1 - CENTER
+    d_len_sq = dx * dx + dy * dy
+    if d_len_sq == 0:
+        return math.sqrt(fx * fx + fy * fy) < SUN_RADIUS
+    t = max(0.0, min(1.0, -(fx * dx + fy * dy) / d_len_sq))
+    closest_x = fx + t * dx
+    closest_y = fy + t * dy
+    return closest_x * closest_x + closest_y * closest_y < SUN_RADIUS * SUN_RADIUS
+
+
 def turns_to_arrive(
     from_x: float, from_y: float, target_x: float, target_y: float, num_ships: int
 ) -> int:

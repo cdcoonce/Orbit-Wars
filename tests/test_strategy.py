@@ -4,6 +4,7 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa
 
 from src.strategy import PARAMS, Threat, is_stationary, value_tier  # noqa: F401
 from src.strategy import can_capture, intercept
+from src.math_utils import path_crosses_sun
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
@@ -309,3 +310,26 @@ def test_plan_moves_no_owned_planets():
     neutral = make_planet(id=0, owner=-1, x=70.0, y=50.0, ships=10, production=2)
     moves = plan_moves([neutral], fleets=[], player=0, angular_velocity=0.03)
     assert moves == []
+
+
+# --- path_crosses_sun ---
+
+def test_path_crosses_sun_direct_hit():
+    # Segment passes straight through CENTER (50, 50)
+    assert path_crosses_sun(10.0, 50.0, 90.0, 50.0) is True
+
+
+def test_path_crosses_sun_clear_path():
+    # Segment far from the sun (both points at y=90, well outside SUN_RADIUS)
+    assert path_crosses_sun(10.0, 90.0, 90.0, 90.0) is False
+
+
+def test_path_crosses_sun_endpoint_inside():
+    # One endpoint is inside the sun
+    assert path_crosses_sun(50.0, 50.0, 90.0, 50.0) is True
+
+
+def test_path_crosses_sun_grazes_edge():
+    from kaggle_environments.envs.orbit_wars.orbit_wars import SUN_RADIUS
+    # Segment passes exactly at SUN_RADIUS distance — should NOT cross (< not <=)
+    assert path_crosses_sun(50.0 - SUN_RADIUS, 0.0, 50.0 - SUN_RADIUS, 100.0) is False
