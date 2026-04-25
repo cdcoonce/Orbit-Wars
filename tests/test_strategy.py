@@ -250,7 +250,7 @@ def test_plan_expansion_fortress_attacks_soft_enemy():
     moves = plan_expansion([fortress], [], [soft_enemy], own_classes, angular_velocity=0.03)
     assert len(moves) == 1
     assert moves[0][0] == 0
-    expected_ships = max(1, int(60 * PARAMS["send_fractions"][("FORTRESS", "SOFT_ENEMY")]))
+    expected_ships = max(1, int(60 * PARAMS["frac_fortress_soft_enemy"]))
     assert moves[0][2] == expected_ships
 
 
