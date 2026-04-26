@@ -245,9 +245,16 @@ def plan_expansion(
                         initial_planets=initial_planets,
                     )
                     our_move_t2 = our_greedy[0] if our_greedy else None
+                    # Fresh opponent response from evolved state (not frozen initial state)
+                    opp_greedy = plan_moves(
+                        state.planets, state.fleets, 1 - player, angular_velocity,
+                        turn=state.turn, params=greedy_params,
+                        initial_planets=initial_planets,
+                    )
+                    fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
                     state = step_state(
                         state, our_move_t2, player, angular_velocity,
-                        initial_planets, opponent_fn
+                        initial_planets, fresh_opp_fn
                     )
                 lookahead_score = score_state(
                     state, player, params.get("lookahead_ship_weight", 0.01)

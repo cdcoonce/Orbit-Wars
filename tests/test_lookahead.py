@@ -414,17 +414,30 @@ class TestPlanExpansionBlend:
         assert isinstance(moves, list)
 
     def test_lookahead_turns_2_increments_turn(self):
-        """lookahead_turns=2 produces a state with turn == original_turn + 2."""
+        """lookahead_turns=2 scores differently from lookahead_turns=1 when turn 2 matters."""
         from src.strategy import plan_expansion
         from src.config import PARAMS
-        from src.lookahead import build_state, score_state
+        from src.lookahead import build_state, score_state, step_state
 
         fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
         target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2)
-        own_classes = {0: "FORTRESS"}
         all_planets = [fortress, target]
+        own_classes = {0: "FORTRESS"}
 
-        # With blend=1 and lookahead_turns=2, the scored state should be at turn+2
+        # Build a state and manually run step_state twice to get turn=7 state
+        state_1turn = build_state(all_planets, [], turn=5)
+        state_1turn = step_state(state_1turn, None, 0, 0.03, all_planets)
+        score_after_1 = score_state(state_1turn, player=0)
+
+        state_2turn = build_state(all_planets, [], turn=5)
+        state_2turn = step_state(state_2turn, None, 0, 0.03, all_planets)
+        state_2turn = step_state(state_2turn, None, 0, 0.03, all_planets)
+        score_after_2 = score_state(state_2turn, player=0)
+
+        # Scores must differ (production compounds — 2-turn score != 1-turn score)
+        assert score_after_2 != score_after_1
+
+        # Also verify plan_expansion with lookahead_turns=2 runs without crash
         params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
                         "min_garrison": 10}
         moves = plan_expansion(
@@ -432,5 +445,4 @@ class TestPlanExpansionBlend:
             angular_velocity=0.03, agg=1.0, params=params_2turn,
             initial_planets=all_planets, fleets=[], player=0, turn=5
         )
-        # Just verify no crash and a move is returned
         assert isinstance(moves, list)
