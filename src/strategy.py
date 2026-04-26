@@ -17,6 +17,9 @@ from .math_utils import (
     turns_to_arrive,
 )
 from .config import PARAMS, SKIP_COMBOS
+from .comets import effective_production
+from .endgame import should_play_defensive
+from .lookahead import build_state, score_state, step_state
 
 Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
@@ -33,8 +36,8 @@ def is_stationary(planet: Planet) -> bool:
     return orbital_radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT
 
 
-def value_tier(planet: Planet, params: dict = PARAMS) -> str:
-    prod = planet.production
+def value_tier(planet: Planet, comet_ids: set = frozenset(), params: dict = PARAMS) -> str:
+    prod = effective_production(planet, comet_ids, params["comet_value_multiplier"])
     if is_stationary(planet):
         prod += params["stationary_value_bonus"]
     if prod >= params["high_value_production"]:
@@ -146,10 +149,16 @@ def plan_expansion(
     angular_velocity: float,
     agg: float = 1.0,
     params: dict = PARAMS,
+    comet_ids: set = frozenset(),
+    initial_planets=None,
+    fleets=None,
+    player: int = 0,
+    turn: int = 0,
 ) -> list[list]:
     moves = []
     targets = neutrals + enemies
     min_garrison = int(params["min_garrison"] / agg)
+    blend = params.get("lookahead_blend", 0.0)
 
     for source in owned:
         src_class = own_classes.get(source.id, "OUTPOST")
@@ -159,13 +168,11 @@ def plan_expansion(
             continue
 
         probe_ships = source.ships // 2
-        best_score = float("-inf")
-        best_target = None
-        best_fraction = None
+        candidates = []  # list of (greedy_score, lookahead_score, target, fraction)
 
         for target in targets:
             if target.owner == -1:
-                if src_class == "OUTPOST" and value_tier(target, params) != "LOW":
+                if src_class == "OUTPOST" and value_tier(target, comet_ids, params) != "LOW":
                     continue
                 tgt_class = classify_neutral(target, probe_ships, params)
             else:
@@ -186,14 +193,48 @@ def plan_expansion(
                 continue
 
             bonus = params["stationary_value_bonus"] if is_stationary(target) else 0
-            score = (target.production + bonus) / (eta + 1) ** 2
-            if score > best_score:
-                best_score = score
-                best_target = target
-                best_fraction = fraction
+            eff_prod = effective_production(target, comet_ids, params["comet_value_multiplier"])
+            greedy_score = (eff_prod + bonus) / (eta + 1) ** 2
 
-        if best_target is None:
+            # Lookahead score
+            if blend > 0 and initial_planets is not None and fleets is not None:
+                state = build_state(initial_planets, fleets, turn)
+                candidate_move = [
+                    source.id,
+                    angle_to_target(source.x, source.y, future_x, future_y),
+                    ships_to_send,
+                ]
+                next_state = step_state(
+                    state, candidate_move, player, angular_velocity, initial_planets
+                )
+                lookahead_score = score_state(
+                    next_state, player, params.get("lookahead_ship_weight", 0.01)
+                )
+            else:
+                lookahead_score = greedy_score  # fallback keeps blend=0 equivalent
+
+            candidates.append((greedy_score, lookahead_score, target, fraction))
+
+        if not candidates:
             continue
+
+        if len(candidates) == 1 or blend == 0.0:
+            best = max(candidates, key=lambda c: c[0])
+        else:
+            lo_g = min(c[0] for c in candidates)
+            hi_g = max(c[0] for c in candidates)
+            lo_l = min(c[1] for c in candidates)
+            hi_l = max(c[1] for c in candidates)
+            scored = []
+            for g, l, tgt, frac in candidates:
+                ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
+                nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
+                final = (1 - blend) * ng + blend * nl
+                scored.append((final, tgt, frac))
+            best_scored = max(scored, key=lambda x: x[0])
+            best = (None, None, best_scored[1], best_scored[2])
+
+        _, _, best_target, best_fraction = best
 
         ships_to_send = max(1, int(source.ships * best_fraction * agg))
         future_x, future_y, _ = intercept(source, best_target, angular_velocity, ships_to_send)
@@ -210,6 +251,8 @@ def plan_moves(
     angular_velocity: float,
     turn: int = 0,
     params: dict = PARAMS,
+    comet_ids: set = frozenset(),
+    initial_planets=None,
 ) -> list[list]:
     owned = my_planets(planets, player)
     neutrals = neutral_planets(planets)
@@ -223,11 +266,26 @@ def plan_moves(
     own_classes = {p.id: classify_own(p, threats, params) for p in owned}
 
     defense_moves = handle_threats(threats, owned, own_classes, angular_velocity, params)
+
+    if should_play_defensive(
+        planets, fleets, player, turn,
+        params["endgame_threshold_turn"],
+        params["endgame_lead_margin"],
+    ):
+        return defense_moves
+
     defense_used = {m[0] for m in defense_moves}
 
     expansion_owned = [p for p in owned if p.id not in defense_used]
     expansion_classes = {k: v for k, v in own_classes.items() if k not in defense_used}
-    expansion_moves = plan_expansion(expansion_owned, neutrals, enemies, expansion_classes, angular_velocity, agg, params)
+    expansion_moves = plan_expansion(
+        expansion_owned, neutrals, enemies, expansion_classes,
+        angular_velocity, agg, params, comet_ids,
+        initial_planets=initial_planets,
+        fleets=fleets,
+        player=player,
+        turn=turn,
+    )
 
     return defense_moves + expansion_moves
 
