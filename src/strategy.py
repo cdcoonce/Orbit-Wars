@@ -177,6 +177,21 @@ def plan_expansion(
             continue
 
         probe_ships = source.ships // 2
+
+        # Precompute opponent response once per source planet (not per candidate).
+        # Forces blend=0 to prevent recursive lookahead (recursion termination).
+        if blend > 0 and initial_planets is not None and fleets is not None:
+            opp_player = 1 - player
+            greedy_params_opp = {**params, "lookahead_blend": 0.0}
+            _opp_base = build_state(initial_planets, fleets, turn)
+            _opp_moves = plan_moves(
+                _opp_base.planets, _opp_base.fleets, opp_player, angular_velocity,
+                turn=turn, params=greedy_params_opp, initial_planets=initial_planets,
+            )
+            opponent_fn = lambda state: _opp_moves  # noqa: E731
+        else:
+            opponent_fn = None
+
         candidates = []  # list of (greedy_score, lookahead_score, target, fraction)
 
         for target in targets:
@@ -207,17 +222,35 @@ def plan_expansion(
 
             # Lookahead score
             if blend > 0 and initial_planets is not None and fleets is not None:
+                # opponent_fn is constructed once per source planet (outside candidate
+                # loop). Here we reuse `opponent_fn` that was precomputed above.
                 state = build_state(initial_planets, fleets, turn)
                 candidate_move = [
                     source.id,
                     angle_to_target(source.x, source.y, future_x, future_y),
                     ships_to_send,
                 ]
-                next_state = step_state(
-                    state, candidate_move, player, angular_velocity, initial_planets
+                # T+1: apply our candidate move + opponent response
+                state = step_state(
+                    state, candidate_move, player, angular_velocity,
+                    initial_planets, opponent_fn
                 )
+                # T+2..N: both players play greedily
+                n_extra = params.get("lookahead_turns", 1) - 1
+                for _ in range(n_extra):
+                    greedy_params = {**params, "lookahead_blend": 0.0}
+                    our_greedy = plan_moves(
+                        state.planets, state.fleets, player, angular_velocity,
+                        turn=state.turn, params=greedy_params,
+                        initial_planets=initial_planets,
+                    )
+                    our_move_t2 = our_greedy[0] if our_greedy else None
+                    state = step_state(
+                        state, our_move_t2, player, angular_velocity,
+                        initial_planets, opponent_fn
+                    )
                 lookahead_score = score_state(
-                    next_state, player, params.get("lookahead_ship_weight", 0.01)
+                    state, player, params.get("lookahead_ship_weight", 0.01)
                 )
             else:
                 lookahead_score = greedy_score  # fallback keeps blend=0 equivalent

@@ -77,7 +77,9 @@ def step_state(
         angular_velocity: Global orbital angular velocity (rad/turn).
         initial_planets: Planet list at the start of the lookahead window —
                          used to track orbital angles.
-        opponent_fn: Reserved for future MCTS; currently unused (always None).
+        opponent_fn: Optional callable (state) -> list[list]. If provided,
+                     opponent moves are applied after our fleet launch and before
+                     fleet movement.
 
     Returns:
         The mutated GameState after one simulated turn.
@@ -108,13 +110,29 @@ def step_state(
             )
             state.fleets.append(new_fleet)
 
+    # --- Step 3b: Opponent fleet launches ---
+    if opponent_fn is not None:
+        opp_moves = opponent_fn(state)
+        for opp_move in opp_moves:
+            planet_id, angle, ships = opp_move[0], opp_move[1], opp_move[2]
+            opp_source = next((p for p in state.planets if p.id == planet_id), None)
+            if opp_source is not None and opp_source.ships >= ships:
+                opp_source.ships -= ships
+                state.fleets.append(SimFleet(
+                    owner=1 - player,
+                    x=opp_source.x,
+                    y=opp_source.y,
+                    angle=angle,
+                    ships=ships,
+                ))
+
     # --- Step 4: Move all fleets ---
     for fleet in state.fleets:
         speed = fleet_speed(fleet.ships)
         fleet.x += speed * math.cos(fleet.angle)
         fleet.y += speed * math.sin(fleet.angle)
 
-    # --- Step 5: Combat --- (resolve fleets landing on planets)
+    # --- Step 5: Combat ---
     # Single pass: assign each fleet to the first planet it lands on, or keep flying.
     remaining_fleets = []
     planet_arrivals: dict[int, list] = {p.id: [] for p in state.planets}

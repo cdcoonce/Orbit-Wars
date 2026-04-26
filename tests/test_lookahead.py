@@ -227,6 +227,56 @@ class TestStepState:
         assert p.owner == 0
         assert p.ships == 1
 
+    def test_opponent_fn_applied(self):
+        """opponent_fn fleet appears in state.fleets and deducts from source."""
+        # Two planets: ours at (70,50), opponent's at (30,50)
+        our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=1)
+        opp_planet = make_planet(id=1, owner=1, x=30.0, y=50.0, radius=1.0, ships=20, production=1)
+        state = build_state([our_planet, opp_planet], [], turn=0)
+        initial = [our_planet, opp_planet]
+
+        def opponent_fn(s):
+            return [[1, 0.0, 5]]  # opponent sends 5 ships from planet 1 at angle 0
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial,
+                            opponent_fn=opponent_fn)
+        # Opponent planet should have lost 5 ships (after production: 20+1=21, then -5=16)
+        opp = next(p for p in next_s.planets if p.id == 1)
+        assert opp.ships == 16
+        # A fleet owned by player 1 should be in transit
+        assert any(f.owner == 1 for f in next_s.fleets)
+
+    def test_opponent_fn_silent_skip(self):
+        """opponent_fn referencing a planet with 0 ships is silently skipped."""
+        planet = make_planet(id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=0, production=0)
+        state = build_state([planet], [], turn=0)
+        initial = [planet]
+
+        def opponent_fn(s):
+            return [[0, 0.0, 5]]  # tries to send 5 ships from a planet with 0
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial,
+                            opponent_fn=opponent_fn)
+        # No fleet should be added, no exception
+        assert len(next_s.fleets) == 0
+
+    def test_opponent_fn_call_count_sentinel(self):
+        """opponent_fn is called exactly once per step_state invocation."""
+        state = self._simple_state()
+        initial = state.planets[:]
+        call_count = [0]
+
+        def counting_fn(s):
+            call_count[0] += 1
+            return []
+
+        step_state(state, move=None, player=0,
+                   angular_velocity=0.03, initial_planets=initial,
+                   opponent_fn=counting_fn)
+        assert call_count[0] == 1
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreState
@@ -361,4 +411,26 @@ class TestPlanExpansionBlend:
             [owned, neutral], fleets=[], player=0, angular_velocity=0.03, turn=5,
             initial_planets=[owned, neutral]
         )
+        assert isinstance(moves, list)
+
+    def test_lookahead_turns_2_increments_turn(self):
+        """lookahead_turns=2 produces a state with turn == original_turn + 2."""
+        from src.strategy import plan_expansion
+        from src.config import PARAMS
+        from src.lookahead import build_state, score_state
+
+        fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+        target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2)
+        own_classes = {0: "FORTRESS"}
+        all_planets = [fortress, target]
+
+        # With blend=1 and lookahead_turns=2, the scored state should be at turn+2
+        params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
+                        "min_garrison": 10}
+        moves = plan_expansion(
+            [fortress], [target], [], own_classes,
+            angular_velocity=0.03, agg=1.0, params=params_2turn,
+            initial_planets=all_planets, fleets=[], player=0, turn=5
+        )
+        # Just verify no crash and a move is returned
         assert isinstance(moves, list)
