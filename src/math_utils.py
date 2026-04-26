@@ -20,13 +20,6 @@ def predict_planet_position(
     Orbiting planets rotate around the sun at (50, 50) with a constant
     angular_velocity (radians/turn). Static planets (orbital radius >=
     ROTATION_RADIUS_LIMIT) don't move — return current position unchanged.
-
-    TODO: implement this function.
-    Hints:
-      - Compute the planet's current angle from the sun center using atan2
-      - Add angular_velocity * turns to get the future angle
-      - Convert back to (x, y) using the orbital radius and future angle
-      - Guard against static planets using ROTATION_RADIUS_LIMIT
     """
     dx = planet.x - CENTER
     dy = planet.y - CENTER
@@ -51,9 +44,6 @@ def angle_to_target(
 
     Kaggle's coordinate system: origin top-left, y increases downward.
     The action format uses standard math angles (0 = right, pi/2 = down).
-
-    TODO: implement this function.
-    Hint: atan2(dy, dx) — but think carefully about which direction is "down".
     """
     return math.atan2(target_y - from_y, target_x - from_x)
 

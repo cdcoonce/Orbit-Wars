@@ -36,7 +36,8 @@ def test_value_tier_high():
 
 
 def test_value_tier_medium():
-    assert value_tier(make_planet(x=70.0, production=2)) == "MEDIUM"
+    params = {**PARAMS, "medium_value_production": 2, "high_value_production": 4}
+    assert value_tier(make_planet(x=70.0, production=2), params=params) == "MEDIUM"
 
 
 def test_value_tier_low():
@@ -143,11 +144,10 @@ def test_classify_enemy_soft():
 def test_classify_enemy_contested():
     target = make_planet(owner=1, ships=5, production=1)
     eta = 10
-    # expected_defenders = 15; use midpoint between contested and weak ratios
-    midpoint = (PARAMS["contested_ratio"] + PARAMS["weak_ratio"]) / 2
-    ships_to_send = int(15 * midpoint) + 1
-    assert PARAMS["contested_ratio"] < ships_to_send / 15 < PARAMS["weak_ratio"]
-    assert classify_enemy(target, ships_to_send, eta) == "CONTESTED_ENEMY"
+    # Use explicit ratios with a clear gap so integer arithmetic stays in range
+    params = {**PARAMS, "contested_ratio": 1.1, "weak_ratio": 2.0}
+    ships_to_send = int(15 * 1.5)  # 22/15=1.47, between 1.1 and 2.0
+    assert classify_enemy(target, ships_to_send, eta, params=params) == "CONTESTED_ENEMY"
 
 
 def test_classify_enemy_zero_defenders():
@@ -199,7 +199,9 @@ def test_handle_threats_reinforces_when_able():
     fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
     threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    moves = handle_threats(threats, [threatened, fortress], own_classes, angular_velocity=0.03)
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5, "eta_buffer": 5}
+    moves = handle_threats(threats, [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
     assert len(moves) == 1
     assert moves[0][0] == 2
 
@@ -233,8 +235,10 @@ def test_handle_threats_already_used_not_reused():
         Threat(planet_id=3, incoming_ships=30, eta=20),
     ]
     own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED"}
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5, "eta_buffer": 5}
     moves = handle_threats(
-        threats, [threatened1, fortress, threatened2], own_classes, angular_velocity=0.03
+        threats, [threatened1, fortress, threatened2], own_classes,
+        angular_velocity=0.03, params=params,
     )
     # Fortress assigned to first threat, then blocked for second → only 1 move
     assert len(moves) == 1
@@ -250,7 +254,7 @@ def test_plan_expansion_fortress_attacks_soft_enemy():
     moves = plan_expansion([fortress], [], [soft_enemy], own_classes, angular_velocity=0.03)
     assert len(moves) == 1
     assert moves[0][0] == 0
-    expected_ships = max(1, int(60 * PARAMS["send_fractions"][("FORTRESS", "SOFT_ENEMY")]))
+    expected_ships = max(1, int(60 * PARAMS["frac_fortress_soft_enemy"]))
     assert moves[0][2] == expected_ships
 
 
@@ -266,16 +270,70 @@ def test_plan_expansion_outpost_takes_easy_low_neutral():
     outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
     easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
     own_classes = {0: "OUTPOST"}
-    moves = plan_expansion([outpost], [easy_low], [], own_classes, angular_velocity=0.03)
+    params = {**PARAMS, "min_garrison": 10, "weak_ratio": 1.5}
+    moves = plan_expansion([outpost], [easy_low], [], own_classes,
+                           angular_velocity=0.03, params=params)
     assert len(moves) == 1
     assert moves[0][0] == 0
 
 
 def test_plan_expansion_skips_below_min_garrison():
-    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=PARAMS["min_garrison"] - 1)
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=params["min_garrison"] - 1)
     target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
     own_classes = {0: "FORTRESS"}
-    moves = plan_expansion([planet], [target], [], own_classes, angular_velocity=0.03)
+    moves = plan_expansion([planet], [target], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
+    assert len(moves) == 0
+
+
+# --- garrison ramp ---
+
+def test_garrison_ramp_at_turn_zero_uses_early_value():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(0, params) == 5
+
+
+def test_garrison_ramp_at_full_turn_uses_full_value():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(50, params) == 30
+
+
+def test_garrison_ramp_midpoint():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(25, params) == 17  # int(5 + 0.5 * 25) = 17
+
+
+def test_garrison_ramp_beyond_ramp_turns_clamps_to_full():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(200, params) == 30
+
+
+def test_early_game_attacks_with_low_ships():
+    """At turn 0, a planet below min_garrison but above min_garrison_early can attack."""
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=8, production=2)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
+    own_classes = {0: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5,
+              "garrison_ramp_turns": 50, "weak_ratio": 1.5}
+    moves = plan_expansion([planet], [target], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=0)
+    assert len(moves) == 1
+
+
+def test_late_game_holds_below_full_garrison():
+    """At turn 100 (past ramp), same planet with 8 ships is below full min_garrison and skips."""
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=8, production=2)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
+    own_classes = {0: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5,
+              "garrison_ramp_turns": 50, "weak_ratio": 1.5}
+    moves = plan_expansion([planet], [target], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
     assert len(moves) == 0
 
 
