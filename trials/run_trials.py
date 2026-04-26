@@ -6,8 +6,14 @@ Run from the project root:
 import logging
 import math
 import os
+import sys
 import threading
 from pathlib import Path
+
+# Add project root to sys.path so src/ and trials/ are importable as packages
+# when this script is run directly (python -m sets this up automatically;
+# direct script execution does not).
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import optuna
 
