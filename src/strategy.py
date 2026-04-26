@@ -141,6 +141,15 @@ def handle_threats(
     return moves
 
 
+def _effective_min_garrison(turn: int, params: dict) -> int:
+    """Linearly ramp min_garrison from min_garrison_early up to min_garrison."""
+    early = params["min_garrison_early"]
+    full = params["min_garrison"]
+    ramp = params["garrison_ramp_turns"]
+    t = min(turn, ramp) / ramp
+    return int(early + t * (full - early))
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -157,7 +166,7 @@ def plan_expansion(
 ) -> list[list]:
     moves = []
     targets = neutrals + enemies
-    min_garrison = int(params["min_garrison"] / agg)
+    min_garrison = int(_effective_min_garrison(turn, params) / agg)
     blend = params.get("lookahead_blend", 0.0)
 
     for source in owned:

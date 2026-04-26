@@ -271,7 +271,7 @@ def test_plan_expansion_outpost_takes_easy_low_neutral():
     outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
     easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
     own_classes = {0: "OUTPOST"}
-    params = {**PARAMS, "min_garrison": 10}
+    params = {**PARAMS, "min_garrison": 10, "weak_ratio": 1.5}
     moves = plan_expansion([outpost], [easy_low], [], own_classes,
                            angular_velocity=0.03, params=params)
     assert len(moves) == 1
@@ -279,10 +279,62 @@ def test_plan_expansion_outpost_takes_easy_low_neutral():
 
 
 def test_plan_expansion_skips_below_min_garrison():
-    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=PARAMS["min_garrison"] - 1)
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=params["min_garrison"] - 1)
     target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
     own_classes = {0: "FORTRESS"}
-    moves = plan_expansion([planet], [target], [], own_classes, angular_velocity=0.03)
+    moves = plan_expansion([planet], [target], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
+    assert len(moves) == 0
+
+
+# --- garrison ramp ---
+
+def test_garrison_ramp_at_turn_zero_uses_early_value():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(0, params) == 5
+
+
+def test_garrison_ramp_at_full_turn_uses_full_value():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(50, params) == 30
+
+
+def test_garrison_ramp_midpoint():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(25, params) == 17  # int(5 + 0.5 * 25) = 17
+
+
+def test_garrison_ramp_beyond_ramp_turns_clamps_to_full():
+    from src.strategy import _effective_min_garrison
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+    assert _effective_min_garrison(200, params) == 30
+
+
+def test_early_game_attacks_with_low_ships():
+    """At turn 0, a planet below min_garrison but above min_garrison_early can attack."""
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=8, production=2)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
+    own_classes = {0: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5,
+              "garrison_ramp_turns": 50, "weak_ratio": 1.5}
+    moves = plan_expansion([planet], [target], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=0)
+    assert len(moves) == 1
+
+
+def test_late_game_holds_below_full_garrison():
+    """At turn 100 (past ramp), same planet with 8 ships is below full min_garrison and skips."""
+    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=8, production=2)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
+    own_classes = {0: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5,
+              "garrison_ramp_turns": 50, "weak_ratio": 1.5}
+    moves = plan_expansion([planet], [target], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
     assert len(moves) == 0
 
 
