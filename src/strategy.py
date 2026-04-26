@@ -244,7 +244,7 @@ def plan_expansion(
                         turn=state.turn, params=greedy_params,
                         initial_planets=initial_planets,
                     )
-                    our_move_t2 = our_greedy[0] if our_greedy else None
+                    our_move_t2 = our_greedy[0] if our_greedy else None  # one move per sim step (approximation)
                     # Fresh opponent response from evolved state (not frozen initial state)
                     opp_greedy = plan_moves(
                         state.planets, state.fleets, 1 - player, angular_velocity,

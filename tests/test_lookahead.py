@@ -446,3 +446,25 @@ class TestPlanExpansionBlend:
             initial_planets=all_planets, fleets=[], player=0, turn=5
         )
         assert isinstance(moves, list)
+
+    def test_lookahead_turns_2_with_in_transit_fleet(self):
+        """lookahead_turns=2 with an in-transit fleet must not crash (SimFleet.id required)."""
+        from src.strategy import plan_expansion
+        from src.config import PARAMS
+
+        fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+        target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2)
+        all_planets = [fortress, target]
+        own_classes = {0: "FORTRESS"}
+        # Enemy fleet far away, stays in transit across both simulated turns
+        in_transit = make_fleet(id=7, owner=1, x=10.0, y=50.0, angle=0.0, ships=3)
+
+        params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
+                        "min_garrison": 10}
+        # This would crash with AttributeError before the SimFleet.id fix
+        moves = plan_expansion(
+            [fortress], [target], [], own_classes,
+            angular_velocity=0.03, agg=1.0, params=params_2turn,
+            initial_planets=all_planets, fleets=[in_transit], player=0, turn=5
+        )
+        assert isinstance(moves, list)

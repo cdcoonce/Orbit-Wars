@@ -23,6 +23,7 @@ class SimFleet:
     y: float
     angle: float
     ships: int
+    id: int = -1  # sentinel for sim-spawned fleets; real fleets get kaggle id
 
 
 @dataclass
@@ -53,6 +54,7 @@ def build_state(planets, fleets, turn: int) -> GameState:
             y=f.y,
             angle=f.angle,
             ships=f.ships,
+            id=f.id,
         )
         for f in fleets
     ]
