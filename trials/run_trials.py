@@ -21,7 +21,7 @@ from src.config import PARAM_SPACE, PARAMS
 from trials.champion import CHAMPION_PARAMS
 from trials.game_runner import run_games
 
-N_GAMES = 10
+N_GAMES = 20
 N_WORKERS = 4
 N_TRIALS = 200
 PROMOTION_THRESHOLD = 0.55
@@ -71,10 +71,13 @@ def _make_callback():
                 _best_win_rate = win_rate
             local_best = _best_win_rate
         promoted = " [PROMOTED]" if win_rate >= PROMOTION_THRESHOLD else ""
-        logger.info(
-            "Trial %d: win_rate=%.2f | best=%.2f%s",
-            trial.number, win_rate, local_best, promoted,
-        )
+        try:
+            logger.info(
+                "Trial %d: win_rate=%.2f | best=%.2f%s",
+                trial.number, win_rate, local_best, promoted,
+            )
+        except (ValueError, OSError):
+            pass  # stderr closed during process teardown
 
     return callback
 

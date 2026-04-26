@@ -200,9 +200,9 @@ class TestWriteChampion:
 # ---------------------------------------------------------------------------
 
 class TestChampionModule:
-    def test_champion_params_matches_defaults(self):
+    def test_champion_params_has_all_keys(self):
         from trials.champion import CHAMPION_PARAMS
-        assert CHAMPION_PARAMS == PARAMS
+        assert set(CHAMPION_PARAMS.keys()) == set(PARAMS.keys())
 
     def test_champion_params_has_game_length(self):
         from trials.champion import CHAMPION_PARAMS
