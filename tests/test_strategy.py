@@ -36,7 +36,8 @@ def test_value_tier_high():
 
 
 def test_value_tier_medium():
-    assert value_tier(make_planet(x=70.0, production=2)) == "MEDIUM"
+    params = {**PARAMS, "medium_value_production": 2, "high_value_production": 4}
+    assert value_tier(make_planet(x=70.0, production=2), params=params) == "MEDIUM"
 
 
 def test_value_tier_low():
@@ -199,7 +200,9 @@ def test_handle_threats_reinforces_when_able():
     fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
     threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    moves = handle_threats(threats, [threatened, fortress], own_classes, angular_velocity=0.03)
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5, "eta_buffer": 5}
+    moves = handle_threats(threats, [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
     assert len(moves) == 1
     assert moves[0][0] == 2
 
@@ -233,8 +236,10 @@ def test_handle_threats_already_used_not_reused():
         Threat(planet_id=3, incoming_ships=30, eta=20),
     ]
     own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED"}
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5, "eta_buffer": 5}
     moves = handle_threats(
-        threats, [threatened1, fortress, threatened2], own_classes, angular_velocity=0.03
+        threats, [threatened1, fortress, threatened2], own_classes,
+        angular_velocity=0.03, params=params,
     )
     # Fortress assigned to first threat, then blocked for second → only 1 move
     assert len(moves) == 1
@@ -266,7 +271,9 @@ def test_plan_expansion_outpost_takes_easy_low_neutral():
     outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
     easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
     own_classes = {0: "OUTPOST"}
-    moves = plan_expansion([outpost], [easy_low], [], own_classes, angular_velocity=0.03)
+    params = {**PARAMS, "min_garrison": 10}
+    moves = plan_expansion([outpost], [easy_low], [], own_classes,
+                           angular_velocity=0.03, params=params)
     assert len(moves) == 1
     assert moves[0][0] == 0
 

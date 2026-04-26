@@ -48,7 +48,7 @@ class TestPlanExpansionWithCometIds:
         so an outpost would be allowed to attack it if it's easy. But actually the HIGH-value
         filter in plan_expansion checks value_tier, so with multiplier=0 the comet appears
         LOW and the outpost CAN attack it."""
-        params = {**PARAMS, "comet_value_multiplier": 0.0}
+        params = {**PARAMS, "comet_value_multiplier": 0.0, "min_garrison": 10}
         outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
         # production=4 would normally be HIGH and blocked for outposts,
         # but with multiplier=0 in comet_ids it becomes LOW -> allowed

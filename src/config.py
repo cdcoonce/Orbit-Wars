@@ -1,43 +1,43 @@
 PARAMS = {
     # Own planet classification
     "fortress_min_ships": 40,
-    "fortress_min_production": 3,
+    "fortress_min_production": 2,
     "factory_min_production": 3,
     # Target value classification
     "high_value_production": 4,
-    "medium_value_production": 2,
-    "stationary_value_bonus": 1,
+    "medium_value_production": 4,
+    "stationary_value_bonus": 3,
     # Threat level ratios
-    "weak_ratio": 1.5,
-    "contested_ratio": 1.1,
+    "weak_ratio": 1.8126598010948267,
+    "contested_ratio": 1.4484642618814887,
     # Send fractions (flattened from nested dict)
-    "frac_fortress_easy_neutral":    0.60,
-    "frac_fortress_hard_neutral":    0.75,
-    "frac_fortress_soft_enemy":      0.65,
-    "frac_fortress_contested_enemy": 0.75,
-    "frac_factory_easy_neutral":     0.50,
-    "frac_factory_soft_enemy":       0.50,
-    "frac_outpost_easy_neutral":     0.40,
-    "frac_outpost_soft_enemy":       0.40,
+    "frac_fortress_easy_neutral":    0.5940859190315988,
+    "frac_fortress_hard_neutral":    0.687757882838061,
+    "frac_fortress_soft_enemy":      0.6665338623176082,
+    "frac_fortress_contested_enemy": 0.6212637037970997,
+    "frac_factory_easy_neutral":     0.7941043976957939,
+    "frac_factory_soft_enemy":       0.7700868214182174,
+    "frac_outpost_easy_neutral":     0.45259996166904615,
+    "frac_outpost_soft_enemy":       0.44381082550866613,
     # Defense
-    "threat_radius": 5.0,
-    "threat_eta_window": 30,
-    "defense_reinforce_fraction": 0.5,
-    "eta_buffer": 5,
-    "min_garrison": 15,
+    "threat_radius": 6.731173964290402,
+    "threat_eta_window": 29,
+    "defense_reinforce_fraction": 0.3424281854153906,
+    "eta_buffer": 2,
+    "min_garrison": 29,
     # Aggression scaling
-    "aggression_max": 1.0,
-    "aggression_min": 0.6,
+    "aggression_max": 0.8751757441200135,
+    "aggression_min": 0.5290787202881425,
     "game_length": 500,
-    # Comets (added in Phase 2 — include now so PARAM_SPACE is complete)
-    "comet_value_multiplier": 1.0,
-    # Endgame (added in Phase 3)
-    "endgame_threshold_turn": 450,
-    "endgame_lead_margin": 1.2,
-    # Lookahead (added in Phase 4)
+    # Comets
+    "comet_value_multiplier": 2.7777108675926794,
+    # Endgame
+    "endgame_threshold_turn": 419,
+    "endgame_lead_margin": 1.8394480028338263,
+    # Lookahead
     "lookahead_turns": 1,
-    "lookahead_blend": 0.5,
-    "lookahead_ship_weight": 0.01,
+    "lookahead_blend": 0.9952268120447567,
+    "lookahead_ship_weight": 0.007887206276555422,
 }
 
 SKIP_COMBOS = {
