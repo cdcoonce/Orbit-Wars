@@ -180,11 +180,11 @@ class TestStepState:
         next_s = step_state(state, move=None, player=0,
                             angular_velocity=0.03, initial_planets=initial)
         p = next_s.planets[0]
+        # Production runs at start of turn, but neutral planets don't produce.
         # Fleet had 10 ships; neutral planet had 2 defending ships.
         # Winner=fleet owner(0), 10-2=8 survive, minus 1 for takeover → 7 ships.
-        # Then production (+1) is added at end of turn → 8 ships total.
         assert p.owner == 0
-        assert p.ships == 8
+        assert p.ships == 7
 
     def test_opponent_fn_defaults_to_none(self):
         """step_state must accept opponent_fn=None (default) without error."""
@@ -194,6 +194,38 @@ class TestStepState:
                             angular_velocity=0.03, initial_planets=initial,
                             opponent_fn=None)
         assert isinstance(next_s, GameState)
+
+    def test_production_runs_before_combat(self):
+        """Production must run at the start of the turn, before combat.
+
+        Set up: owned planet with 0 ships, production=2, at (70, 50), radius=1.
+        Enemy fleet with 1 ship positioned to arrive this turn at angle 0.
+
+        Expected: production runs first (0→2 ships), then combat. 2 vs 1 attacker
+        means planet survives with 2-1=1 ship. Planet owner remains 0.
+        """
+        from src.math_utils import fleet_speed
+
+        # Owned planet: 0 ships, production=2
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
+                             ships=0, production=2)
+
+        # Enemy fleet with 1 ship, positioned to arrive this turn
+        speed = fleet_speed(1)
+        fleet_x = 70.0 - speed + 0.1  # arrives just inside radius after movement
+        fleet = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=1)
+
+        state = build_state([planet], [fleet], turn=0)
+        initial = state.planets[:]
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial)
+
+        p = next_s.planets[0]
+        # With production before combat: 0+2=2 ships defending.
+        # Combat: 2 defenders vs 1 attacker → planet wins with 2-1=1 ship remaining.
+        assert p.owner == 0
+        assert p.ships == 1
 
 
 # ---------------------------------------------------------------------------

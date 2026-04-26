@@ -82,13 +82,18 @@ def step_state(
     Returns:
         The mutated GameState after one simulated turn.
     """
-    # --- Step 1: Rotate orbiting planets ---
+    # --- Step 1: Production ---
+    for planet in state.planets:
+        if planet.owner != -1:
+            planet.ships += planet.production
+
+    # --- Step 2: Rotate orbiting planets ---
     for sim_planet in state.planets:
         new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
         sim_planet.x = new_x
         sim_planet.y = new_y
 
-    # --- Step 2: Launch fleet from move ---
+    # --- Step 3: Launch fleet from move ---
     if move is not None:
         planet_id, angle, ships_to_send = move[0], move[1], move[2]
         source = next((p for p in state.planets if p.id == planet_id), None)
@@ -103,13 +108,13 @@ def step_state(
             )
             state.fleets.append(new_fleet)
 
-    # --- Step 3: Move all fleets ---
+    # --- Step 4: Move all fleets ---
     for fleet in state.fleets:
         speed = fleet_speed(fleet.ships)
         fleet.x += speed * math.cos(fleet.angle)
         fleet.y += speed * math.sin(fleet.angle)
 
-    # --- Step 4: Combat — resolve fleets landing on planets ---
+    # --- Step 5: Combat --- (resolve fleets landing on planets)
     # Single pass: assign each fleet to the first planet it lands on, or keep flying.
     remaining_fleets = []
     planet_arrivals: dict[int, list] = {p.id: [] for p in state.planets}
@@ -157,11 +162,6 @@ def step_state(
 
     # Keep only fleets that didn't land on any planet
     state.fleets = remaining_fleets
-
-    # --- Step 5: Production ---
-    for planet in state.planets:
-        if planet.owner != -1:
-            planet.ships += planet.production
 
     state.turn += 1
     return state
