@@ -151,7 +151,7 @@ class TestWriteChampion:
         with patch("trials.run_trials.CHAMPION_FILE", champion_file):
             write_champion(PARAMS)
 
-        assert not (tmp_path / "champion.py.tmp").exists()
+        assert not any(tmp_path.glob("*.tmp"))
 
     def test_content_contains_champion_params(self, tmp_path):
         from trials.run_trials import write_champion

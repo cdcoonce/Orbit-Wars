@@ -144,6 +144,9 @@ def step_state(
 
         if surviving > 0 and winner != planet.owner:
             planet.owner = winner
+            # -1 ship cost models the "foothold" overhead of taking a new planet.
+            # The real engine doesn't have this cost; it's a deliberate pessimism
+            # bias in the 1-turn lookahead to avoid over-valuing conquest moves.
             planet.ships = surviving - 1
         elif surviving > 0:
             planet.ships = surviving
