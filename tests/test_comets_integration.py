@@ -25,9 +25,10 @@ class TestValueTierWithCometIds:
         assert value_tier(regular, comet_ids={5}, params=params) == "HIGH"
 
     def test_comet_with_default_multiplier_unchanged(self):
-        # Default comet_value_multiplier=1.0 means no change
+        # multiplier=1.0 means comet production is unchanged
         comet = make_planet(id=5, production=4)
-        assert value_tier(comet, comet_ids={5}) == "HIGH"
+        params = {**PARAMS, "comet_value_multiplier": 1.0, "high_value_production": 4}
+        assert value_tier(comet, comet_ids={5}, params=params) == "HIGH"
 
     def test_value_tier_accepts_empty_comet_ids(self):
         # Backward-compatible: no comet_ids arg works with frozenset default

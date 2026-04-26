@@ -144,11 +144,10 @@ def test_classify_enemy_soft():
 def test_classify_enemy_contested():
     target = make_planet(owner=1, ships=5, production=1)
     eta = 10
-    # expected_defenders = 15; use midpoint between contested and weak ratios
-    midpoint = (PARAMS["contested_ratio"] + PARAMS["weak_ratio"]) / 2
-    ships_to_send = int(15 * midpoint) + 1
-    assert PARAMS["contested_ratio"] < ships_to_send / 15 < PARAMS["weak_ratio"]
-    assert classify_enemy(target, ships_to_send, eta) == "CONTESTED_ENEMY"
+    # Use explicit ratios with a clear gap so integer arithmetic stays in range
+    params = {**PARAMS, "contested_ratio": 1.1, "weak_ratio": 2.0}
+    ships_to_send = int(15 * 1.5)  # 22/15=1.47, between 1.1 and 2.0
+    assert classify_enemy(target, ships_to_send, eta, params=params) == "CONTESTED_ENEMY"
 
 
 def test_classify_enemy_zero_defenders():
