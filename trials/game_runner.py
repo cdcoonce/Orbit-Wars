@@ -71,6 +71,8 @@ def run_game(
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError:
             return "draw"
+        except Exception:
+            return "draw"
 
 
 def run_games(

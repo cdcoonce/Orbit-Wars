@@ -50,28 +50,25 @@ class TestMakeAgent:
     def test_two_closures_independent(self):
         """Two agents from separate make_agent() calls don't share initial_planets."""
         from trials.game_runner import make_agent
-        captured = {"a": None, "b": None}
+        initial_planets_seen = []
 
-        def make_mock(key):
-            def mock_plan_moves(planets, fleets, player, angular_velocity, turn,
-                                params=None, comet_ids=None, initial_planets=None):
-                captured[key] = id(initial_planets) if initial_planets is not None else None
-                return []
-            return mock_plan_moves
+        def mock_plan_moves(planets, fleets, player, angular_velocity, turn,
+                            params=None, comet_ids=None, initial_planets=None):
+            initial_planets_seen.append(initial_planets)
+            return []
 
         obs0 = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 0}
 
         agent_a = make_agent(PARAMS)
         agent_b = make_agent(PARAMS)
 
-        with patch("trials.game_runner.plan_moves", make_mock("a")):
+        with patch("trials.game_runner.plan_moves", mock_plan_moves):
             agent_a(obs0)
-        with patch("trials.game_runner.plan_moves", make_mock("b")):
             agent_b(obs0)
 
-        # Different closures → different initial_planets objects (even if both empty)
-        # We can only check they are separate: patch captures independently
-        assert captured["a"] is not None or captured["b"] is not None
+        # Each closure must have its own initial_planets list, not the same object.
+        assert len(initial_planets_seen) == 2
+        assert initial_planets_seen[0] is not initial_planets_seen[1]
 
 
 # ---------------------------------------------------------------------------

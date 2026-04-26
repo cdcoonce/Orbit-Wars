@@ -6,6 +6,7 @@ Run from the project root:
 import logging
 import math
 import os
+import threading
 from pathlib import Path
 
 import optuna
@@ -25,11 +26,18 @@ CHAMPION_FILE = Path(__file__).parent / "champion.py"
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-_best_win_rate = 0.0
+# Mutable in-process champion state; updated on every promotion.
+# Protected by _lock so parallel workers always read the latest champion.
+_lock = threading.Lock()
+_current_champion: dict = dict(CHAMPION_PARAMS)
+_best_win_rate: float = 0.0
 
 
 def write_champion(params: dict) -> None:
-    """Atomically write params to champion.py via temp-file + os.replace."""
+    """Atomically write params to champion.py via temp-file + os.replace.
+
+    Must be called while holding _lock to avoid concurrent temp-file collision.
+    """
     for k, v in params.items():
         if isinstance(v, float) and not math.isfinite(v):
             raise ValueError(f"Non-finite value for param {k!r}: {v}")
@@ -39,7 +47,8 @@ def write_champion(params: dict) -> None:
         lines.append(f"    {k!r}: {v!r},\n")
     lines.append("}\n")
 
-    temp = str(CHAMPION_FILE) + ".tmp"
+    # Per-thread temp name prevents concurrent write collisions.
+    temp = str(CHAMPION_FILE) + f".{threading.get_ident()}.tmp"
     with open(temp, "w") as fh:
         fh.writelines(lines)
     os.replace(temp, CHAMPION_FILE)
@@ -51,30 +60,38 @@ def _make_callback():
         win_rate = trial.value
         if win_rate is None:
             return
-        if win_rate > _best_win_rate:
-            _best_win_rate = win_rate
+        with _lock:
+            if win_rate > _best_win_rate:
+                _best_win_rate = win_rate
+            local_best = _best_win_rate
         promoted = " [PROMOTED]" if win_rate >= PROMOTION_THRESHOLD else ""
         logger.info(
             "Trial %d: win_rate=%.2f | best=%.2f%s",
-            trial.number, win_rate, _best_win_rate, promoted,
+            trial.number, win_rate, local_best, promoted,
         )
 
     return callback
 
 
 def objective(trial: optuna.Trial) -> float:
-    challenger_params: dict = {}
+    # Build challenger from full PARAMS defaults so no key is ever missing.
+    challenger_params = dict(PARAMS)
     for key, (low, high, typ) in PARAM_SPACE.items():
         if typ is int:
             challenger_params[key] = trial.suggest_int(key, low, high)
         else:
             challenger_params[key] = trial.suggest_float(key, low, high)
-    challenger_params["game_length"] = CHAMPION_PARAMS.get("game_length", PARAMS["game_length"])
 
-    win_rate, _ = run_games(challenger_params, CHAMPION_PARAMS, n_games=N_GAMES)
+    with _lock:
+        current_champ = dict(_current_champion)
+
+    win_rate, _ = run_games(challenger_params, current_champ, n_games=N_GAMES)
 
     if win_rate >= PROMOTION_THRESHOLD:
-        write_champion(challenger_params)
+        with _lock:
+            write_champion(challenger_params)
+            _current_champion.clear()
+            _current_champion.update(challenger_params)
 
     return win_rate
 
