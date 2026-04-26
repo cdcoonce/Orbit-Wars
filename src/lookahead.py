@@ -101,8 +101,8 @@ def step_state(
     if move is not None:
         planet_id, angle, ships_to_send = move[0], move[1], move[2]
         source = next((p for p in state.planets if p.id == planet_id), None)
-        if source is not None:
-            source.ships = max(0, source.ships - ships_to_send)
+        if source is not None and source.ships >= ships_to_send:
+            source.ships -= ships_to_send
             new_fleet = SimFleet(
                 owner=player,
                 x=source.x,

@@ -537,9 +537,15 @@ class TestPlanExpansionBlend:
         from src.config import PARAMS
         from src.lookahead import build_state, step_state
 
-        our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=80, production=4)
-        enemy_planet = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=5, production=1)
-        all_planets = [our_planet, enemy_planet]
+        # our_planet: FORTRESS (ships=120 >= 21, production=4 >= 2)
+        # enemy_planet: FORTRESS (ships=30 >= 21, production=4 >= 4); with probe=60,
+        #   expected_defenders=30+4=34, ratio=60/34≈1.76 > weak_ratio → SOFT_ENEMY, not skipped.
+        # neutral_for_opp: LOW-value (production=1 < medium_value_production=2) so the
+        #   opponent (FORTRESS) can expand there; ensures opponent_fn is non-empty.
+        our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=120, production=4)
+        enemy_planet = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=30, production=4)
+        neutral_for_opp = make_planet(id=2, owner=-1, x=74.0, y=50.0, ships=1, production=1)
+        all_planets = [our_planet, enemy_planet, neutral_for_opp]
         own_classes = {0: "FORTRESS"}
 
         params_blend = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 1,
@@ -557,7 +563,7 @@ class TestPlanExpansionBlend:
         strategy_module.plan_moves = capturing_plan_moves
         try:
             moves = plan_expansion(
-                [our_planet], [], [enemy_planet], own_classes,
+                [our_planet], [neutral_for_opp], [enemy_planet], own_classes,
                 angular_velocity=0.03, agg=1.0, params=params_blend,
                 comet_ids=frozenset(),
                 initial_planets=all_planets, fleets=[], player=0, turn=0,
@@ -576,25 +582,26 @@ class TestPlanExpansionBlend:
         # Confirm the opponent model produces state changes: apply opponent moves
         # from the first captured call to step_state and check ship reduction.
         opp_moves_list = opponent_calls[0]
-        if opp_moves_list:
-            state = build_state(all_planets, [], turn=0)
-            initial_ships = next(
-                p.ships for p in state.planets if p.owner == 1
-            )
-            # Apply opponent move (opponent sends ships => their planet loses ships)
-            opp_move = opp_moves_list[0]
-            next_state = step_state(
-                state, opp_move, player=1,
-                angular_velocity=0.03, initial_planets=all_planets,
-            )
-            final_ships = next(
-                (p.ships for p in next_state.planets if p.owner == 1), None
-            )
-            if final_ships is not None:
-                # After production (+1) and launching ships, the result should differ
-                # from just production alone (initial_ships + 1). If a fleet was sent,
-                # fewer ships remain.
-                assert final_ships < initial_ships + enemy_planet.production, (
-                    "Opponent launching ships should reduce their planet's ship count "
-                    "below production-only growth"
-                )
+        assert opp_moves_list, (
+            "Opponent should have moves to launch given 30 ships well above min_garrison=10"
+        )
+        state = build_state(all_planets, [], turn=0)
+        initial_ships = next(
+            p.ships for p in state.planets if p.owner == 1
+        )
+        # Apply opponent move (opponent sends ships => their planet loses ships)
+        opp_move = opp_moves_list[0]
+        next_state = step_state(
+            state, opp_move, player=1,
+            angular_velocity=0.03, initial_planets=all_planets,
+        )
+        final_ships = next(
+            p.ships for p in next_state.planets if p.owner == 1
+        )
+        # After production (+4) and launching ships, the result should differ
+        # from just production alone (initial_ships + production). If a fleet was sent,
+        # fewer ships remain.
+        assert final_ships < initial_ships + enemy_planet.production, (
+            "Opponent launching ships should reduce their planet's ship count "
+            "below production-only growth"
+        )

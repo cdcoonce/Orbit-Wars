@@ -188,7 +188,7 @@ def plan_expansion(
                 _opp_base.planets, _opp_base.fleets, opp_player, angular_velocity,
                 turn=turn, params=greedy_params_opp, initial_planets=initial_planets,
             )
-            opponent_fn = lambda state: _opp_moves  # noqa: E731
+            opponent_fn = lambda state, m=_opp_moves: m  # noqa: E731
         else:
             opponent_fn = None
 
