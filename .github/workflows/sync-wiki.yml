@@ -1,0 +1,67 @@
+# sync-wiki.yml — Syncs docs/wiki/ to the GitHub Wiki tab on every push to main.
+#
+# PREREQUISITES:
+#   1. The GitHub Wiki tab must be manually initialized before this Action can push.
+#      Visit https://github.com/cdcoonce/Orbit-Wars/wiki, click "Create the first page",
+#      save any placeholder page.  This initializes the underlying wiki.git remote.
+#
+#   2. Create a GitHub Personal Access Token (PAT) with the following minimum scope:
+#        - public repos : public_repo
+#        - private repos: repo
+#      Add it to the repository's Actions secrets as WIKI_TOKEN
+#      (Settings → Secrets and variables → Actions → New repository secret).
+
+name: Sync Wiki
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure git credentials
+        run: |
+          git config --global credential.helper store
+          printf 'https://x-access-token:%s@github.com\n' "${{ secrets.WIKI_TOKEN }}" \
+            >> ~/.git-credentials
+
+      - name: Clone wiki remote into temp directory
+        run: |
+          git clone https://github.com/cdcoonce/Orbit-Wars.wiki.git /tmp/wiki
+
+      - name: Copy docs/wiki/ contents into wiki clone
+        run: |
+          # Remove everything currently in the wiki clone so stale pages are pruned.
+          # The .git directory is intentionally preserved.
+          find /tmp/wiki -mindepth 1 -not -path '/tmp/wiki/.git*' -delete
+
+          # Copy only Markdown files from docs/wiki/ into the clone root.
+          # Excludes generate_config.py, __pycache__/, and any other non-wiki
+          # artefacts that live alongside the .md pages.
+          rsync -a --include='*/' --include='*.md' --exclude='*' \
+                docs/wiki/ /tmp/wiki/
+
+      - name: Commit changes in wiki clone
+        working-directory: /tmp/wiki
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add --all
+
+          # Only commit when there is something new to record.
+          if git diff --cached --quiet; then
+            echo "Wiki is already up to date — nothing to commit."
+          else
+            git commit -m "docs: sync wiki from docs/wiki/ @ ${GITHUB_SHA::8}"
+          fi
+
+      - name: Force-push to wiki remote
+        working-directory: /tmp/wiki
+        run: git push --force origin HEAD:master
