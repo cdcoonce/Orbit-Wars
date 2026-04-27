@@ -1,46 +1,46 @@
 PARAMS = {
     # Own planet classification
-    "fortress_min_ships": 21,
+    "fortress_min_ships": 20,
     "fortress_min_production": 2,
-    "factory_min_production": 4,
+    "factory_min_production": 2,
     # Target value classification
-    "high_value_production": 3,
-    "medium_value_production": 2,
+    "high_value_production": 4,
+    "medium_value_production": 4,
     "stationary_value_bonus": 2,
     # Threat level ratios
-    "weak_ratio": 1.2511158548053918,
-    "contested_ratio": 1.1595885324156752,
+    "weak_ratio": 1.154617395420197,
+    "contested_ratio": 0.8407577228938329,
     # Send fractions (flattened from nested dict)
-    "frac_fortress_easy_neutral":    0.6392386642660567,
-    "frac_fortress_hard_neutral":    0.9031985601054257,
-    "frac_fortress_soft_enemy":      0.6502705382394975,
-    "frac_fortress_contested_enemy": 0.5427211066333779,
-    "frac_factory_easy_neutral":     0.37382628566100107,
-    "frac_factory_soft_enemy":       0.5321366660496892,
-    "frac_outpost_easy_neutral":     0.4296790016441959,
-    "frac_outpost_soft_enemy":       0.5009284338067023,
+    "frac_fortress_easy_neutral":    0.8396621295827016,
+    "frac_fortress_hard_neutral":    0.7390354888675388,
+    "frac_fortress_soft_enemy":      0.8207825684121107,
+    "frac_fortress_contested_enemy": 0.5988259338469294,
+    "frac_factory_easy_neutral":     0.7077611944778195,
+    "frac_factory_soft_enemy":       0.6780334958733476,
+    "frac_outpost_easy_neutral":     0.53362289042428,
+    "frac_outpost_soft_enemy":       0.5376892175236,
     # Defense
-    "threat_radius": 7.539870578690189,
-    "threat_eta_window": 18,
-    "defense_reinforce_fraction": 0.5630024490285308,
-    "eta_buffer": 9,
-    "min_garrison": 27,
+    "threat_radius": 5.265740056967727,
+    "threat_eta_window": 17,
+    "defense_reinforce_fraction": 0.6022826916905341,
+    "eta_buffer": 10,
+    "min_garrison": 28,
     # Aggression scaling
-    "aggression_max": 0.9806186153678897,
-    "aggression_min": 0.4734191579755174,
+    "aggression_max": 0.9179119423124437,
+    "aggression_min": 0.7369096209665795,
     "game_length": 500,
     # Early-game expansion ramp
-    "min_garrison_early": 2,
-    "garrison_ramp_turns": 71,
+    "min_garrison_early": 6,
+    "garrison_ramp_turns": 35,
     # Comets
-    "comet_value_multiplier": 0.5487415241565519,
+    "comet_value_multiplier": 2.2247498240243333,
     # Endgame
-    "endgame_threshold_turn": 389,
-    "endgame_lead_margin": 1.2999600959021158,
+    "endgame_threshold_turn": 451,
+    "endgame_lead_margin": 1.4126548981094489,
     # Lookahead
     "lookahead_turns": 2,
-    "lookahead_blend": 0.6409693360903598,
-    "lookahead_ship_weight": 0.06027730618268315,
+    "lookahead_blend": 0.4836506797909815,
+    "lookahead_ship_weight": 0.08724646016341354,
 }
 
 SKIP_COMBOS = {
@@ -82,7 +82,7 @@ PARAM_SPACE = {
     "comet_value_multiplier":        (0.0,  3.0,   float),
     "endgame_threshold_turn":        (380,  490,   int),
     "endgame_lead_margin":           (1.05, 2.0,   float),
-    "lookahead_turns":               (1,    2,     int),
+    "lookahead_turns":               (1,    5,     int),
     "lookahead_blend":               (0.0,  1.0,   float),
     "lookahead_ship_weight":         (0.001, 0.1,  float),
 }

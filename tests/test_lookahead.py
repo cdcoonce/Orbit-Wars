@@ -180,11 +180,11 @@ class TestStepState:
         next_s = step_state(state, move=None, player=0,
                             angular_velocity=0.03, initial_planets=initial)
         p = next_s.planets[0]
+        # Production runs at start of turn, but neutral planets don't produce.
         # Fleet had 10 ships; neutral planet had 2 defending ships.
         # Winner=fleet owner(0), 10-2=8 survive, minus 1 for takeover → 7 ships.
-        # Then production (+1) is added at end of turn → 8 ships total.
         assert p.owner == 0
-        assert p.ships == 8
+        assert p.ships == 7
 
     def test_opponent_fn_defaults_to_none(self):
         """step_state must accept opponent_fn=None (default) without error."""
@@ -194,6 +194,88 @@ class TestStepState:
                             angular_velocity=0.03, initial_planets=initial,
                             opponent_fn=None)
         assert isinstance(next_s, GameState)
+
+    def test_production_runs_before_combat(self):
+        """Production must run at the start of the turn, before combat.
+
+        Set up: owned planet with 0 ships, production=2, at (70, 50), radius=1.
+        Enemy fleet with 1 ship positioned to arrive this turn at angle 0.
+
+        Expected: production runs first (0→2 ships), then combat. 2 vs 1 attacker
+        means planet survives with 2-1=1 ship. Planet owner remains 0.
+        """
+        from src.math_utils import fleet_speed
+
+        # Owned planet: 0 ships, production=2
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
+                             ships=0, production=2)
+
+        # Enemy fleet with 1 ship, positioned to arrive this turn
+        speed = fleet_speed(1)
+        fleet_x = 70.0 - speed + 0.1  # arrives just inside radius after movement
+        fleet = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=1)
+
+        state = build_state([planet], [fleet], turn=0)
+        initial = state.planets[:]
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial)
+
+        p = next_s.planets[0]
+        # With production before combat: 0+2=2 ships defending.
+        # Combat: 2 defenders vs 1 attacker → planet wins with 2-1=1 ship remaining.
+        assert p.owner == 0
+        assert p.ships == 1
+
+    def test_opponent_fn_applied(self):
+        """opponent_fn fleet appears in state.fleets and deducts from source."""
+        # Two planets: ours at (70,50), opponent's at (30,50)
+        our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=1)
+        opp_planet = make_planet(id=1, owner=1, x=30.0, y=50.0, radius=1.0, ships=20, production=1)
+        state = build_state([our_planet, opp_planet], [], turn=0)
+        initial = [our_planet, opp_planet]
+
+        def opponent_fn(s):
+            return [[1, 0.0, 5]]  # opponent sends 5 ships from planet 1 at angle 0
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial,
+                            opponent_fn=opponent_fn)
+        # Opponent planet should have lost 5 ships (after production: 20+1=21, then -5=16)
+        opp = next(p for p in next_s.planets if p.id == 1)
+        assert opp.ships == 16
+        # A fleet owned by player 1 should be in transit
+        assert any(f.owner == 1 for f in next_s.fleets)
+
+    def test_opponent_fn_silent_skip(self):
+        """opponent_fn referencing a planet with 0 ships is silently skipped."""
+        planet = make_planet(id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=0, production=0)
+        state = build_state([planet], [], turn=0)
+        initial = [planet]
+
+        def opponent_fn(s):
+            return [[0, 0.0, 5]]  # tries to send 5 ships from a planet with 0
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial,
+                            opponent_fn=opponent_fn)
+        # No fleet should be added, no exception
+        assert len(next_s.fleets) == 0
+
+    def test_opponent_fn_call_count_sentinel(self):
+        """opponent_fn is called exactly once per step_state invocation."""
+        state = self._simple_state()
+        initial = state.planets[:]
+        call_count = [0]
+
+        def counting_fn(s):
+            call_count[0] += 1
+            return []
+
+        step_state(state, move=None, player=0,
+                   angular_velocity=0.03, initial_planets=initial,
+                   opponent_fn=counting_fn)
+        assert call_count[0] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -330,3 +412,196 @@ class TestPlanExpansionBlend:
             initial_planets=[owned, neutral]
         )
         assert isinstance(moves, list)
+
+    def test_lookahead_turns_2_increments_turn(self):
+        """lookahead_turns=2 scores differently from lookahead_turns=1 when turn 2 matters."""
+        from src.strategy import plan_expansion
+        from src.config import PARAMS
+        from src.lookahead import build_state, score_state, step_state
+
+        fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+        target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2)
+        all_planets = [fortress, target]
+        own_classes = {0: "FORTRESS"}
+
+        # Build a state and manually run step_state twice to get turn=7 state
+        state_1turn = build_state(all_planets, [], turn=5)
+        state_1turn = step_state(state_1turn, None, 0, 0.03, all_planets)
+        score_after_1 = score_state(state_1turn, player=0)
+
+        state_2turn = build_state(all_planets, [], turn=5)
+        state_2turn = step_state(state_2turn, None, 0, 0.03, all_planets)
+        state_2turn = step_state(state_2turn, None, 0, 0.03, all_planets)
+        score_after_2 = score_state(state_2turn, player=0)
+
+        # Scores must differ (production compounds — 2-turn score != 1-turn score)
+        assert score_after_2 != score_after_1
+
+        # Also verify plan_expansion with lookahead_turns=2 runs without crash
+        params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
+                        "min_garrison": 10}
+        moves = plan_expansion(
+            [fortress], [target], [], own_classes,
+            angular_velocity=0.03, agg=1.0, params=params_2turn,
+            initial_planets=all_planets, fleets=[], player=0, turn=5
+        )
+        assert isinstance(moves, list)
+
+    def test_lookahead_turns_2_with_in_transit_fleet(self):
+        """lookahead_turns=2 with an in-transit fleet must not crash (SimFleet.id required)."""
+        from src.strategy import plan_expansion
+        from src.config import PARAMS
+
+        fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+        target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2)
+        all_planets = [fortress, target]
+        own_classes = {0: "FORTRESS"}
+        # Enemy fleet far away, stays in transit across both simulated turns
+        in_transit = make_fleet(id=7, owner=1, x=10.0, y=50.0, angle=0.0, ships=3)
+
+        params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
+                        "min_garrison": 10}
+        # This would crash with AttributeError before the SimFleet.id fix
+        moves = plan_expansion(
+            [fortress], [target], [], own_classes,
+            angular_velocity=0.03, agg=1.0, params=params_2turn,
+            initial_planets=all_planets, fleets=[in_transit], player=0, turn=5
+        )
+        assert isinstance(moves, list)
+
+    def test_opponent_fn_precomputed_once_per_source(self):
+        """Criterion 6: opponent plan_moves is called once per source planet, not once per (source, target) pair.
+
+        Setup: 2 source planets, 2 candidate targets => 4 (source, target) combinations.
+        The opponent precomputation block is outside the target loop (per source),
+        so plan_moves for the opponent should fire exactly 2 times (once per source),
+        not 4 times (once per combination).
+        """
+        import src.strategy as strategy_module
+        from src.strategy import plan_expansion
+        from src.config import PARAMS
+
+        # Two owned planets (sources)
+        src1 = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+        src2 = make_planet(id=1, owner=0, x=68.0, y=52.0, ships=60, production=4)
+        # Two neutral targets (candidates)
+        tgt1 = make_planet(id=2, owner=-1, x=72.0, y=50.0, ships=1, production=2)
+        tgt2 = make_planet(id=3, owner=-1, x=72.0, y=52.0, ships=1, production=2)
+        all_planets = [src1, src2, tgt1, tgt2]
+        own_classes = {0: "FORTRESS", 1: "FORTRESS"}
+
+        params_blend = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 1,
+                        "min_garrison": 10}
+
+        opponent_call_count = [0]
+        original_plan_moves = strategy_module.plan_moves
+
+        def counting_plan_moves(planets, fleets, player, angular_velocity, **kwargs):
+            # Count calls where player is the opponent (player != 0)
+            if player != 0:
+                opponent_call_count[0] += 1
+            return original_plan_moves(planets, fleets, player, angular_velocity, **kwargs)
+
+        strategy_module.plan_moves = counting_plan_moves
+        try:
+            plan_expansion(
+                [src1, src2], [tgt1, tgt2], [], own_classes,
+                angular_velocity=0.03, agg=1.0, params=params_blend,
+                comet_ids=frozenset(),
+                initial_planets=all_planets, fleets=[], player=0, turn=0,
+            )
+        finally:
+            strategy_module.plan_moves = original_plan_moves
+
+        # With lookahead_turns=1, n_extra=0 so no extra plan_moves calls happen.
+        # The opponent precomputation fires once per source planet = 2 calls.
+        # It must NOT fire once per (source, target) pair = 4 calls.
+        assert opponent_call_count[0] == 2, (
+            f"Expected opponent plan_moves to be called once per source planet (2), "
+            f"got {opponent_call_count[0]}"
+        )
+
+    def test_plan_expansion_blend_reduces_opponent_ships(self):
+        """Criterion 8: blend=1.0 with enemy planet triggers opponent_fn, confirming
+        the lookahead path was taken and the opponent model was active.
+
+        When plan_expansion runs with blend>0 and an enemy planet in targets, it
+        constructs opponent_fn by calling plan_moves for the opponent. We verify:
+        1. A move is generated (the lookahead path was taken, not an early exit).
+        2. plan_moves is called for the opponent player internally (opponent_fn active).
+        3. Applying that opponent move in step_state reduces opponent ship count,
+           confirming the opponent model produces meaningful output.
+        """
+        import src.strategy as strategy_module
+        from src.strategy import plan_expansion
+        from src.config import PARAMS
+        from src.lookahead import build_state, step_state
+
+        # our_planet: FORTRESS (ships=120 >= 21, production=4 >= 2)
+        # enemy_planet: FORTRESS (ships=30 >= 21, production=4 >= 4); with probe=60,
+        #   expected_defenders=30+4=34, ratio=60/34≈1.76 > weak_ratio → SOFT_ENEMY, not skipped.
+        # neutral_for_opp: LOW-value (production=1 < medium_value_production=2) so the
+        #   opponent (FORTRESS) can expand there; ensures opponent_fn is non-empty.
+        our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=120, production=4)
+        enemy_planet = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=30, production=4)
+        neutral_for_opp = make_planet(id=2, owner=-1, x=74.0, y=50.0, ships=1, production=1)
+        all_planets = [our_planet, enemy_planet, neutral_for_opp]
+        own_classes = {0: "FORTRESS"}
+
+        params_blend = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 1,
+                        "min_garrison": 10}
+
+        opponent_calls = []
+        original_plan_moves = strategy_module.plan_moves
+
+        def capturing_plan_moves(planets, fleets, player, angular_velocity, **kwargs):
+            result = original_plan_moves(planets, fleets, player, angular_velocity, **kwargs)
+            if player != 0:
+                opponent_calls.append(result)
+            return result
+
+        strategy_module.plan_moves = capturing_plan_moves
+        try:
+            moves = plan_expansion(
+                [our_planet], [neutral_for_opp], [enemy_planet], own_classes,
+                angular_velocity=0.03, agg=1.0, params=params_blend,
+                comet_ids=frozenset(),
+                initial_planets=all_planets, fleets=[], player=0, turn=0,
+            )
+        finally:
+            strategy_module.plan_moves = original_plan_moves
+
+        # A move must have been generated (lookahead path taken, not early-exit)
+        assert len(moves) >= 1, "plan_expansion should return at least one move"
+
+        # opponent_fn was active: plan_moves was called for the opponent at least once
+        assert len(opponent_calls) >= 1, (
+            "plan_moves should have been called for the opponent player when blend>0"
+        )
+
+        # Confirm the opponent model produces state changes: apply opponent moves
+        # from the first captured call to step_state and check ship reduction.
+        opp_moves_list = opponent_calls[0]
+        assert opp_moves_list, (
+            "Opponent should have moves to launch given 30 ships well above min_garrison=10"
+        )
+        state = build_state(all_planets, [], turn=0)
+        initial_ships = next(
+            p.ships for p in state.planets if p.owner == 1
+        )
+        # Apply opponent move (opponent sends ships => their planet loses ships)
+        opp_move = opp_moves_list[0]
+        next_state = step_state(
+            state, opp_move, player=1,
+            angular_velocity=0.03, initial_planets=all_planets,
+        )
+        final_ships = next(
+            p.ships for p in next_state.planets if p.owner == 1
+        )
+        # After production (+4) and launching ships, the result should differ
+        # from just production alone (initial_ships + production). If a fleet was sent,
+        # fewer ships remain.
+        assert final_ships < initial_ships + enemy_planet.production, (
+            "Opponent launching ships should reduce their planet's ship count "
+            "below production-only growth"
+        )
