@@ -6,7 +6,7 @@
 #      save any placeholder page.  This initializes the underlying wiki.git remote.
 #
 #   2. Create a GitHub Personal Access Token (PAT) with the following minimum scope:
-#        - public repos : public_repo
+#        - public repos : repo  (public_repo alone is NOT sufficient for wiki push)
 #        - private repos: repo
 #      Add it to the repository's Actions secrets as WIKI_TOKEN
 #      (Settings → Secrets and variables → Actions → New repository secret).
@@ -25,15 +25,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure git credentials
-        run: |
-          git config --global credential.helper store
-          printf 'https://x-access-token:%s@github.com\n' "${{ secrets.WIKI_TOKEN }}" \
-            >> ~/.git-credentials
-
       - name: Clone wiki remote into temp directory
         run: |
-          git clone https://github.com/cdcoonce/Orbit-Wars.wiki.git /tmp/wiki
+          git clone \
+            "https://x-access-token:${{ secrets.WIKI_TOKEN }}@github.com/cdcoonce/Orbit-Wars.wiki.git" \
+            /tmp/wiki
 
       - name: Copy docs/wiki/ contents into wiki clone
         run: |
@@ -64,4 +60,7 @@ jobs:
 
       - name: Force-push to wiki remote
         working-directory: /tmp/wiki
-        run: git push --force origin HEAD:master
+        run: |
+          git push --force \
+            "https://x-access-token:${{ secrets.WIKI_TOKEN }}@github.com/cdcoonce/Orbit-Wars.wiki.git" \
+            HEAD:master
