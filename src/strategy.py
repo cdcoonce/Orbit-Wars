@@ -150,6 +150,12 @@ def _effective_min_garrison(turn: int, params: dict) -> int:
     return int(early + t * (full - early))
 
 
+def _effective_distance_power(turn: int, params: dict) -> float:
+    """Linearly ramp distance exponent from distance_power_early down to distance_power_late."""
+    t = min(turn, params["distance_ramp_turns"]) / params["distance_ramp_turns"]
+    return params["distance_power_early"] + t * (params["distance_power_late"] - params["distance_power_early"])
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -167,6 +173,7 @@ def plan_expansion(
     moves = []
     targets = neutrals + enemies
     min_garrison = int(_effective_min_garrison(turn, params) / agg)
+    dist_power = _effective_distance_power(turn, params)
     blend = params.get("lookahead_blend", 0.0)
 
     for source in owned:
@@ -218,7 +225,7 @@ def plan_expansion(
 
             bonus = params["stationary_value_bonus"] if is_stationary(target) else 0
             eff_prod = effective_production(target, comet_ids, params["comet_value_multiplier"])
-            greedy_score = (eff_prod + bonus) / (eta + 1) ** 2
+            greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
 
             # Lookahead score
             if blend > 0 and initial_planets is not None and fleets is not None:

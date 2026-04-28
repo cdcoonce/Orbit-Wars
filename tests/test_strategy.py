@@ -3,6 +3,7 @@ import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
 from src.strategy import PARAMS, Threat, is_stationary, value_tier  # noqa: F401
+from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.math_utils import path_crosses_sun
 from src.strategy import classify_own
@@ -391,3 +392,24 @@ def test_path_crosses_sun_grazes_edge():
     from kaggle_environments.envs.orbit_wars.orbit_wars import SUN_RADIUS
     # Segment passes exactly at SUN_RADIUS distance — should NOT cross (< not <=)
     assert path_crosses_sun(50.0 - SUN_RADIUS, 0.0, 50.0 - SUN_RADIUS, 100.0) is False
+
+
+# --- _effective_distance_power ---
+
+def test_effective_distance_power_ramp():
+    params = {"distance_power_early": 4.0, "distance_power_late": 2.0, "distance_ramp_turns": 100}
+    assert _effective_distance_power(0, params) == 4.0
+    assert _effective_distance_power(100, params) == 2.0
+    assert _effective_distance_power(200, params) == 2.0   # clamped post-ramp
+    mid = _effective_distance_power(50, params)
+    assert 2.0 < mid < 4.0
+
+
+def test_distance_power_penalizes_farther_planets():
+    prod = 3
+    eta_near, eta_far = 2, 8
+    # With steep early-game exponent, far planet is much worse relative to near
+    early_ratio = (prod / (eta_near + 1) ** 4.0) / (prod / (eta_far + 1) ** 4.0)
+    late_ratio  = (prod / (eta_near + 1) ** 2.0) / (prod / (eta_far + 1) ** 2.0)
+    # Steeper power → larger ratio (near planet scores proportionally more)
+    assert early_ratio > late_ratio

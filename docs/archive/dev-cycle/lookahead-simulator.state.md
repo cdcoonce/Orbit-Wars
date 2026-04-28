@@ -1,11 +1,11 @@
 ---
 schema_version: 1
 feature: lookahead-simulator
-status: in_progress
-current_phase: implement
+status: completed
+current_phase: pr
 created: 2026-04-26
-updated: 2026-04-26
-branch:
+updated: 2026-04-27
+branch: feat/lookahead-simulator
 ---
 
 ## Artifacts
@@ -16,17 +16,17 @@ branch:
 | plan        | completed | docs/plans/lookahead-simulator.md                                |
 | ceo_review  | completed | docs/plans/lookahead-simulator.md (revised)                      |
 | issues      | completed | #9 #10 #11                                                       |
-| implement   | pending   | —                                                                |
-| code_review | pending   | —                                                                |
-| pr          | pending   | —                                                                |
+| implement   | completed | feat/lookahead-simulator branch; all 3 phases shipped            |
+| code_review | completed | merged via PR #12                                                |
+| pr          | completed | [PR #12](https://github.com/cdcoonce/Orbit-Wars/pull/12)         |
 
 ## Issues
 
 | Plan Slice                                       | GitHub Issue                                            | Status |
 | ------------------------------------------------ | ------------------------------------------------------- | ------ |
-| Phase 1: Production step order fix               | [#9](https://github.com/cdcoonce/Orbit-Wars/issues/9)   | open   |
-| Phase 2: Opponent model + lookahead_turns wiring | [#10](https://github.com/cdcoonce/Orbit-Wars/issues/10) | open   |
-| Phase 3: Optuna retune                           | [#11](https://github.com/cdcoonce/Orbit-Wars/issues/11) | open   |
+| Phase 1: Production step order fix               | [#9](https://github.com/cdcoonce/Orbit-Wars/issues/9)   | closed |
+| Phase 2: Opponent model + lookahead_turns wiring | [#10](https://github.com/cdcoonce/Orbit-Wars/issues/10) | closed |
+| Phase 3: Optuna retune                           | [#11](https://github.com/cdcoonce/Orbit-Wars/issues/11) | closed |
 
 ## Log
 
@@ -46,3 +46,7 @@ branch:
 - 2026-04-26: Phase 4 (issues) complete. 3 GitHub issues created (#9-#11).
   #9 must land first; #10 depends on #9; #11 depends on both.
   Advancing to Phase 5 (implement).
+- 2026-04-27: All phases implemented and merged. Phase 1: production moved to Step 1
+  in step_state (8ed1f2e). Phase 2: opponent_fn + lookahead_turns wired (eff0533,
+  bc9d0f3, 56e18a5, 79b46f9). Phase 3: Optuna retune with depth-3 champion promoted
+  (44618df, 120fd8e). All shipped via PR #12.

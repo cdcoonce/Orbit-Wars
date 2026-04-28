@@ -32,6 +32,10 @@ PARAMS = {
     # Early-game expansion ramp
     "min_garrison_early": 1,
     "garrison_ramp_turns": 24,
+    # Distance exponent ramp
+    "distance_power_early": 3.5,
+    "distance_power_late":  2.0,
+    "distance_ramp_turns":  50,
     # Comets
     "comet_value_multiplier": 0.0014806651778525755,
     # Endgame
@@ -79,6 +83,9 @@ PARAM_SPACE = {
     "aggression_min":                (0.3,  0.8,   float),
     "min_garrison_early":            (1,    15,    int),
     "garrison_ramp_turns":           (10,   100,   int),
+    "distance_power_early":          (2.0,  5.0,   float),
+    "distance_power_late":           (1.0,  3.0,   float),
+    "distance_ramp_turns":           (10,   150,   int),
     "comet_value_multiplier":        (0.0,  3.0,   float),
     "endgame_threshold_turn":        (380,  490,   int),
     "endgame_lead_margin":           (1.05, 2.0,   float),
