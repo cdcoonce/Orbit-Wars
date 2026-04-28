@@ -1,11 +1,11 @@
 ---
 schema_version: 1
 feature: proximity-ramp
-status: in_progress
-current_phase: implement
+status: completed
+current_phase: pr
 created: 2026-04-27
 updated: 2026-04-27
-branch:
+branch: feat/proximity-ramp
 ---
 
 ## Artifacts
@@ -16,9 +16,9 @@ branch:
 | plan        | completed | docs/plans/proximity-ramp.md                                       |
 | ceo_review  | completed | docs/plans/proximity-ramp.md (revised)                             |
 | issues      | completed | #21 #22                                                            |
-| implement   | pending   | —                                                                  |
-| code_review | pending   | —                                                                  |
-| pr          | pending   | —                                                                  |
+| implement   | completed | feat/proximity-ramp branch; 132 tests passing                      |
+| code_review | completed | clean — no blocking issues                                         |
+| pr          | completed | [PR #23](https://github.com/cdcoonce/Orbit-Wars/pull/23)           |
 
 ## Issues
 
@@ -44,3 +44,9 @@ branch:
 - 2026-04-27: Phase 4 (issues) complete. 2 GitHub issues created (#21-#22).
   #21 must land first; #22 depends on #21.
   Advancing to Phase 5 (implement).
+- 2026-04-27: Phase 5 (implement) complete. Issue #21 implemented with TDD.
+  \_effective_distance_power helper added, dist_power hoisted before source loop,
+  greedy_score formula updated, 3 new params in PARAMS and PARAM_SPACE. 132 tests passing.
+- 2026-04-27: Phase 6 (code_review) complete. Clean — no blocking issues.
+- 2026-04-27: Phase 7 (pr) complete. PR #23 opened.
+  [PR #23](https://github.com/cdcoonce/Orbit-Wars/pull/23)
