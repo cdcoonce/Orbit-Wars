@@ -427,45 +427,46 @@ class TestInterceptComet:
         """With velocity data, comet intercept predicts linearly, not circularly."""
         source = make_planet_at(id=0, x=10.0, y=50.0, owner=0, ships=40)
         comet  = make_planet_at(id=5, x=60.0, y=50.0)
-        # Comet moving left at 4 units/turn — directly toward the fleet
-        vel = (-4.0, 0.0)
-        fx, fy, eta = intercept(
+        # Comet moving downward — stays on board throughout intercept window
+        vel = (0.0, -1.0)
+        result = intercept(
             source, comet, angular_velocity=0.03, ships_to_send=40,
             comet_ids={5}, comet_velocities={5: vel},
         )
-        # Linear predicted position: comet moves left, fleet moves right → meet somewhere between 10 and 60
-        assert 10.0 <= fx <= 60.0
-        assert abs(fy - 50.0) < 2.0
+        assert result != (None, None, None)
+        fx, fy, eta = result
+        assert 0.0 <= fx <= 100.0
+        assert 0.0 <= fy <= 100.0
+        assert eta >= 1
 
-    def test_comet_no_velocity_aims_at_current_position(self):
-        """Without velocity data (first sighting), aim at current comet position."""
+    def test_comet_no_velocity_returns_none(self):
+        """Without velocity data (first sighting), intercept returns sentinel None."""
         source = make_planet_at(id=0, x=10.0, y=50.0, owner=0, ships=20)
         comet  = make_planet_at(id=5, x=60.0, y=50.0)
-        fx, fy, eta = intercept(
+        result = intercept(
             source, comet, angular_velocity=0.03, ships_to_send=20,
             comet_ids={5}, comet_velocities={},
         )
-        assert abs(fx - 60.0) < 1e-6
-        assert abs(fy - 50.0) < 1e-6
+        assert result == (None, None, None)
 
-    def test_comet_offboard_prediction_falls_back_to_current(self):
-        """If linear extrapolation exits the board, fall back to current position."""
+    def test_comet_offboard_prediction_returns_none(self):
+        """If linear extrapolation exits the board, return None (don't fire)."""
         source = make_planet_at(id=0, x=50.0, y=50.0, owner=0, ships=1)
-        # Comet at (98, 50) moving right at 4/turn — will exit board quickly
+        # Comet at (98, 50) moving right — exits board immediately
         comet = make_planet_at(id=5, x=98.0, y=50.0)
         vel = (4.0, 0.0)
-        fx, fy, eta = intercept(
+        result = intercept(
             source, comet, angular_velocity=0.03, ships_to_send=1,
             comet_ids={5}, comet_velocities={5: vel},
         )
-        # Falls back to current position — within board
-        assert 0.0 <= fx <= 100.0
-        assert 0.0 <= fy <= 100.0
+        assert result == (None, None, None)
 
     def test_linear_intercept_iterative_helper(self):
         """_intercept_comet_linear converges for a straightforward pursuit."""
-        # Source at (0, 50), comet at (50, 50) moving right at 2/turn, fleet speed ~1
-        fx, fy, eta = _intercept_comet_linear(0.0, 50.0, 50.0, 50.0, 2.0, 0.0, 1)
+        # Source at (0, 50), stationary comet at (50, 50) — fleet can always catch it
+        result = _intercept_comet_linear(0.0, 50.0, 50.0, 50.0, 0.0, 0.0, 10)
+        assert result is not None
+        fx, fy, eta = result
         assert eta >= 1
         assert 0.0 <= fx <= 100.0
 

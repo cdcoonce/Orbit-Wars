@@ -206,7 +206,10 @@ def plan_expansion(
             if target.owner == -1:
                 tgt_class = classify_neutral(target, probe_ships, params)
             else:
-                _, _, probe_eta = intercept(source, target, angular_velocity, probe_ships, comet_ids, comet_velocities)
+                probe_result = intercept(source, target, angular_velocity, probe_ships, comet_ids, comet_velocities)
+                if probe_result[0] is None:
+                    continue
+                _, _, probe_eta = probe_result
                 tgt_class = classify_enemy(target, probe_ships, probe_eta, params)
 
             if (src_class, tgt_class) in SKIP_COMBOS:
@@ -216,7 +219,10 @@ def plan_expansion(
                 continue
 
             ships_to_send = max(1, int(source.ships * fraction * agg))
-            future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
+            intercept_result = intercept(source, target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
+            if intercept_result[0] is None:
+                continue
+            future_x, future_y, eta = intercept_result
             if not can_capture(ships_to_send, target, eta):
                 continue
             if path_crosses_sun(source.x, source.y, future_x, future_y):
@@ -292,7 +298,10 @@ def plan_expansion(
         _, _, best_target, best_fraction = best
 
         ships_to_send = max(1, int(source.ships * best_fraction * agg))
-        future_x, future_y, _ = intercept(source, best_target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
+        final_result = intercept(source, best_target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
+        if final_result[0] is None:
+            continue  # comet became un-intercept-able between scoring and final selection
+        future_x, future_y, _ = final_result
         angle = angle_to_target(source.x, source.y, future_x, future_y)
         moves.append([source.id, angle, ships_to_send])
 
@@ -362,19 +371,37 @@ def enemy_planets(planets: list[Planet], player: int) -> list[Planet]:
 def _intercept_comet_linear(
     sx: float, sy: float, tx: float, ty: float,
     vx: float, vy: float, ships: int,
-) -> tuple[float, float, int]:
-    """Intercept a linearly-moving comet via iterative fixed-point."""
+) -> tuple[float, float, int] | None:
+    """Iterative linear intercept for a comet moving at constant velocity.
+
+    Returns (fx, fy, eta) when a safe on-board intercept converges, or None
+    when the predicted aim point or the fleet's actual endpoint (accounting
+    for overshoot) would leave the board.
+    """
+    speed = fleet_speed(ships)
     eta = turns_to_arrive(sx, sy, tx, ty, ships)
+    fx, fy = tx, ty
     for _ in range(10):
         fx = tx + vx * eta
         fy = ty + vy * eta
         if not (0.0 <= fx <= 100.0 and 0.0 <= fy <= 100.0):
-            # Comet will be off-board at that time — aim at current position
-            return tx, ty, turns_to_arrive(sx, sy, tx, ty, ships)
+            return None  # comet off-board at predicted intercept time
         new_eta = turns_to_arrive(sx, sy, fx, fy, ships)
         if new_eta == eta:
             break
         eta = new_eta
+
+    # Check fleet endpoint for overshoot: fleet travels eta*speed units in a
+    # straight line; if that overshoots past the aim point toward the board
+    # edge the fleet exits the board.
+    d = math.sqrt((fx - sx) ** 2 + (fy - sy) ** 2)
+    if d > 1e-9:
+        scale = (eta * speed) / d
+        ex = sx + scale * (fx - sx)
+        ey = sy + scale * (fy - sy)
+        if not (0.0 <= ex <= 100.0 and 0.0 <= ey <= 100.0):
+            return None
+
     return fx, fy, eta
 
 
@@ -385,22 +412,26 @@ def intercept(
     ships_to_send: int,
     comet_ids: set = frozenset(),
     comet_velocities: dict | None = None,
-) -> tuple[float, float, int]:
+) -> tuple[float, float, int] | tuple[None, None, None]:
     """Return (future_x, future_y, eta) predicting the target's future position.
 
-    For comets (which follow elliptical paths at constant linear speed) uses
-    linear velocity extrapolation when velocity data is available.  For regular
-    orbiting planets iterates until the ETA estimate converges.
+    Returns (None, None, None) for comet targets that cannot be safely
+    intercepted — caller must skip those targets.
+
+    For comets uses linear velocity extrapolation; for regular orbiting planets
+    iterates until ETA converges.
     """
     if target.id in comet_ids:
         vel = (comet_velocities or {}).get(target.id)
-        if vel:
-            return _intercept_comet_linear(
-                source.x, source.y, target.x, target.y, vel[0], vel[1], ships_to_send
-            )
-        # First sighting — no velocity data yet; aim at current position
-        eta = turns_to_arrive(source.x, source.y, target.x, target.y, ships_to_send)
-        return target.x, target.y, eta
+        if not vel:
+            # No velocity data yet (first sighting) — cannot aim accurately
+            return None, None, None
+        result = _intercept_comet_linear(
+            source.x, source.y, target.x, target.y, vel[0], vel[1], ships_to_send
+        )
+        if result is None:
+            return None, None, None
+        return result
 
     # Regular orbiting planet: iterate until ETA converges
     eta = turns_to_arrive(source.x, source.y, target.x, target.y, ships_to_send)

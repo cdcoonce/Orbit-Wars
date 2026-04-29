@@ -44,17 +44,32 @@ class TestValueTierWithCometIds:
 # --- plan_expansion comet integration ---
 
 class TestPlanExpansionWithCometIds:
-    def test_outpost_attacks_easy_comet_regardless_of_multiplier(self):
-        """OUTPOSTs attack any EASY_NEUTRAL; multiplier only affects the greedy score."""
+    def test_outpost_attacks_easy_comet_when_velocity_known(self):
+        """OUTPOSTs attack comets when velocity data is available."""
         params = {**PARAMS, "comet_value_multiplier": 0.0, "min_garrison": 10}
+        outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+        # Comet moving slowly toward outpost so intercept stays on board
+        comet_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4)
+        own_classes = {0: "OUTPOST"}
+        moves = plan_expansion(
+            [outpost], [comet_neutral], [], own_classes,
+            angular_velocity=0.03, comet_ids={1}, params=params,
+            comet_velocities={1: (-0.5, 0.0)},
+        )
+        assert len(moves) == 1
+
+    def test_outpost_skips_comet_without_velocity(self):
+        """Without velocity data, OUTPOSTs do not fire at comets (would always miss)."""
+        params = {**PARAMS, "comet_value_multiplier": 2.0, "min_garrison": 5}
         outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
         comet_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4)
         own_classes = {0: "OUTPOST"}
         moves = plan_expansion(
             [outpost], [comet_neutral], [], own_classes,
-            angular_velocity=0.03, comet_ids={1}, params=params
+            angular_velocity=0.03, comet_ids={1}, params=params,
+            comet_velocities={},  # no velocity — first sighting
         )
-        assert len(moves) == 1
+        assert len(moves) == 0
 
     def test_comet_zero_multiplier_makes_score_zero_so_no_attack(self):
         """score = effective_production / (eta+1)^2; if effective_production=0 score=0,
