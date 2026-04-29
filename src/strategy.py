@@ -204,8 +204,6 @@ def plan_expansion(
 
         for target in targets:
             if target.owner == -1:
-                if src_class == "OUTPOST" and value_tier(target, comet_ids, params) != "LOW":
-                    continue
                 tgt_class = classify_neutral(target, probe_ships, params)
             else:
                 _, _, probe_eta = intercept(source, target, angular_velocity, probe_ships, comet_ids, comet_velocities)

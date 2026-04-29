@@ -347,13 +347,13 @@ def test_plan_expansion_skips_threatened():
     assert len(moves) == 0
 
 
-def test_plan_expansion_outpost_skips_easy_neutral_high_value():
+def test_plan_expansion_outpost_attacks_easy_neutral_any_value():
+    # OUTPOSTs no longer have a value-tier gate — can_capture + distance_power handle selectivity.
     outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
-    # ships=0 → EASY_NEUTRAL via dispatch matrix; production=4 → HIGH value → OUTPOST gate blocks
     high_value_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4)
     own_classes = {0: "OUTPOST"}
     moves = plan_expansion([outpost], [high_value_neutral], [], own_classes, angular_velocity=0.03)
-    assert len(moves) == 0
+    assert len(moves) == 1
 
 
 def test_plan_moves_returns_moves():

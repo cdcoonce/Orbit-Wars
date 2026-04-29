@@ -44,22 +44,16 @@ class TestValueTierWithCometIds:
 # --- plan_expansion comet integration ---
 
 class TestPlanExpansionWithCometIds:
-    def test_comet_zero_multiplier_blocks_outpost_from_attacking_high_value_comet(self):
-        """OUTPOST skips non-LOW targets; a comet with multiplier=0.0 scores as 0 -> LOW,
-        so an outpost would be allowed to attack it if it's easy. But actually the HIGH-value
-        filter in plan_expansion checks value_tier, so with multiplier=0 the comet appears
-        LOW and the outpost CAN attack it."""
+    def test_outpost_attacks_easy_comet_regardless_of_multiplier(self):
+        """OUTPOSTs attack any EASY_NEUTRAL; multiplier only affects the greedy score."""
         params = {**PARAMS, "comet_value_multiplier": 0.0, "min_garrison": 10}
         outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
-        # production=4 would normally be HIGH and blocked for outposts,
-        # but with multiplier=0 in comet_ids it becomes LOW -> allowed
         comet_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4)
         own_classes = {0: "OUTPOST"}
         moves = plan_expansion(
             [outpost], [comet_neutral], [], own_classes,
             angular_velocity=0.03, comet_ids={1}, params=params
         )
-        # With multiplier=0 the comet appears LOW → OUTPOST gate passes → attack happens
         assert len(moves) == 1
 
     def test_comet_zero_multiplier_makes_score_zero_so_no_attack(self):
