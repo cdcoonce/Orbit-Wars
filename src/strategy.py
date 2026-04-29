@@ -184,7 +184,9 @@ def plan_expansion(
         if source.ships < min_garrison:
             continue
 
-        probe_ships = source.ships // 2
+        # Use full fleet for classification so FACTORY correctly sees adjacent
+        # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
+        probe_ships = source.ships
 
         # Precompute opponent response once per source planet (not per candidate).
         # Forces blend=0 to prevent recursive lookahead (recursion termination).
@@ -297,13 +299,41 @@ def plan_expansion(
 
         _, _, best_target, best_fraction = best
 
-        ships_to_send = max(1, int(source.ships * best_fraction * agg))
-        final_result = intercept(source, best_target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
+        # Primary fleet
+        ships_remaining = source.ships
+        first_send = max(1, int(ships_remaining * best_fraction * agg))
+        final_result = intercept(source, best_target, angular_velocity, first_send, comet_ids, comet_velocities)
         if final_result[0] is None:
             continue  # comet became un-intercept-able between scoring and final selection
         future_x, future_y, _ = final_result
-        angle = angle_to_target(source.x, source.y, future_x, future_y)
-        moves.append([source.id, angle, ships_to_send])
+        moves.append([source.id, angle_to_target(source.x, source.y, future_x, future_y), first_send])
+        ships_remaining -= first_send
+
+        # Multi-target: drain excess ships to lower-scored candidates
+        if ships_remaining > min_garrison:
+            already_sent = {best_target.id}
+            for _, _, extra_target, extra_fraction in sorted(candidates, key=lambda c: c[0], reverse=True):
+                if ships_remaining <= min_garrison:
+                    break
+                if extra_target.id in already_sent:
+                    continue
+                extra_send = max(1, int(ships_remaining * extra_fraction * agg))
+                # Don't drop below min_garrison
+                if ships_remaining - extra_send < min_garrison:
+                    extra_send = ships_remaining - min_garrison
+                if extra_send <= 0:
+                    break
+                extra_result = intercept(source, extra_target, angular_velocity, extra_send, comet_ids, comet_velocities)
+                if extra_result[0] is None:
+                    continue
+                ex, ey, ex_eta = extra_result
+                if not can_capture(extra_send, extra_target, ex_eta):
+                    continue
+                if path_crosses_sun(source.x, source.y, ex, ey):
+                    continue
+                moves.append([source.id, angle_to_target(source.x, source.y, ex, ey), extra_send])
+                ships_remaining -= extra_send
+                already_sent.add(extra_target.id)
 
     return moves
 
