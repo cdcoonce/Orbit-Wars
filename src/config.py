@@ -6,7 +6,7 @@ PARAMS = {
     # Target value classification
     "high_value_production": 5,
     "medium_value_production": 4,
-    "stationary_value_bonus": 2,
+    "stationary_value_bonus": 4,
     # Threat level ratios
     "weak_ratio": 2.4300327426666266,
     "contested_ratio": 0.8924362720350362,
@@ -15,6 +15,7 @@ PARAMS = {
     "frac_fortress_hard_neutral":    0.5066500574282683,
     "frac_fortress_soft_enemy":      0.8738325914206048,
     "frac_fortress_contested_enemy": 0.5280796959024844,
+    "frac_fortress_hardened_enemy":  0.85,
     "frac_factory_easy_neutral":     0.32535978118571596,
     "frac_factory_soft_enemy":       0.6628658683197701,
     "frac_outpost_easy_neutral":     0.5590804691007405,
@@ -48,7 +49,6 @@ PARAMS = {
 }
 
 SKIP_COMBOS = {
-    ("FORTRESS", "HARDENED_ENEMY"),
     ("FACTORY",  "HARD_NEUTRAL"),
     ("FACTORY",  "CONTESTED_ENEMY"),
     ("FACTORY",  "HARDENED_ENEMY"),
@@ -63,13 +63,14 @@ PARAM_SPACE = {
     "factory_min_production":        (2,    5,     int),
     "high_value_production":         (3,    6,     int),
     "medium_value_production":       (1,    4,     int),
-    "stationary_value_bonus":        (0,    3,     int),
+    "stationary_value_bonus":        (0,    8,     int),
     "weak_ratio":                    (1.1,  2.5,   float),
     "contested_ratio":               (0.8,  1.5,   float),
     "frac_fortress_easy_neutral":    (0.4,  0.9,   float),
     "frac_fortress_hard_neutral":    (0.5,  0.95,  float),
     "frac_fortress_soft_enemy":      (0.4,  0.9,   float),
     "frac_fortress_contested_enemy": (0.5,  0.95,  float),
+    "frac_fortress_hardened_enemy":  (0.5,  0.95,  float),
     "frac_factory_easy_neutral":     (0.3,  0.8,   float),
     "frac_factory_soft_enemy":       (0.3,  0.8,   float),
     "frac_outpost_easy_neutral":     (0.2,  0.7,   float),
@@ -84,7 +85,7 @@ PARAM_SPACE = {
     "min_garrison_early":            (1,    15,    int),
     "garrison_ramp_turns":           (10,   100,   int),
     "distance_power_early":          (2.0,  5.0,   float),
-    "distance_power_late":           (1.0,  3.0,   float),
+    "distance_power_late":           (0.5,  3.0,   float),
     "distance_ramp_turns":           (10,   150,   int),
     "comet_value_multiplier":        (0.0,  3.0,   float),
     "endgame_threshold_turn":        (380,  490,   int),
