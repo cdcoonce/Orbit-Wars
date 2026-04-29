@@ -63,15 +63,16 @@ Gotcha: division-by-zero guard — if `expected_defenders == 0`, returns `"SOFT_
 
 Blocked `(source_class, target_class)` pairs — these moves are never generated:
 
-| Source class | Target class      | Rationale                                                                             |
-| ------------ | ----------------- | ------------------------------------------------------------------------------------- |
-| `FORTRESS`   | `HARDENED_ENEMY`  | Fortresses are defensive anchors; attacking strongly-held enemies wastes the garrison |
-| `FACTORY`    | `HARD_NEUTRAL`    | High-production planets should not bleed ships at uncertain neutral targets           |
-| `FACTORY`    | `CONTESTED_ENEMY` | Factories avoid risky fights where outcome is uncertain                               |
-| `FACTORY`    | `HARDENED_ENEMY`  | Factories never attack well-defended enemies                                          |
-| `OUTPOST`    | `HARD_NEUTRAL`    | Outposts (low ships) cannot absorb the cost of contested neutrals                     |
-| `OUTPOST`    | `CONTESTED_ENEMY` | Outposts cannot win sustained fights                                                  |
-| `OUTPOST`    | `HARDENED_ENEMY`  | Outposts would be wiped out; completely blocked                                       |
+| Source class | Target class      | Rationale                                                                   |
+| ------------ | ----------------- | --------------------------------------------------------------------------- |
+| `FACTORY`    | `HARD_NEUTRAL`    | High-production planets should not bleed ships at uncertain neutral targets |
+| `FACTORY`    | `CONTESTED_ENEMY` | Factories avoid risky fights where outcome is uncertain                     |
+| `FACTORY`    | `HARDENED_ENEMY`  | Factories never attack well-defended enemies                                |
+| `OUTPOST`    | `HARD_NEUTRAL`    | Outposts (low ships) cannot absorb the cost of contested neutrals           |
+| `OUTPOST`    | `CONTESTED_ENEMY` | Outposts cannot win sustained fights                                        |
+| `OUTPOST`    | `HARDENED_ENEMY`  | Outposts would be wiped out; completely blocked                             |
+
+Note: `FORTRESS` vs `HARDENED_ENEMY` is no longer blocked — FORTRESSes will attack well-defended enemies using `frac_fortress_hardened_enemy`.
 
 ---
 
@@ -85,7 +86,7 @@ def aggression(turn: int, params: dict = PARAMS) -> float:
 
 Linear ramp from `aggression_max` down to `aggression_min` over `game_length` turns:
 
-```
+```text
 t = min(turn, game_length) / game_length
 aggression = aggression_max - t * (aggression_max - aggression_min)
 ```
@@ -102,7 +103,7 @@ def _effective_min_garrison(turn: int, params: dict) -> int:
 
 Linearly interpolates from `min_garrison_early` (turn 0) to `min_garrison` (turn `garrison_ramp_turns`):
 
-```
+```text
 t = min(turn, garrison_ramp_turns) / garrison_ramp_turns
 effective = int(min_garrison_early + t * (min_garrison - min_garrison_early))
 ```
@@ -171,23 +172,38 @@ Gotcha: THREATENED planets are explicitly excluded from reinforcing others — `
 
 ---
 
-### `intercept(source, target, angular_velocity, ships_to_send) -> tuple[float, float, int]`
+### `_intercept_comet_linear(sx, sy, tx, ty, vx, vy, ships) -> tuple | None`
+
+Internal helper for comet interception. Comets follow elliptical paths at constant linear speed (~4 units/turn), so `predict_planet_position` (which assumes circular orbit) would aim 3-5× behind the actual comet position. This function uses linear velocity extrapolation instead:
+
+1. Starting with `eta = turns_to_arrive(source → comet_now)`, iterate up to 10 times:
+   - Predict comet position: `(fx, fy) = (tx + vx*eta, ty + vy*eta)`
+   - If predicted position is off-board, **return `None`** (don't fire).
+   - Recompute `eta` to `(fx, fy)`; stop if converged.
+2. Compute fleet endpoint including overshoot (`eta * speed` along the direction). If endpoint is off-board, **return `None`**.
+3. Return `(fx, fy, eta)`.
+
+Returning `None` prevents fleets from flying off the board edge, which destroys them.
+
+---
+
+### `intercept(source, target, angular_velocity, ships_to_send, comet_ids, comet_velocities) -> tuple`
 
 ```python
 def intercept(
-    source: Planet, target: Planet, angular_velocity: float, ships_to_send: int
-) -> tuple[float, float, int]:
+    source: Planet, target: Planet, angular_velocity: float, ships_to_send: int,
+    comet_ids: frozenset = frozenset(), comet_velocities: dict | None = None,
+) -> tuple[float, float, int] | tuple[None, None, None]:
 ```
 
-One correction pass for orbiting targets:
+**For comet targets** (`target.id in comet_ids`):
 
-1. Compute `eta` to the **current** target position (straight-line estimate).
-2. Predict where target will be at `eta` turns → `(future_x, future_y)`.
-3. Recompute `eta` to `(future_x, future_y)`.
-4. Re-predict target position at the updated `eta`.
-5. Return `(future_x, future_y, eta)`.
+- If no velocity data (first sighting), returns sentinel `(None, None, None)`.
+- Otherwise calls `_intercept_comet_linear`; returns `(None, None, None)` if that returns `None`.
 
-The single correction pass accounts for orbital movement during transit. No convergence loop — just two calls to `turns_to_arrive` and two to `predict_planet_position`.
+**For regular orbiting targets**: convergence loop (up to 8 iterations) of `predict_planet_position` + `turns_to_arrive`. Stops when `eta` stabilises. Returns `(future_x, future_y, eta)`.
+
+`plan_expansion` checks `if intercept_result[0] is None: continue` at every call site before unpacking.
 
 ---
 
@@ -231,19 +247,42 @@ def plan_expansion(
 ) -> list[list]:
 ```
 
-Greedy expansion with optional lookahead blending. One move per owned planet.
+Greedy expansion with optional lookahead blending. Each owned planet may send **multiple fleets per turn** (multi-targeting), draining excess ships to lower-scored candidates until `ships_remaining` drops to `min_garrison`.
 
-**Greedy score formula:**
+Also accepts `comet_velocities: dict | None` — per-comet velocity estimates passed through to `intercept()`.
 
-```
+#### Enemy classification probe
+
+Classification uses `probe_ships = source.ships` (the full fleet), not half the fleet. This ensures that a large planet correctly classifies an adjacent enemy as `SOFT_ENEMY` (high ratio) rather than `CONTESTED_ENEMY` (low ratio). The old half-fleet probe caused FACTORY planets to see adjacent enemies as CONTESTED, triggering a SKIP_COMBOS block even when the actual send fraction would overwhelm the defenders.
+
+#### Greedy score formula
+
+```text
 eff_prod = effective_production(target, comet_ids, comet_value_multiplier)
 bonus    = stationary_value_bonus  if target is stationary  else 0
-greedy_score = (eff_prod + bonus) / (eta + 1) ** 2
+dist_power = _effective_distance_power(turn, params)   # ramps from early to late
+greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
 ```
 
-Lower ETA and higher effective production → higher score. The `(eta+1)^2` denominator strongly favors nearby targets.
+Lower ETA and higher effective production → higher score. `dist_power` ramps from `distance_power_early` (turn 0) to `distance_power_late` (turn `distance_ramp_turns`), making the bot slightly less range-averse as the game progresses.
 
-**Lookahead blend:**
+#### Multi-target dispatch
+
+After the primary fleet is sent (selected by greedy/lookahead score), remaining ships are dispatched to the next-best candidates in greedy-score order:
+
+```text
+ships_remaining = source.ships - first_fleet_size
+for target in candidates sorted by greedy_score desc:
+    if ships_remaining <= min_garrison: break
+    extra_send = ships_remaining * fraction * agg
+    extra_send = min(extra_send, ships_remaining - min_garrison)
+    if can_capture(extra_send, target, eta) and not path_crosses_sun(...):
+        send fleet; ships_remaining -= extra_send
+```
+
+Secondary fleets use greedy scores only (no lookahead) since computing lookahead for the N-th fleet would require re-simulating all prior fleets.
+
+#### Lookahead blend (primary target only)
 
 When `lookahead_blend > 0` and `initial_planets` / `fleets` are provided:
 
@@ -251,24 +290,26 @@ When `lookahead_blend > 0` and `initial_planets` / `fleets` are provided:
 2. The opponent function forces `lookahead_blend=0.0` (`greedy_params_opp`) to prevent infinite recursion.
 3. For each candidate move, `step_state` is called once (T+1). For `lookahead_turns > 1`, additional steps simulate both players greedily, with fresh opponent responses computed from the **evolved** state at each step.
 4. After all candidates are scored, greedy scores and lookahead scores are **min-max normalized independently** across the candidate set for this source planet:
-   ```
+
+   ```text
    ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
    nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
    final = (1 - blend) * ng + blend * nl
    ```
+
 5. The candidate with the highest `final` score is selected.
 
 Gotcha: if only one candidate exists, or `blend == 0.0`, selection falls back to raw greedy score (no normalization needed).
 
-**Additional filters applied per candidate:**
+**Filters applied per candidate:**
 
 - Skip `THREATENED` source planets
 - Skip if `source.ships < min_garrison` (adjusted by aggression)
 - Skip `(src_class, tgt_class)` in `SKIP_COMBOS`
 - Skip if `fraction` param is missing for the class combo (e.g., undefined combinations)
+- Skip if `intercept()` returns `(None, None, None)` sentinel (comet with no velocity or off-board)
 - Skip if `not can_capture(ships_to_send, target, eta)`
 - Skip if `path_crosses_sun(...)`
-- OUTPOST sources skip non-`"LOW"` value-tier neutral targets
 
 ---
 

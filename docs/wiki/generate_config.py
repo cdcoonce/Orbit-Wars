@@ -41,6 +41,7 @@ IMPACT: dict[str, str] = {
     "frac_fortress_contested_enemy": "Raise → send more ships from FORTRESS to CONTESTED_ENEMY",
     "frac_factory_easy_neutral": "Raise → send more ships from FACTORY to EASY_NEUTRAL",
     "frac_factory_soft_enemy": "Raise → send more ships from FACTORY to SOFT_ENEMY",
+    "frac_fortress_hardened_enemy": "Raise → send more ships from FORTRESS to HARDENED_ENEMY",
     "frac_outpost_easy_neutral": "Raise → send more ships from OUTPOST to EASY_NEUTRAL",
     "frac_outpost_soft_enemy": "Raise → send more ships from OUTPOST to SOFT_ENEMY",
     "threat_radius": "Raise → detect threats from farther away",
@@ -53,6 +54,9 @@ IMPACT: dict[str, str] = {
     "game_length": "Fixed: 500 — reflects Kaggle competition rule, not tunable",
     "min_garrison_early": "Raise → more conservative in early game",
     "garrison_ramp_turns": "Raise → take longer to reach full garrison threshold",
+    "distance_power_early": "Raise → penalise distant targets more in early game",
+    "distance_power_late": "Raise → penalise distant targets more in late game",
+    "distance_ramp_turns": "Raise → take longer to ramp from early to late distance exponent",
     "comet_value_multiplier": "Raise → treat comets as more attractive targets",
     "endgame_threshold_turn": "Raise → switch to defensive mode later",
     "endgame_lead_margin": "Raise → require larger lead before going defensive",
@@ -84,6 +88,7 @@ GROUPS: list[tuple[str, list[str]]] = [
             "frac_fortress_hard_neutral",
             "frac_fortress_soft_enemy",
             "frac_fortress_contested_enemy",
+            "frac_fortress_hardened_enemy",
             "frac_factory_easy_neutral",
             "frac_factory_soft_enemy",
             "frac_outpost_easy_neutral",
@@ -107,6 +112,10 @@ GROUPS: list[tuple[str, list[str]]] = [
     (
         "Garrison Ramp",
         ["min_garrison_early", "garrison_ramp_turns"],
+    ),
+    (
+        "Distance Power",
+        ["distance_power_early", "distance_power_late", "distance_ramp_turns"],
     ),
     (
         "Comets",
