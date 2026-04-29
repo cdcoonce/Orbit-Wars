@@ -169,6 +169,7 @@ def plan_expansion(
     fleets=None,
     player: int = 0,
     turn: int = 0,
+    comet_velocities: dict | None = None,
 ) -> list[list]:
     moves = []
     targets = neutrals + enemies
@@ -207,7 +208,7 @@ def plan_expansion(
                     continue
                 tgt_class = classify_neutral(target, probe_ships, params)
             else:
-                _, _, probe_eta = intercept(source, target, angular_velocity, probe_ships)
+                _, _, probe_eta = intercept(source, target, angular_velocity, probe_ships, comet_ids, comet_velocities)
                 tgt_class = classify_enemy(target, probe_ships, probe_eta, params)
 
             if (src_class, tgt_class) in SKIP_COMBOS:
@@ -217,7 +218,7 @@ def plan_expansion(
                 continue
 
             ships_to_send = max(1, int(source.ships * fraction * agg))
-            future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
+            future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
             if not can_capture(ships_to_send, target, eta):
                 continue
             if path_crosses_sun(source.x, source.y, future_x, future_y):
@@ -293,7 +294,7 @@ def plan_expansion(
         _, _, best_target, best_fraction = best
 
         ships_to_send = max(1, int(source.ships * best_fraction * agg))
-        future_x, future_y, _ = intercept(source, best_target, angular_velocity, ships_to_send)
+        future_x, future_y, _ = intercept(source, best_target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
         angle = angle_to_target(source.x, source.y, future_x, future_y)
         moves.append([source.id, angle, ships_to_send])
 
@@ -309,6 +310,7 @@ def plan_moves(
     params: dict = PARAMS,
     comet_ids: set = frozenset(),
     initial_planets=None,
+    comet_velocities: dict | None = None,
 ) -> list[list]:
     owned = my_planets(planets, player)
     neutrals = neutral_planets(planets)
@@ -341,6 +343,7 @@ def plan_moves(
         fleets=fleets,
         player=player,
         turn=turn,
+        comet_velocities=comet_velocities,
     )
 
     return defense_moves + expansion_moves
@@ -358,15 +361,58 @@ def enemy_planets(planets: list[Planet], player: int) -> list[Planet]:
     return [p for p in planets if p.owner not in (-1, player)]
 
 
-def intercept(
-    source: Planet, target: Planet, angular_velocity: float, ships_to_send: int
+def _intercept_comet_linear(
+    sx: float, sy: float, tx: float, ty: float,
+    vx: float, vy: float, ships: int,
 ) -> tuple[float, float, int]:
-    """Return (future_x, future_y, eta) using one iteration to correct for
-    the distance mismatch between current and predicted target position."""
+    """Intercept a linearly-moving comet via iterative fixed-point."""
+    eta = turns_to_arrive(sx, sy, tx, ty, ships)
+    for _ in range(10):
+        fx = tx + vx * eta
+        fy = ty + vy * eta
+        if not (0.0 <= fx <= 100.0 and 0.0 <= fy <= 100.0):
+            # Comet will be off-board at that time — aim at current position
+            return tx, ty, turns_to_arrive(sx, sy, tx, ty, ships)
+        new_eta = turns_to_arrive(sx, sy, fx, fy, ships)
+        if new_eta == eta:
+            break
+        eta = new_eta
+    return fx, fy, eta
+
+
+def intercept(
+    source: Planet,
+    target: Planet,
+    angular_velocity: float,
+    ships_to_send: int,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
+) -> tuple[float, float, int]:
+    """Return (future_x, future_y, eta) predicting the target's future position.
+
+    For comets (which follow elliptical paths at constant linear speed) uses
+    linear velocity extrapolation when velocity data is available.  For regular
+    orbiting planets iterates until the ETA estimate converges.
+    """
+    if target.id in comet_ids:
+        vel = (comet_velocities or {}).get(target.id)
+        if vel:
+            return _intercept_comet_linear(
+                source.x, source.y, target.x, target.y, vel[0], vel[1], ships_to_send
+            )
+        # First sighting — no velocity data yet; aim at current position
+        eta = turns_to_arrive(source.x, source.y, target.x, target.y, ships_to_send)
+        return target.x, target.y, eta
+
+    # Regular orbiting planet: iterate until ETA converges
     eta = turns_to_arrive(source.x, source.y, target.x, target.y, ships_to_send)
-    future_x, future_y = predict_planet_position(target, angular_velocity, eta)
-    eta = turns_to_arrive(source.x, source.y, future_x, future_y, ships_to_send)
-    future_x, future_y = predict_planet_position(target, angular_velocity, eta)
+    future_x, future_y = target.x, target.y
+    for _ in range(8):
+        future_x, future_y = predict_planet_position(target, angular_velocity, eta)
+        new_eta = turns_to_arrive(source.x, source.y, future_x, future_y, ships_to_send)
+        if new_eta == eta:
+            break
+        eta = new_eta
     return future_x, future_y, eta
 
 
