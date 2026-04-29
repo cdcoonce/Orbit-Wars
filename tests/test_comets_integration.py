@@ -20,7 +20,7 @@ class TestValueTierWithCometIds:
         assert value_tier(comet, comet_ids={5}, params=params) == "LOW"
 
     def test_non_comet_unaffected_by_comet_ids(self):
-        params = {**PARAMS, "comet_value_multiplier": 0.0}
+        params = {**PARAMS, "comet_value_multiplier": 0.0, "high_value_production": 4}
         regular = make_planet(id=1, production=4)
         assert value_tier(regular, comet_ids={5}, params=params) == "HIGH"
 
@@ -32,7 +32,7 @@ class TestValueTierWithCometIds:
 
     def test_value_tier_accepts_empty_comet_ids(self):
         # Backward-compatible: no comet_ids arg works with frozenset default
-        planet = make_planet(id=1, production=4)
+        planet = make_planet(id=1, production=5)
         assert value_tier(planet) == "HIGH"
 
     def test_comet_with_low_prod_and_zero_multiplier_stays_low(self):

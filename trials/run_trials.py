@@ -21,10 +21,10 @@ from src.config import PARAM_SPACE, PARAMS
 from trials.champion import CHAMPION_PARAMS
 from trials.game_runner import run_games
 
-N_GAMES = 20
+N_GAMES = 40
 N_WORKERS = 4
 N_TRIALS = 200
-PROMOTION_THRESHOLD = 0.55
+PROMOTION_THRESHOLD = 0.65
 
 STUDY_DB = Path(__file__).parent / "study.db"
 CHAMPION_FILE = Path(__file__).parent / "champion.py"
