@@ -3,14 +3,9 @@
 
 # The verification gate the EXECUTOR uses: a slice only reaches a draft PR if this passes.
 # NOTE: the suite currently has 1 pre-existing failure (test_champion_params_has_all_keys);
-# the executor cannot run here until that is green. Read-only producers (--scout/--expand/
-# --decompose) do not run this command, so they work today.
+# the executor cannot run here until that is green. Read-only producers do not run this.
 test_command = "uv run pytest -q"
-
-# Auto-approve file edits inside the isolated worktree (the gate runs tests separately).
 permission_mode = "acceptEdits"
-
-# Prompt handed to the implementation agent (headless `claude -p`).
 agent_prompt = """Implement the linked GitHub issue using test-driven development \
 (red-green-refactor): write the failing test first, watch it fail, then write the \
 minimal code to pass. Keep changes minimal and scoped to the issue's acceptance \
