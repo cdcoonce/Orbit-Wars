@@ -94,7 +94,13 @@ def objective(trial: optuna.Trial) -> float:
     with _lock:
         current_champ = dict(_current_champion)
 
-    win_rate, _ = run_games(challenger_params, current_champ, n_games=N_GAMES)
+    # Derive a per-trial base seed from trial.number so every trial is
+    # reproducible and its paired games share generated maps. Scale by N_GAMES
+    # so distinct trials never reuse another trial's map seeds.
+    win_rate, _ = run_games(
+        challenger_params, current_champ, n_games=N_GAMES,
+        seed=trial.number * N_GAMES,
+    )
 
     if win_rate >= PROMOTION_THRESHOLD:
         with _lock:
