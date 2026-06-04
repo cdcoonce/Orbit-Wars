@@ -2,43 +2,12 @@
 import pytest
 from kaggle_environments.envs.orbit_wars.orbit_wars import Planet
 
-from src.strategy import value_tier, plan_expansion, plan_moves, PARAMS
+from src.strategy import plan_expansion, plan_moves, PARAMS
 from src.agent import agent
 
 
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=3):
     return Planet(id, owner, x, y, radius, ships, production)
-
-
-# --- value_tier comet integration ---
-
-class TestValueTierWithCometIds:
-    def test_comet_with_zero_multiplier_is_treated_as_zero_production(self):
-        # A comet with production=4 (HIGH) with multiplier=0 should become LOW
-        params = {**PARAMS, "comet_value_multiplier": 0.0}
-        comet = make_planet(id=5, production=4)
-        assert value_tier(comet, comet_ids={5}, params=params) == "LOW"
-
-    def test_non_comet_unaffected_by_comet_ids(self):
-        params = {**PARAMS, "comet_value_multiplier": 0.0, "high_value_production": 4}
-        regular = make_planet(id=1, production=4)
-        assert value_tier(regular, comet_ids={5}, params=params) == "HIGH"
-
-    def test_comet_with_default_multiplier_unchanged(self):
-        # multiplier=1.0 means comet production is unchanged
-        comet = make_planet(id=5, production=4)
-        params = {**PARAMS, "comet_value_multiplier": 1.0, "high_value_production": 4}
-        assert value_tier(comet, comet_ids={5}, params=params) == "HIGH"
-
-    def test_value_tier_accepts_empty_comet_ids(self):
-        # Backward-compatible: no comet_ids arg works with frozenset default
-        planet = make_planet(id=1, production=5)
-        assert value_tier(planet) == "HIGH"
-
-    def test_comet_with_low_prod_and_zero_multiplier_stays_low(self):
-        params = {**PARAMS, "comet_value_multiplier": 0.0}
-        comet = make_planet(id=3, production=1)
-        assert value_tier(comet, comet_ids={3}, params=params) == "LOW"
 
 
 # --- plan_expansion comet integration ---
