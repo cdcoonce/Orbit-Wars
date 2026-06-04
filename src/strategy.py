@@ -17,7 +17,7 @@ from .math_utils import (
 from .config import PARAMS, SKIP_COMBOS
 from .comets import effective_production
 from .endgame import should_play_defensive
-from .lookahead import build_state, score_state, step_state
+from .lookahead import build_state, score_candidate_lookahead
 
 Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
@@ -214,44 +214,18 @@ def plan_expansion(
             eff_prod = effective_production(target, comet_ids, params["comet_value_multiplier"])
             greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
 
-            # Lookahead score
+            # Lookahead score — simulate the candidate forward and score it.
+            # opponent_fn is constructed once per source planet (above) and reused.
             if blend > 0 and initial_planets is not None and fleets is not None:
-                # opponent_fn is constructed once per source planet (outside candidate
-                # loop). Here we reuse `opponent_fn` that was precomputed above.
-                state = build_state(initial_planets, fleets, turn)
                 candidate_move = [
                     source.id,
                     angle_to_target(source.x, source.y, future_x, future_y),
                     ships_to_send,
                 ]
-                # T+1: apply our candidate move + opponent response
-                state = step_state(
-                    state, candidate_move, player, angular_velocity,
-                    initial_planets, opponent_fn
-                )
-                # T+2..N: both players play greedily
-                n_extra = params.get("lookahead_turns", 1) - 1
-                for _ in range(n_extra):
-                    greedy_params = {**params, "lookahead_blend": 0.0}
-                    our_greedy = plan_moves(
-                        state.planets, state.fleets, player, angular_velocity,
-                        turn=state.turn, params=greedy_params,
-                        initial_planets=initial_planets,
-                    )
-                    our_move_t2 = our_greedy[0] if our_greedy else None  # one move per sim step (approximation)
-                    # Fresh opponent response from evolved state (not frozen initial state)
-                    opp_greedy = plan_moves(
-                        state.planets, state.fleets, 1 - player, angular_velocity,
-                        turn=state.turn, params=greedy_params,
-                        initial_planets=initial_planets,
-                    )
-                    fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
-                    state = step_state(
-                        state, our_move_t2, player, angular_velocity,
-                        initial_planets, fresh_opp_fn
-                    )
-                lookahead_score = score_state(
-                    state, player, params.get("lookahead_ship_weight", 0.01)
+                # plan_moves injected so lookahead.py stays free of a strategy import.
+                lookahead_score = score_candidate_lookahead(
+                    initial_planets, fleets, turn, candidate_move, player,
+                    angular_velocity, opponent_fn, params, plan_moves,
                 )
             else:
                 lookahead_score = greedy_score  # fallback keeps blend=0 equivalent
