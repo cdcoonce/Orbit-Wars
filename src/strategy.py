@@ -2,9 +2,6 @@ import math
 from collections import namedtuple
 
 from kaggle_environments.envs.orbit_wars.orbit_wars import (
-    CENTER,
-    ROTATION_RADIUS_LIMIT,
-    SUN_RADIUS,
     Fleet,
     Planet,
 )
@@ -12,6 +9,7 @@ from .math_utils import (
     angle_to_target,
     distance,
     fleet_speed,
+    is_stationary,
     path_crosses_sun,
     predict_planet_position,
     turns_to_arrive,
@@ -27,13 +25,6 @@ Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 def aggression(turn: int, params: dict = PARAMS) -> float:
     t = min(turn, params["game_length"]) / params["game_length"]
     return params["aggression_max"] - t * (params["aggression_max"] - params["aggression_min"])
-
-
-def is_stationary(planet: Planet) -> bool:
-    dx = planet.x - CENTER
-    dy = planet.y - CENTER
-    orbital_radius = math.sqrt(dx * dx + dy * dy)
-    return orbital_radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT
 
 
 def value_tier(planet: Planet, comet_ids: set = frozenset(), params: dict = PARAMS) -> str:

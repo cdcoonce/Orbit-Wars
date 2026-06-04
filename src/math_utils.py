@@ -11,6 +11,18 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
 SUN_CENTER = (CENTER, CENTER)  # (50.0, 50.0)
 
 
+def orbital_radius(planet: Planet) -> float:
+    """Distance from the planet to the sun at the center (50, 50)."""
+    dx = planet.x - CENTER
+    dy = planet.y - CENTER
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def is_stationary(planet: Planet) -> bool:
+    """True if the planet sits outside the rotation limit and never moves."""
+    return orbital_radius(planet) + SUN_RADIUS >= ROTATION_RADIUS_LIMIT
+
+
 def predict_planet_position(
     planet: Planet, angular_velocity: float, turns: int
 ) -> tuple[float, float]:
@@ -21,18 +33,16 @@ def predict_planet_position(
     angular_velocity (radians/turn). Static planets (orbital radius >=
     ROTATION_RADIUS_LIMIT) don't move — return current position unchanged.
     """
-    dx = planet.x - CENTER
-    dy = planet.y - CENTER
-    orbital_radius = math.sqrt(dx * dx + dy * dy)
-    if orbital_radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT:
+    if is_stationary(planet):
         return (planet.x, planet.y)
+    radius = orbital_radius(planet)
     period = round(2 * math.pi / angular_velocity)
     normalized_turns = turns % period
-    current_angle = math.atan2(dy, dx)
+    current_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
     future_angle = current_angle + angular_velocity * normalized_turns
     return (
-        CENTER + orbital_radius * math.cos(future_angle),
-        CENTER + orbital_radius * math.sin(future_angle),
+        CENTER + radius * math.cos(future_angle),
+        CENTER + radius * math.sin(future_angle),
     )
 
 
