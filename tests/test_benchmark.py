@@ -1,0 +1,23 @@
+"""Tests for trials/benchmark.py ORIGINAL_DEFAULTS integrity."""
+from src.config import PARAMS
+
+
+class TestOriginalDefaults:
+    def test_contains_every_params_key(self):
+        """ORIGINAL_DEFAULTS must hold every key strategy.py indexes with params[...].
+
+        plan_moves/plan_expansion read params via bracket indexing (not .get),
+        so a missing key (e.g. the ramp params) makes the opponent agent raise
+        KeyError every turn and the benchmark silently reports all-draws.
+        """
+        from trials.benchmark import ORIGINAL_DEFAULTS
+        missing = set(PARAMS) - set(ORIGINAL_DEFAULTS)
+        assert not missing, f"ORIGINAL_DEFAULTS missing keys: {sorted(missing)}"
+
+    def test_preserves_hand_tuned_overrides(self):
+        """The original hand-tuned values must survive the full-defaults merge."""
+        from trials.benchmark import ORIGINAL_DEFAULTS
+        assert ORIGINAL_DEFAULTS["fortress_min_ships"] == 40
+        assert ORIGINAL_DEFAULTS["weak_ratio"] == 1.5
+        assert ORIGINAL_DEFAULTS["stationary_value_bonus"] == 1
+        assert ORIGINAL_DEFAULTS["min_garrison"] == 15
