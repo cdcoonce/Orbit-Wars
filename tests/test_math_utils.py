@@ -6,6 +6,8 @@ from src.math_utils import (
     angle_to_target,
     distance,
     fleet_speed,
+    is_stationary,
+    orbital_radius,
     predict_planet_position,
     turns_to_arrive,
 )
@@ -39,6 +41,25 @@ def test_fleet_speed_increases_with_size():
 
 def test_fleet_speed_max():
     assert fleet_speed(1000) == pytest.approx(6.0)
+
+
+# --- orbital_radius ---
+
+def test_orbital_radius_known():
+    # x=90, y=50 → 40 units from center (50, 50)
+    assert orbital_radius(make_planet(x=90.0, y=50.0)) == pytest.approx(40.0)
+
+
+# --- is_stationary ---
+
+def test_is_stationary_true():
+    # orbital_radius=40, 40 + SUN_RADIUS(10) = 50 >= ROTATION_RADIUS_LIMIT(50) → static
+    assert is_stationary(make_planet(x=90.0, y=50.0)) is True
+
+
+def test_is_stationary_false():
+    # orbital_radius=20, 20 + 10 = 30 < 50 → orbits
+    assert is_stationary(make_planet(x=70.0, y=50.0)) is False
 
 
 # --- predict_planet_position ---
