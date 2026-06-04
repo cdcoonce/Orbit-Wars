@@ -11,6 +11,8 @@ CHAMPION_PARAMS = {
     'frac_fortress_hard_neutral': 0.8926413398205391,
     'frac_fortress_soft_enemy': 0.7072322760247555,
     'frac_fortress_contested_enemy': 0.5688667555914955,
+    'frac_fortress_hardened_enemy': 0.85,  # default (config.py); param postdates last tune — refine via Optuna
+
     'frac_factory_easy_neutral': 0.6347379236097529,
     'frac_factory_soft_enemy': 0.6518208806408229,
     'frac_outpost_easy_neutral': 0.6513537336686497,
