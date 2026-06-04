@@ -3,10 +3,15 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.config import PARAMS
 from trials.game_runner import run_games
 from trials.champion import CHAMPION_PARAMS
 
+# Start from the full current defaults so every key strategy.py indexes with
+# params[...] is present (new ramp params get added here automatically), then
+# override only the hand-tuned originals this benchmark is meant to compare against.
 ORIGINAL_DEFAULTS = {
+    **PARAMS,
     'fortress_min_ships': 40, 'fortress_min_production': 3,
     'factory_min_production': 3,
     'stationary_value_bonus': 1,
@@ -23,8 +28,10 @@ ORIGINAL_DEFAULTS = {
     'lookahead_blend': 0.5, 'lookahead_ship_weight': 0.01,
 }
 
-win_rate, results = run_games(CHAMPION_PARAMS, ORIGINAL_DEFAULTS, n_games=20)
-w = results.count('challenger')
-d = results.count('draw')
-l = results.count('champion')
-print(f"Champion vs original defaults: {win_rate:.0%}  ({w}W / {d}D / {l}L)")
+
+if __name__ == "__main__":
+    win_rate, results = run_games(CHAMPION_PARAMS, ORIGINAL_DEFAULTS, n_games=20)
+    w = results.count('challenger')
+    d = results.count('draw')
+    l = results.count('champion')
+    print(f"Champion vs original defaults: {win_rate:.0%}  ({w}W / {d}D / {l}L)")
