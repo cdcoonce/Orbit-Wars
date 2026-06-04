@@ -450,6 +450,21 @@ class TestInterceptComet:
         assert eta >= 1
         assert 0.0 <= fx <= 100.0
 
+    def test_linear_intercept_aim_point_offboard_returns_none(self):
+        """Helper rejects a comet whose predicted aim point leaves the board."""
+        # Source at (0, 50), slow fleet (ships=1, speed=1) → eta=50 turns. A comet
+        # at (50, 50) racing right at vx=10 is predicted at x=50+10*50=550 → off-board.
+        result = _intercept_comet_linear(0.0, 50.0, 50.0, 50.0, 10.0, 0.0, 1)
+        assert result is None
+
+    def test_linear_intercept_overshoot_endpoint_returns_none(self):
+        """Helper rejects when the aim point is in-bounds but the fleet overshoots off-board."""
+        # Comet at (98, 50) drifting down (vy=1); a 1000-ship fleet (speed=6) aims at
+        # the in-bounds point (98, 67), but eta*speed rounds up past the distance so the
+        # straight-line endpoint lands at x≈100.5 — off the board.
+        result = _intercept_comet_linear(0.0, 50.0, 98.0, 50.0, 0.0, 1.0, 1000)
+        assert result is None
+
     def test_regular_planet_intercept_unchanged(self):
         """Passing comet_ids that don't match target still uses orbit prediction."""
         source = make_planet_at(id=0, x=10.0, y=50.0, owner=0, ships=30)
