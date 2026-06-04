@@ -114,18 +114,21 @@ class TestRunGames:
 
 class TestRunGameTimeout:
     def test_timeout_returns_draw(self):
-        """A game exceeding the timeout must return 'draw' without raising."""
+        """A game exceeding the timeout must return 'draw' without raising.
+
+        The game runs in a shared worker pool (see game_runner._get_pool); a
+        slow game surfaces as a TimeoutError from ``future.result(timeout=...)``.
+        We mock that boundary so no real game is played.
+        """
         from trials.game_runner import run_game
 
         mock_future = MagicMock()
         mock_future.result.side_effect = concurrent.futures.TimeoutError()
 
-        mock_executor = MagicMock()
-        mock_executor.__enter__ = MagicMock(return_value=mock_executor)
-        mock_executor.__exit__ = MagicMock(return_value=False)
-        mock_executor.submit.return_value = mock_future
+        mock_pool = MagicMock()
+        mock_pool.submit.return_value = mock_future
 
-        with patch("concurrent.futures.ThreadPoolExecutor", return_value=mock_executor):
+        with patch("trials.game_runner._get_pool", return_value=mock_pool):
             result = run_game(PARAMS, PARAMS)
 
         assert result == "draw"
