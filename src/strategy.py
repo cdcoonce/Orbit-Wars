@@ -27,17 +27,6 @@ def aggression(turn: int, params: dict = PARAMS) -> float:
     return params["aggression_max"] - t * (params["aggression_max"] - params["aggression_min"])
 
 
-def value_tier(planet: Planet, comet_ids: set = frozenset(), params: dict = PARAMS) -> str:
-    prod = effective_production(planet, comet_ids, params["comet_value_multiplier"])
-    if is_stationary(planet):
-        prod += params["stationary_value_bonus"]
-    if prod >= params["high_value_production"]:
-        return "HIGH"
-    if prod >= params["medium_value_production"]:
-        return "MEDIUM"
-    return "LOW"
-
-
 def classify_own(planet: Planet, threats: list, params: dict = PARAMS) -> str:
     if any(t.planet_id == planet.id for t in threats):
         return "THREATENED"

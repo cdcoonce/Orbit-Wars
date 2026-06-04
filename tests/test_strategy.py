@@ -2,7 +2,7 @@ import math  # noqa: F401
 import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
-from src.strategy import PARAMS, Threat, is_stationary, value_tier  # noqa: F401
+from src.strategy import PARAMS, Threat, is_stationary  # noqa: F401
 from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
@@ -29,26 +29,6 @@ def test_is_stationary_true():
 def test_is_stationary_false():
     # x=70: orbital_radius=20, 20+10=30 < 50 → orbits
     assert is_stationary(make_planet(x=70.0, y=50.0)) is False
-
-
-# --- value_tier ---
-
-def test_value_tier_high():
-    assert value_tier(make_planet(x=70.0, production=PARAMS["high_value_production"])) == "HIGH"
-
-
-def test_value_tier_medium():
-    params = {**PARAMS, "medium_value_production": 2, "high_value_production": 4}
-    assert value_tier(make_planet(x=70.0, production=2), params=params) == "MEDIUM"
-
-
-def test_value_tier_low():
-    assert value_tier(make_planet(x=70.0, production=1)) == "LOW"
-
-
-def test_value_tier_stationary_bonus():
-    # stationary + production=high_value_production-1 → bumped to HIGH
-    assert value_tier(make_planet(x=90.0, production=PARAMS["high_value_production"] - 1)) == "HIGH"
 
 
 # --- can_capture ---
