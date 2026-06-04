@@ -3,9 +3,6 @@ PARAMS = {
     "fortress_min_ships": 23,
     "fortress_min_production": 2,
     "factory_min_production": 4,
-    # Target value classification
-    "high_value_production": 5,
-    "medium_value_production": 4,
     "stationary_value_bonus": 4,
     # Threat level ratios
     "weak_ratio": 2.4300327426666266,
@@ -61,8 +58,6 @@ PARAM_SPACE = {
     "fortress_min_ships":            (20,   60,    int),
     "fortress_min_production":       (2,    5,     int),
     "factory_min_production":        (2,    5,     int),
-    "high_value_production":         (3,    6,     int),
-    "medium_value_production":       (1,    4,     int),
     "stationary_value_bonus":        (0,    8,     int),
     "weak_ratio":                    (1.1,  2.5,   float),
     "contested_ratio":               (0.8,  1.5,   float),

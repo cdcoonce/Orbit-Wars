@@ -540,8 +540,8 @@ class TestPlanExpansionBlend:
         # our_planet: FORTRESS (ships=120 >= 21, production=4 >= 2)
         # enemy_planet: FORTRESS (ships=30 >= 21, production=4 >= 4); with probe=60,
         #   expected_defenders=30+4=34, ratio=60/34≈1.76 > weak_ratio → SOFT_ENEMY, not skipped.
-        # neutral_for_opp: LOW-value (production=1 < medium_value_production=2) so the
-        #   opponent (FORTRESS) can expand there; ensures opponent_fn is non-empty.
+        # neutral_for_opp: low production=1 so the opponent (FORTRESS) can expand
+        #   there; ensures opponent_fn is non-empty.
         our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=120, production=4)
         enemy_planet = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=30, production=4)
         neutral_for_opp = make_planet(id=2, owner=-1, x=74.0, y=50.0, ships=1, production=1)

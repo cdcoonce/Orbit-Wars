@@ -8,8 +8,8 @@ from trials.champion import CHAMPION_PARAMS
 
 ORIGINAL_DEFAULTS = {
     'fortress_min_ships': 40, 'fortress_min_production': 3,
-    'factory_min_production': 3, 'high_value_production': 4,
-    'medium_value_production': 2, 'stationary_value_bonus': 1,
+    'factory_min_production': 3,
+    'stationary_value_bonus': 1,
     'weak_ratio': 1.5, 'contested_ratio': 1.1,
     'frac_fortress_easy_neutral': 0.60, 'frac_fortress_hard_neutral': 0.75,
     'frac_fortress_soft_enemy': 0.65, 'frac_fortress_contested_enemy': 0.75,

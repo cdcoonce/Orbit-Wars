@@ -2,8 +2,6 @@ CHAMPION_PARAMS = {
     'fortress_min_ships': 25,
     'fortress_min_production': 3,
     'factory_min_production': 2,
-    'high_value_production': 5,
-    'medium_value_production': 4,
     'stationary_value_bonus': 0,
     'weak_ratio': 1.393575380667546,
     'contested_ratio': 1.1067591657227154,
