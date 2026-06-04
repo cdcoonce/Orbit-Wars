@@ -469,13 +469,15 @@ class TestPlanExpansionBlend:
         )
         assert isinstance(moves, list)
 
-    def test_opponent_fn_precomputed_once_per_source(self):
-        """Criterion 6: opponent plan_moves is called once per source planet, not once per (source, target) pair.
+    def test_opponent_fn_precomputed_once_per_call(self):
+        """opponent plan_moves is computed once per plan_expansion CALL, not per source.
 
-        Setup: 2 source planets, 2 candidate targets => 4 (source, target) combinations.
-        The opponent precomputation block is outside the target loop (per source),
-        so plan_moves for the opponent should fire exactly 2 times (once per source),
-        not 4 times (once per combination).
+        The opponent's frozen response is loop-invariant (it depends only on
+        initial_planets/fleets/turn/player, never on `source`), so it is hoisted
+        above the `for source in owned:` loop. Setup: 2 source planets, 2 candidate
+        targets => 4 (source, target) combinations; the opponent plan_moves must
+        fire exactly ONCE total — not once per source (2) and not once per
+        combination (4). This is the redundant-recompute fix from issue #49.
         """
         import src.strategy as strategy_module
         from src.strategy import plan_expansion
@@ -514,10 +516,10 @@ class TestPlanExpansionBlend:
             strategy_module.plan_moves = original_plan_moves
 
         # With lookahead_turns=1, n_extra=0 so no extra plan_moves calls happen.
-        # The opponent precomputation fires once per source planet = 2 calls.
-        # It must NOT fire once per (source, target) pair = 4 calls.
-        assert opponent_call_count[0] == 2, (
-            f"Expected opponent plan_moves to be called once per source planet (2), "
+        # The opponent precomputation is hoisted above the source loop, so it fires
+        # exactly ONCE per plan_expansion call — not 2 (per source) and not 4 (per pair).
+        assert opponent_call_count[0] == 1, (
+            f"Expected opponent plan_moves to be called once per plan_expansion call (1), "
             f"got {opponent_call_count[0]}"
         )
 

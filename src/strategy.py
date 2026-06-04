@@ -157,6 +157,25 @@ def plan_expansion(
     dist_power = _effective_distance_power(turn, params)
     blend = params.get("lookahead_blend", 0.0)
 
+    # Precompute the opponent's frozen response ONCE per plan_expansion call. Every
+    # input (initial_planets, fleets, turn, player, angular_velocity, params) is
+    # loop-invariant, so the result is identical for every source planet — hoisted
+    # out of the `for source in owned:` loop below to avoid recomputing a full
+    # opponent plan_moves per owned planet every turn (the lookahead path runs with
+    # lookahead_blend≈0.97 in real games and across self-play). Forces blend=0 to
+    # prevent recursive lookahead (recursion termination).
+    if blend > 0 and initial_planets is not None and fleets is not None:
+        opp_player = 1 - player
+        greedy_params_opp = {**params, "lookahead_blend": 0.0}
+        _opp_base = build_state(initial_planets, fleets, turn)
+        _opp_moves = plan_moves(
+            _opp_base.planets, _opp_base.fleets, opp_player, angular_velocity,
+            turn=turn, params=greedy_params_opp, initial_planets=initial_planets,
+        )
+        opponent_fn = lambda state, m=_opp_moves: m  # noqa: E731
+    else:
+        opponent_fn = None
+
     for source in owned:
         src_class = own_classes.get(source.id, "OUTPOST")
         if src_class == "THREATENED":
@@ -167,20 +186,6 @@ def plan_expansion(
         # Use full fleet for classification so FACTORY correctly sees adjacent
         # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
         probe_ships = source.ships
-
-        # Precompute opponent response once per source planet (not per candidate).
-        # Forces blend=0 to prevent recursive lookahead (recursion termination).
-        if blend > 0 and initial_planets is not None and fleets is not None:
-            opp_player = 1 - player
-            greedy_params_opp = {**params, "lookahead_blend": 0.0}
-            _opp_base = build_state(initial_planets, fleets, turn)
-            _opp_moves = plan_moves(
-                _opp_base.planets, _opp_base.fleets, opp_player, angular_velocity,
-                turn=turn, params=greedy_params_opp, initial_planets=initial_planets,
-            )
-            opponent_fn = lambda state, m=_opp_moves: m  # noqa: E731
-        else:
-            opponent_fn = None
 
         candidates = []  # list of (greedy_score, lookahead_score, target, fraction)
 
@@ -215,7 +220,7 @@ def plan_expansion(
             greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
 
             # Lookahead score — simulate the candidate forward and score it.
-            # opponent_fn is constructed once per source planet (above) and reused.
+            # opponent_fn is constructed once per plan_expansion call (above) and reused.
             if blend > 0 and initial_planets is not None and fleets is not None:
                 candidate_move = [
                     source.id,
