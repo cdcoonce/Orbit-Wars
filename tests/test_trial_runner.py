@@ -4,6 +4,7 @@ import math
 import os
 from unittest.mock import MagicMock, patch
 
+import optuna
 import pytest
 
 from src.config import PARAMS
@@ -207,3 +208,81 @@ class TestChampionModule:
     def test_champion_params_has_game_length(self):
         from trials.champion import CHAMPION_PARAMS
         assert "game_length" in CHAMPION_PARAMS
+
+
+# ---------------------------------------------------------------------------
+# Stale-study.db guard — PARAM_SPACE fingerprint
+# ---------------------------------------------------------------------------
+
+class TestParamSpaceFingerprint:
+    def test_fingerprint_is_stable_across_calls(self):
+        """A process-stable digest (hashlib, not builtin hash()) must not vary."""
+        from trials.run_trials import param_space_fingerprint
+        assert param_space_fingerprint() == param_space_fingerprint()
+
+    def test_fingerprint_changes_when_param_space_changes(self):
+        """Altering any bound must change the fingerprint."""
+        from trials import run_trials
+        before = run_trials.param_space_fingerprint()
+        mutated = {**run_trials.PARAM_SPACE, "fortress_min_ships": (1, 999, int)}
+        with patch.object(run_trials, "PARAM_SPACE", mutated):
+            after = run_trials.param_space_fingerprint()
+        assert before != after
+
+
+class TestLoadGuardedStudy:
+    def test_fresh_run_records_current_fingerprint(self, tmp_path):
+        """A brand-new study must record the current PARAM_SPACE fingerprint."""
+        from trials.run_trials import (
+            FINGERPRINT_ATTR,
+            load_guarded_study,
+            param_space_fingerprint,
+        )
+        db = tmp_path / "study.db"
+        study = load_guarded_study(db)
+        assert study.user_attrs[FINGERPRINT_ATTR] == param_space_fingerprint()
+
+    def test_matching_fingerprint_resumes(self, tmp_path):
+        """A study with a matching fingerprint resumes — trials preserved, nothing archived."""
+        from trials.run_trials import load_guarded_study
+        db = tmp_path / "study.db"
+        first = load_guarded_study(db)
+        first.add_trial(optuna.trial.create_trial(value=0.5))
+
+        second = load_guarded_study(db)
+
+        assert len(second.trials) == 1          # resumed, not reset
+        assert not list(tmp_path.glob("*.stale*"))  # nothing archived
+
+    def test_mismatch_archives_and_starts_fresh(self, tmp_path):
+        """A study fingerprinted to a different PARAM_SPACE is archived, not resumed."""
+        from trials import run_trials
+        db = tmp_path / "study.db"
+        storage = f"sqlite:///{db}"
+
+        seed = optuna.create_study(
+            study_name=run_trials.STUDY_NAME, storage=storage, direction="maximize",
+        )
+        seed.set_user_attr(run_trials.FINGERPRINT_ATTR, "stale-fingerprint")
+        seed.add_trial(optuna.trial.create_trial(value=0.9))
+        del seed
+
+        study = run_trials.load_guarded_study(db)
+
+        assert list(tmp_path.glob("study.db.stale*"))  # stale db archived aside
+        assert len(study.trials) == 0                  # fresh — old trials not inherited
+        assert study.user_attrs[run_trials.FINGERPRINT_ATTR] == (
+            run_trials.param_space_fingerprint()
+        )
+
+    def test_reset_archives_even_on_match(self, tmp_path):
+        """--reset forces a fresh study even when the fingerprint matches."""
+        from trials.run_trials import load_guarded_study
+        db = tmp_path / "study.db"
+        first = load_guarded_study(db)
+        first.add_trial(optuna.trial.create_trial(value=0.5))
+
+        study = load_guarded_study(db, reset=True)
+
+        assert list(tmp_path.glob("study.db.stale*"))
+        assert len(study.trials) == 0

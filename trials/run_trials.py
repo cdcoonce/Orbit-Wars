@@ -3,9 +3,11 @@
 Run from the project root:
     uv run python trials/run_trials.py
 """
+import hashlib
 import logging
 import math
 import os
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -25,6 +27,11 @@ N_GAMES = 40
 N_WORKERS = 4
 N_TRIALS = 200
 PROMOTION_THRESHOLD = 0.65
+
+STUDY_NAME = "orbit_wars"
+# user_attr key under which each study records the PARAM_SPACE fingerprint it
+# was created against, so a later run can refuse to resume a stale study.
+FINGERPRINT_ATTR = "param_space_fingerprint"
 
 STUDY_DB = Path(__file__).parent / "study.db"
 CHAMPION_FILE = Path(__file__).parent / "champion.py"
@@ -105,15 +112,81 @@ def objective(trial: optuna.Trial) -> float:
     return win_rate
 
 
-if __name__ == "__main__":
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
+def param_space_fingerprint() -> str:
+    """Return a stable SHA-256 digest of the current PARAM_SPACE bounds.
+
+    Keyed to the sorted ``(name, (low, high, type))`` items, so any change to a
+    bound, a key, or a parameter type yields a different fingerprint. Uses
+    hashlib rather than the builtin ``hash()`` because ``hash()`` is salted per
+    process (PYTHONHASHSEED) and would not be comparable across runs.
+    """
+    payload = repr(sorted(PARAM_SPACE.items()))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _stored_fingerprint(storage_url: str) -> str | None:
+    """Read the fingerprint recorded on an existing study, or None if absent."""
+    try:
+        study = optuna.load_study(study_name=STUDY_NAME, storage=storage_url)
+    except KeyError:
+        return None  # storage exists but holds no study of this name
+    return study.user_attrs.get(FINGERPRINT_ATTR)
+
+
+def _archive_stale_db(db_path: Path) -> Path:
+    """Move a stale study DB aside (never overwriting) and return the archive path."""
+    archive = db_path.with_name(db_path.name + ".stale")
+    n = 1
+    while archive.exists():
+        archive = db_path.with_name(f"{db_path.name}.stale.{n}")
+        n += 1
+    shutil.move(str(db_path), str(archive))
+    return archive
+
+
+def load_guarded_study(db_path: Path, *, reset: bool = False) -> "optuna.Study":
+    """Create or resume the study, refusing to resume across a PARAM_SPACE change.
+
+    Optuna's sampler builds Bayesian priors keyed to the PARAM_SPACE it sampled.
+    Resuming a study whose priors target a different space silently corrupts the
+    run (the documented "delete study.db first" foot-gun). We fingerprint
+    PARAM_SPACE and, on a mismatch (or when ``reset`` is set), archive the stale
+    DB and start fresh rather than resume. A matching fingerprint resumes exactly
+    as before. A pre-existing study with no recorded fingerprint is backfilled
+    with the current one rather than archived.
+    """
+    storage_url = f"sqlite:///{db_path}"
+    current_fp = param_space_fingerprint()
+
+    if db_path.exists():
+        if reset:
+            archive = _archive_stale_db(db_path)
+            logger.info("Reset requested — archived %s to %s.", db_path.name, archive.name)
+        else:
+            existing_fp = _stored_fingerprint(storage_url)
+            if existing_fp is not None and existing_fp != current_fp:
+                archive = _archive_stale_db(db_path)
+                logger.info(
+                    "PARAM_SPACE fingerprint mismatch (study=%s…, current=%s…) — "
+                    "archived stale %s to %s and starting fresh.",
+                    existing_fp[:12], current_fp[:12], db_path.name, archive.name,
+                )
 
     study = optuna.create_study(
-        study_name="orbit_wars",
-        storage=f"sqlite:///{STUDY_DB}",
+        study_name=STUDY_NAME,
+        storage=storage_url,
         direction="maximize",
         load_if_exists=True,
     )
+    if study.user_attrs.get(FINGERPRINT_ATTR) is None:
+        study.set_user_attr(FINGERPRINT_ATTR, current_fp)
+    return study
+
+
+if __name__ == "__main__":
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    study = load_guarded_study(STUDY_DB, reset="--reset" in sys.argv[1:])
 
     study.optimize(
         objective,
