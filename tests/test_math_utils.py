@@ -11,11 +11,38 @@ from src.math_utils import (
     predict_planet_position,
     turns_to_arrive,
 )
-from kaggle_environments.envs.orbit_wars.orbit_wars import Planet
+from kaggle_environments import make
+from kaggle_environments.envs.orbit_wars.orbit_wars import (
+    CENTER,
+    ROTATION_RADIUS_LIMIT,
+    SUN_RADIUS,
+    Planet,
+)
 
 
 def make_planet(x: float, y: float, production: int = 1, owner: int = -1) -> Planet:
     return Planet(id=0, owner=owner, x=x, y=y, radius=1.0, ships=10, production=production)
+
+
+def engine_max_speed() -> float:
+    """The engine's authoritative max fleet speed (configuration.shipSpeed)."""
+    config = make("orbit_wars").configuration
+    try:
+        return float(config["shipSpeed"])
+    except (KeyError, TypeError):
+        return float(config.shipSpeed)
+
+
+def engine_fleet_speed(num_ships: int, max_speed: float) -> float:
+    """Authoritative engine speed formula, pinned to orbit_wars.py:521-529.
+
+    speed = 1.0 + (shipSpeed - 1.0) * (log(ships) / log(1000)) ** 1.5
+    then clamped with min(speed, max_speed).
+    """
+    if num_ships <= 1:
+        return 1.0
+    speed = 1.0 + (max_speed - 1.0) * (math.log(num_ships) / math.log(1000)) ** 1.5
+    return min(speed, max_speed)
 
 
 # --- distance ---
@@ -41,6 +68,33 @@ def test_fleet_speed_increases_with_size():
 
 def test_fleet_speed_max():
     assert fleet_speed(1000) == pytest.approx(6.0)
+
+
+def test_fleet_speed_never_exceeds_max():
+    # The engine clamps with min(speed, max_speed); large fleets must not drift above it.
+    for n in [1, 2, 1000, 1001, 2000, 10000, 1_000_000]:
+        assert fleet_speed(n) <= 6.0 + 1e-9
+
+
+def test_fleet_speed_matches_engine_formula():
+    # Pin our helper to the engine's authoritative speed formula across a range
+    # that crosses the 1000-ship clamp threshold.
+    max_speed = engine_max_speed()
+    for n in [2, 10, 50, 100, 500, 1000, 1001, 2000, 10000]:
+        assert fleet_speed(n) == pytest.approx(engine_fleet_speed(n, max_speed))
+
+
+def test_engine_max_speed_default_pinned():
+    # Guards the max_speed=6.0 default our helper hardcodes against engine spec drift.
+    assert engine_max_speed() == pytest.approx(6.0)
+
+
+# --- engine constants (pin against spec drift) ---
+
+def test_engine_constants_pinned():
+    assert CENTER == pytest.approx(50.0)
+    assert SUN_RADIUS == pytest.approx(10.0)
+    assert ROTATION_RADIUS_LIMIT == pytest.approx(50.0)
 
 
 # --- orbital_radius ---
