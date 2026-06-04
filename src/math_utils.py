@@ -65,10 +65,15 @@ def distance(x1: float, y1: float, x2: float, y2: float) -> float:
 
 
 def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
-    """Fleet speed on the logarithmic curve from the spec."""
+    """Fleet speed on the logarithmic curve from the spec, clamped to max_speed.
+
+    Mirrors the engine (orbit_wars.py:521-529): the log curve is capped with
+    min(speed, max_speed) so large fleets never drift above the engine's speed.
+    """
     if num_ships <= 1:
         return 1.0
-    return 1.0 + (max_speed - 1.0) * (math.log(num_ships) / math.log(1000)) ** 1.5
+    speed = 1.0 + (max_speed - 1.0) * (math.log(num_ships) / math.log(1000)) ** 1.5
+    return min(speed, max_speed)
 
 
 def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
