@@ -90,6 +90,15 @@ def test_orbiting_planet_full_revolution():
     assert y == pytest.approx(50.0, abs=0.1)
 
 
+def test_orbiting_planet_zero_angular_velocity():
+    # A non-stationary planet with zero angular velocity doesn't move —
+    # return current position instead of dividing by zero.
+    planet = make_planet(x=60.0, y=50.0)  # orbits, so it passes the stationary guard
+    x, y = predict_planet_position(planet, angular_velocity=0.0, turns=5)
+    assert x == pytest.approx(60.0)
+    assert y == pytest.approx(50.0)
+
+
 # --- angle_to_target ---
 
 def test_angle_right():

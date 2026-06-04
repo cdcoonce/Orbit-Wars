@@ -32,8 +32,10 @@ def predict_planet_position(
     Orbiting planets rotate around the sun at (50, 50) with a constant
     angular_velocity (radians/turn). Static planets (orbital radius >=
     ROTATION_RADIUS_LIMIT) don't move — return current position unchanged.
+    A zero angular_velocity likewise means no movement (and avoids a
+    divide-by-zero when computing the orbital period).
     """
-    if is_stationary(planet):
+    if is_stationary(planet) or angular_velocity == 0:
         return (planet.x, planet.y)
     radius = orbital_radius(planet)
     period = round(2 * math.pi / angular_velocity)
