@@ -1,6 +1,3 @@
-from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet
-
-
 def total_ships(planets: list, fleets: list, player: int) -> int:
     """Count combined ships for player across all planets and in-transit fleets."""
     planet_ships = sum(p.ships for p in planets if p.owner == player)

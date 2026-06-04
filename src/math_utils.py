@@ -8,8 +8,6 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
     Planet,
 )
 
-SUN_CENTER = (CENTER, CENTER)  # (50.0, 50.0)
-
 
 def orbital_radius(planet: Planet) -> float:
     """Distance from the planet to the sun at the center (50, 50)."""
