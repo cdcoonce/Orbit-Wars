@@ -17,9 +17,3 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-# The self-play regression benchmark is slow (~30s) and excluded from the default
-# run. Run it with `pytest -m benchmark`; the afk gate runs it via test_command.
-addopts = "-m 'not benchmark'"
-markers = [
-    "benchmark: deterministic self-play regression gate (excluded from default run)",
-]
