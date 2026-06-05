@@ -227,6 +227,58 @@ def test_handle_threats_already_used_not_reused():
     assert moves[0][0] == 2
 
 
+def test_handle_threats_identical_at_zero_multiplier():
+    # At defense_incoming_multiplier == 0.0 the magnitude term is zero, so
+    # reinforcement is exactly the flat fraction of the source's ships — byte-for-byte
+    # identical to the pre-feature behavior no matter how large the incoming attack is.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=200, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5,
+              "eta_buffer": 5, "defense_incoming_multiplier": 0.0}
+    moves = handle_threats(threats, [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
+    assert len(moves) == 1
+    assert moves[0][2] == int(50 * 0.5)  # flat fraction only — incoming_ships ignored
+
+
+def test_handle_threats_scales_reinforcement_with_incoming_when_enabled():
+    # With the knob > 0, a large incoming attack pulls more reinforcement than the
+    # flat fraction alone would send (magnitude = incoming * multiplier wins the max()).
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=100, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.1,
+              "eta_buffer": 5, "defense_incoming_multiplier": 0.5}
+    moves = handle_threats(threats, [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
+    flat = int(100 * 0.1)        # 10
+    magnitude = int(100 * 0.5)   # 50 — the attack-scaled term
+    assert len(moves) == 1
+    assert moves[0][2] == magnitude
+    assert moves[0][2] > flat
+
+
+def test_handle_threats_larger_incoming_reinforces_at_least_as_much():
+    # Holding the source garrison constant and the knob > 0, a bigger attack must
+    # never pull *less* reinforcement than a smaller one (monotonic in incoming_ships).
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.1,
+              "eta_buffer": 5, "defense_incoming_multiplier": 0.5}
+    small = handle_threats([Threat(planet_id=1, incoming_ships=30, eta=20)],
+                           [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
+    large = handle_threats([Threat(planet_id=1, incoming_ships=100, eta=20)],
+                           [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
+    assert small and large
+    assert large[0][2] >= small[0][2]
+
+
 # --- plan_expansion ---
 
 def test_plan_expansion_fortress_attacks_soft_enemy():

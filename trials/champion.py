@@ -18,6 +18,7 @@ CHAMPION_PARAMS = {
     'threat_radius': 6.64374884022761,
     'threat_eta_window': 37,
     'defense_reinforce_fraction': 0.43466858350710313,
+    'defense_incoming_multiplier': 0.0,  # default (config.py); param postdates last tune — refine via Optuna
     'eta_buffer': 9,
     'min_garrison': 25,
     'aggression_max': 0.9868117402032175,

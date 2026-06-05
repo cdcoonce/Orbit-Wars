@@ -21,6 +21,7 @@ PARAMS = {
     "threat_radius": 7.584744184323076,
     "threat_eta_window": 22,
     "defense_reinforce_fraction": 0.30468386610817616,
+    "defense_incoming_multiplier": 0.0,
     "eta_buffer": 9,
     "min_garrison": 24,
     # Aggression scaling
@@ -73,6 +74,7 @@ PARAM_SPACE = {
     "threat_radius":                 (3.0,  8.0,   float),
     "threat_eta_window":             (10,   50,    int),
     "defense_reinforce_fraction":    (0.3,  0.7,   float),
+    "defense_incoming_multiplier":   (0.0,  2.0,   float),
     "eta_buffer":                    (2,    10,    int),
     "min_garrison":                  (5,    30,    int),
     "aggression_max":                (0.7,  1.0,   float),
