@@ -18,6 +18,7 @@ def agent(obs: dict) -> list[list]:
 
     if turn == 0 or _initial_planets is None:
         _initial_planets = planets
+        _prev_comet_positions = {}
 
     # Build comet velocity estimates from position deltas (one turn apart)
     comet_velocities: dict[int, tuple[float, float]] = {}
