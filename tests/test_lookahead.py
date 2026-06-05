@@ -607,3 +607,62 @@ class TestPlanExpansionBlend:
             "Opponent launching ships should reduce their planet's ship count "
             "below production-only growth"
         )
+
+
+# ---------------------------------------------------------------------------
+# Class: TestScoreCandidateLookaheadHoist
+# ---------------------------------------------------------------------------
+
+class TestScoreCandidateLookaheadHoist:
+    """score_candidate_lookahead builds greedy_params once, not per roll-forward turn."""
+
+    def test_greedy_params_built_once_per_call(self):
+        """greedy_params = {**params, "lookahead_blend": 0.0} is loop-invariant and
+        must be constructed ONCE per score_candidate_lookahead call, not once per
+        iteration of the `for _ in range(n_extra)` roll-forward loop (issue #55).
+
+        A `{**params}` spread of a non-dict Mapping calls params.keys() exactly once;
+        params.get()/params[k] do not. With lookahead_turns=3 (n_extra=2) the loop
+        runs twice, so the un-hoisted code spreads params twice. After hoisting it is
+        spread once. We assert keys() fires exactly once.
+        """
+        from collections import abc
+
+        from src.config import PARAMS
+        from src.lookahead import score_candidate_lookahead
+
+        class CountingParams(abc.Mapping):
+            def __init__(self, data):
+                self._data = dict(data)
+                self.spread_count = 0
+
+            def keys(self):
+                self.spread_count += 1
+                return self._data.keys()
+
+            def __getitem__(self, key):
+                return self._data[key]
+
+            def __iter__(self):
+                return iter(self._data)
+
+            def __len__(self):
+                return len(self._data)
+
+        params = CountingParams({**PARAMS, "lookahead_turns": 3})
+
+        def fake_plan_moves(planets, fleets, player, angular_velocity, **kwargs):
+            return []
+
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+        score_candidate_lookahead(
+            [planet], [], 0, None, 0, 0.03,
+            opponent_fn=lambda s: [],
+            params=params,
+            plan_moves_fn=fake_plan_moves,
+        )
+
+        assert params.spread_count == 1, (
+            "greedy_params must be built once per call (hoisted above the "
+            f"roll-forward loop), but params was spread {params.spread_count} times"
+        )

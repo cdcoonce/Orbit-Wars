@@ -228,8 +228,10 @@ def score_candidate_lookahead(
     )
     # T+2..N: both players play greedily (lookahead disabled) from the evolved state.
     n_extra = params.get("lookahead_turns", 1) - 1
+    # Loop-invariant: greedy_params depends only on params, never on the evolving
+    # state — build it once, mirroring the hoist in commit e9750e6 (#49).
+    greedy_params = {**params, "lookahead_blend": 0.0}
     for _ in range(n_extra):
-        greedy_params = {**params, "lookahead_blend": 0.0}
         our_greedy = plan_moves_fn(
             state.planets, state.fleets, player, angular_velocity,
             turn=state.turn, params=greedy_params,
