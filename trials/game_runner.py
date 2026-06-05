@@ -17,10 +17,8 @@ import random
 import threading
 
 from kaggle_environments import make
-from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet
 
-from src.comets import get_comet_ids
-from src.strategy import plan_moves
+from src.agent import plan_turn
 
 TIMEOUT_SECONDS = 60
 
@@ -39,29 +37,23 @@ def _get_pool() -> concurrent.futures.ProcessPoolExecutor:
 
 
 def make_agent(params: dict):
-    """Return a closure that runs plan_moves with the given params.
+    """Return a closure that plans each turn via the shared comet-aware wrapper.
 
-    Each agent closure maintains its own initial_planets cache so parallel
-    games don't share state.
+    Delegates to :func:`src.agent.plan_turn` — the same per-turn wrapper the
+    deployed agent uses — so Optuna tunes against the comet-velocity-aware
+    targeting that actually ships, rather than a comet-blind agent. Each closure
+    keeps its own initial-planet and comet-position state so parallel games
+    don't share it.
     """
     initial_planets = None
+    prev_comet_positions: dict[int, tuple[float, float]] = {}
 
     def agent(obs: dict) -> list:
-        nonlocal initial_planets
-        planets = [Planet(*p) for p in obs.get("planets", [])]
-        fleets = [Fleet(*f) for f in obs.get("fleets", [])]
-        player = obs.get("player", 0)
-        angular_velocity = obs.get("angular_velocity", 0.0)
-        turn = obs.get("step", 0)
-        comet_ids = get_comet_ids(obs)
-
-        if turn == 0 or initial_planets is None:
-            initial_planets = planets
-
-        return plan_moves(
-            planets, fleets, player, angular_velocity, turn,
-            params=params, comet_ids=comet_ids, initial_planets=initial_planets,
+        nonlocal initial_planets, prev_comet_positions
+        moves, initial_planets, prev_comet_positions = plan_turn(
+            obs, initial_planets, prev_comet_positions, params=params,
         )
+        return moves
 
     return agent
 

@@ -33,14 +33,17 @@ class TestMakeAgent:
         captured = []
 
         def mock_plan_moves(planets, fleets, player, angular_velocity, turn,
-                            params=None, comet_ids=None, initial_planets=None):
+                            params=None, comet_ids=None, initial_planets=None,
+                            comet_velocities=None):
             captured.append(initial_planets)
             return []
 
         obs0 = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 0}
         obs1 = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 1}
 
-        with patch("trials.game_runner.plan_moves", mock_plan_moves):
+        # make_agent delegates to src.agent.plan_turn, which calls plan_moves
+        # via the src.agent namespace, so that is the patch target.
+        with patch("src.agent.plan_moves", mock_plan_moves):
             agent = make_agent(PARAMS)
             agent(obs0)  # turn 0 — sets initial_planets
             agent(obs1)  # turn 1 — reuses cached initial_planets
@@ -54,7 +57,8 @@ class TestMakeAgent:
         initial_planets_seen = []
 
         def mock_plan_moves(planets, fleets, player, angular_velocity, turn,
-                            params=None, comet_ids=None, initial_planets=None):
+                            params=None, comet_ids=None, initial_planets=None,
+                            comet_velocities=None):
             initial_planets_seen.append(initial_planets)
             return []
 
@@ -63,7 +67,8 @@ class TestMakeAgent:
         agent_a = make_agent(PARAMS)
         agent_b = make_agent(PARAMS)
 
-        with patch("trials.game_runner.plan_moves", mock_plan_moves):
+        # See note above: the shared wrapper calls plan_moves via src.agent.
+        with patch("src.agent.plan_moves", mock_plan_moves):
             agent_a(obs0)
             agent_b(obs0)
 
