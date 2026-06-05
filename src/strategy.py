@@ -107,7 +107,16 @@ def handle_threats(
                 # classify_own returns "THREATENED" (not "FORTRESS") when a fleet is inbound,
                 # so THREATENED planets are naturally excluded here
                 continue
-            ships_to_send = int(source.ships * params["defense_reinforce_fraction"])
+            # Flat fraction (legacy behavior) vs. magnitude-aware reinforcement that
+            # scales with the size of the incoming attack. The multiplier defaults to
+            # 0.0, so magnitude collapses to 0 and ships_to_send == flat — byte-for-byte
+            # identical to the pre-feature behavior until Optuna raises the knob.
+            flat = int(source.ships * params["defense_reinforce_fraction"])
+            magnitude = int(threat.incoming_ships * params.get("defense_incoming_multiplier", 0.0))
+            ships_to_send = max(flat, magnitude)
+            # Cap magnitude-driven growth so the source keeps min_garrison, but never
+            # below the flat baseline (preserves the legacy floor when the knob is 0).
+            ships_to_send = max(flat, min(ships_to_send, source.ships - params["min_garrison"]))
             if ships_to_send < params["min_garrison"]:
                 continue
             future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
