@@ -33,7 +33,7 @@ kaggle competitions submit -c orbit-wars -f submission.py -m "description"  # su
 
 ## Tuning Workflow
 
-1. Run `uv run python trials/run_trials.py` — promotes challengers to `trials/champion.py` at ≥55% win rate
+1. Run `uv run python trials/run_trials.py` — promotes challengers to `trials/champion.py` when their win rate meets `PROMOTION_THRESHOLD` in `trials/run_trials.py` (currently ≥65%)
 2. Copy winning params into `src/config.py` PARAMS
 3. Run `python build.py` then submit
 

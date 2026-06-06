@@ -24,7 +24,7 @@ Always use `uv run` — the project pins Python 3.11 via `.python-version`.
 | `src/math_utils.py`    | 84    | Orbital mechanics: `predict_planet_position`, `fleet_speed`, `turns_to_arrive`, `path_crosses_sun`, `angle_to_target`, `distance`. |
 | `src/comets.py`        | 32    | Comet value scaling: `get_comet_ids`, `effective_production`.                                                                      |
 | `src/endgame.py`       | 40    | Late-game defense: `should_play_defensive`, `total_ships`.                                                                         |
-| `trials/run_trials.py` | —     | Optuna self-play tuning loop; promotes challengers to `champion.py` at ≥55% win rate.                                              |
+| `trials/run_trials.py` | —     | Optuna self-play tuning loop; promotes challengers to `champion.py` at the `PROMOTION_THRESHOLD` win rate (currently ≥65%).        |
 | `trials/champion.py`   | —     | Best known params — auto-promoted by `run_trials.py`.                                                                              |
 | `trials/benchmark.py`  | —     | Quick sanity check: champion vs original defaults (20 games).                                                                      |
 | `build.py`             | —     | Concatenates `src/` modules into `submission.py` for Kaggle.                                                                       |

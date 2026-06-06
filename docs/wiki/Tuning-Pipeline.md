@@ -11,7 +11,7 @@ All live in `trials/run_trials.py`:
 | `N_GAMES`             | 20    | Games per trial (challenger vs champion) |
 | `N_WORKERS`           | 4     | Parallel Optuna jobs (`n_jobs`)          |
 | `N_TRIALS`            | 200   | Total trials per `study.optimize()` call |
-| `PROMOTION_THRESHOLD` | 0.55  | Minimum win rate to promote challenger   |
+| `PROMOTION_THRESHOLD` | 0.65  | Minimum win rate to promote challenger   |
 
 ## `objective(trial)`
 

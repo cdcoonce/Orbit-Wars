@@ -38,7 +38,7 @@ Add `_effective_distance_power(turn, params)` to `src/strategy.py`, mirroring `_
 
 ### What to build
 
-Delete `trials/study.db` to clear stale Bayesian priors from the pre-ramp param space. Run `trials/run_trials.py` to explore the expanded param space. If a challenger achieves ≥55% win rate against the current champion, it is promoted to `trials/champion.py` and its params are copied into `src/config.py`.
+Delete `trials/study.db` to clear stale Bayesian priors from the pre-ramp param space. Run `trials/run_trials.py` to explore the expanded param space. If a challenger achieves the `PROMOTION_THRESHOLD` win rate (currently ≥65%) against the current champion, it is promoted to `trials/champion.py` and its params are copied into `src/config.py`.
 
 ### Acceptance criteria
 
