@@ -175,8 +175,14 @@ def step_state(
             planet.ships = surviving - 1
         elif surviving > 0:
             planet.ships = surviving
+        elif winner == planet.owner:
+            # Exact tie won by the incumbent owner (ties break to current owner).
+            # The defender holds the planet with no ships to spare, rather than
+            # collapsing to neutral — keeps the lookahead from undervaluing holds.
+            # For a neutral planet (owner=-1) this preserves neutral-stays-neutral.
+            planet.ships = 0
         else:
-            # Tie — planet stays neutral with 0 ships
+            # Tie with no surviving incumbent — planet goes neutral with 0 ships.
             planet.owner = -1
             planet.ships = 0
 
