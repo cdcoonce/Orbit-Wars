@@ -82,7 +82,7 @@ sequenceDiagram
     S->>F: Step 3 — Our fleet: launch candidate move (deduct ships from source)
     S->>F: Step 3b — Opponent: opponent_fn(state) launches opponent moves
     S->>F: Step 4 — Move: all fleets advance one step (speed * cos/sin angle)
-    S->>P: Step 5 — Combat: arrivals resolve; ties → neutral with 0 ships
+    S->>P: Step 5 — Combat: arrivals resolve; incumbent holds ties at 0 ships
 ```
 
 **Step-by-step detail:**
@@ -92,7 +92,7 @@ sequenceDiagram
 3. **Our fleet launch** — if `move` is not `None`, the source planet's ships are decremented and a new `SimFleet` is appended to `state.fleets`. Guarded: only launches if `source.ships >= ships_to_send`.
 4. **Opponent fleet launches** — if `opponent_fn` is provided, it is called with the current (post-our-launch) state. Each returned move is applied the same way: decrement source, append fleet. Guarded per move.
 5. **Move** — every fleet's `(x, y)` advances by `fleet_speed(ships) * (cos(angle), sin(angle))`.
-6. **Combat** — fleets that have reached a planet (within `planet.radius`) are grouped by owner. The owner with the most ships wins; the winning total minus all other totals = surviving ships. Current owner wins ties. If `surviving <= 0`, the planet becomes neutral with 0 ships.
+6. **Combat** — fleets that have reached a planet (within `planet.radius`) are grouped by owner. The owner with the most ships wins; the winning total minus all other totals = surviving ships. Ties break to the current owner. If `surviving > 0` the winner holds (or captures, paying the foothold cost). If the winner is the incumbent owner but `surviving == 0`, the owner still holds the planet at 0 ships. The planet only becomes neutral (0 ships) when a tie or full cancellation (`surviving <= 0`) is won by a non-incumbent.
 
 ---
 
@@ -120,6 +120,6 @@ Only counts ships on planets (not in-flight fleets). `ship_weight` (`lookahead_s
 
 **Duck-typing.** `SimPlanet` and `SimFleet` attribute names match the Kaggle namedtuple field names exactly. Functions like `plan_moves`, `detect_threats`, and `intercept` operate on whichever object is passed — real or simulated — without branching.
 
-**Combat tie.** When the winning owner's surviving ships equal zero (attackers and defenders cancel exactly), the planet is set to `owner = -1` (neutral) with `ships = 0`. This can happen when two fleets of equal size attack a zero-ship neutral simultaneously.
+**Combat tie.** Ties break to the incumbent owner. When the winner's surviving ships equal zero because an attack exactly matches the defense, the planet stays with its current owner at `ships = 0` rather than going neutral — this avoids undervaluing defensive holds in the lookahead. A neutral planet (`owner = -1`) wins its own ties the same way and stays neutral. The planet is set to `owner = -1` with `ships = 0` only when the tie (or full cancellation, `surviving < 0`) is won by a non-incumbent — e.g., two equal-size attacker fleets cancel each other on a contested planet.
 
 **`build_state` copy semantics.** `build_state` performs a full field-by-field copy of every planet and fleet into new dataclass instances. This is intentional — `step_state` mutates the state in place, so each lookahead branch that needs an independent trajectory must start from a fresh `build_state` call. Reusing the same `GameState` across branches will corrupt results.

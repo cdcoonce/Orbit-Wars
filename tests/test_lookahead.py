@@ -277,6 +277,66 @@ class TestStepState:
                    opponent_fn=counting_fn)
         assert call_count[0] == 1
 
+    def test_exact_tie_keeps_owned_planet(self):
+        """A defended owned planet that exactly ties an attack stays owned.
+
+        Set up: owned planet (owner=0) with 0 ships and production=2, so it
+        defends with 2 ships after production. Enemy fleet with exactly 2 ships
+        arrives this turn → 2 vs 2 tie. Ties break to the current owner, so the
+        planet must stay owner=0 (with 0 ships left), not fall to neutral.
+        """
+        from src.math_utils import fleet_speed
+
+        # Owned planet: 0 ships, production=2 → 2 defenders after production
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
+                             ships=0, production=2)
+
+        # Enemy fleet with 2 ships, positioned to arrive this turn
+        speed = fleet_speed(2)
+        fleet_x = 70.0 - speed + 0.1  # arrives just inside radius after movement
+        fleet = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=2)
+
+        state = build_state([planet], [fleet], turn=0)
+        initial = state.planets[:]
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial)
+
+        p = next_s.planets[0]
+        # Exact tie (2 vs 2) breaks to the incumbent owner: planet held, 0 ships.
+        assert p.owner == 0
+        assert p.ships == 0
+
+    def test_exact_tie_keeps_neutral_planet_neutral(self):
+        """A neutral planet that exactly ties an attack stays neutral.
+
+        Neutral planets (owner=-1) don't produce, so a planet with 2 ships
+        ties an attacker with 2 ships → 2 vs 2. The neutral defender wins the
+        tie-break but has no incumbent player, so the planet stays neutral
+        with 0 ships (unchanged from existing behavior).
+        """
+        from src.math_utils import fleet_speed
+
+        # Neutral planet with 2 defending ships
+        planet = make_planet(id=0, owner=-1, x=70.0, y=50.0, radius=1.0,
+                             ships=2, production=1)
+
+        # Attacker fleet with 2 ships, positioned to arrive this turn
+        speed = fleet_speed(2)
+        fleet_x = 70.0 - speed + 0.1  # arrives just inside radius after movement
+        fleet = make_fleet(id=0, owner=0, x=fleet_x, y=50.0, angle=0.0, ships=2)
+
+        state = build_state([planet], [fleet], turn=0)
+        initial = state.planets[:]
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03, initial_planets=initial)
+
+        p = next_s.planets[0]
+        # Tie on a neutral planet: stays neutral with 0 ships.
+        assert p.owner == -1
+        assert p.ships == 0
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreState
