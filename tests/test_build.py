@@ -44,6 +44,40 @@ def built_submission(tmp_path_factory):
     return submission.read_text()
 
 
+def _isolated_repo(tmp_path):
+    """Copy src/ and build.py into tmp_path so the build is sandboxed."""
+    shutil.copytree(SRC_DIR, tmp_path / "src")
+    shutil.copy(BUILD_SCRIPT, tmp_path / "build.py")
+
+
+def test_import_has_no_side_effects(tmp_path):
+    """Importing build must not write submission.py or print to stdout."""
+    _isolated_repo(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-c", "import build"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "", f"import produced stdout: {result.stdout!r}"
+    assert not (tmp_path / "submission.py").exists(), "import wrote submission.py"
+
+
+def test_build_function_returns_written_path(tmp_path):
+    """build() writes submission.py and returns its path."""
+    _isolated_repo(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-c", "import build; print(build.build())"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "submission.py").exists(), "build() did not write submission.py"
+    assert result.stdout.strip().endswith("submission.py"), result.stdout
+
+
 def test_submission_parses(built_submission):
     """The bundled submission must be syntactically valid Python."""
     ast.parse(built_submission)
