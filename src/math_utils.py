@@ -8,6 +8,14 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
     Planet,
 )
 
+# Board edges, mirroring the engine's authoritative BOARD_SIZE (= 100.0). Kept
+# as literals rather than importing BOARD_SIZE so build.py's flat bundle needs
+# no extra kaggle symbol; test_board_bounds_match_engine_board_size pins them to
+# the engine value so they can't silently drift. Used for off-board bound checks
+# (e.g. comet intercept).
+BOARD_MIN = 0.0
+BOARD_MAX = 100.0
+
 
 def orbital_radius(planet: Planet) -> float:
     """Distance from the planet to the sun at the center (50, 50)."""
