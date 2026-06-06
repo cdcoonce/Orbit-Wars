@@ -6,6 +6,8 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
     Planet,
 )
 from .math_utils import (
+    BOARD_MAX,
+    BOARD_MIN,
     angle_to_target,
     distance,
     fleet_speed,
@@ -382,7 +384,7 @@ def _intercept_comet_linear(
     for _ in range(10):
         fx = tx + vx * eta
         fy = ty + vy * eta
-        if not (0.0 <= fx <= 100.0 and 0.0 <= fy <= 100.0):
+        if not (BOARD_MIN <= fx <= BOARD_MAX and BOARD_MIN <= fy <= BOARD_MAX):
             return None  # comet off-board at predicted intercept time
         new_eta = turns_to_arrive(sx, sy, fx, fy, ships)
         if new_eta == eta:
@@ -397,7 +399,7 @@ def _intercept_comet_linear(
         scale = (eta * speed) / d
         ex = sx + scale * (fx - sx)
         ey = sy + scale * (fy - sy)
-        if not (0.0 <= ex <= 100.0 and 0.0 <= ey <= 100.0):
+        if not (BOARD_MIN <= ex <= BOARD_MAX and BOARD_MIN <= ey <= BOARD_MAX):
             return None
 
     return fx, fy, eta

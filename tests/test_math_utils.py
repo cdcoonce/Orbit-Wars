@@ -3,6 +3,8 @@ import math
 import pytest
 
 from src.math_utils import (
+    BOARD_MAX,
+    BOARD_MIN,
     angle_to_target,
     distance,
     fleet_speed,
@@ -13,11 +15,18 @@ from src.math_utils import (
 )
 from kaggle_environments import make
 from kaggle_environments.envs.orbit_wars.orbit_wars import (
+    BOARD_SIZE,
     CENTER,
     ROTATION_RADIUS_LIMIT,
     SUN_RADIUS,
     Planet,
 )
+
+
+def test_board_bounds_match_engine_board_size():
+    """BOARD_MIN/BOARD_MAX stay tied to the engine's authoritative BOARD_SIZE."""
+    assert BOARD_MIN == 0.0
+    assert BOARD_MAX == BOARD_SIZE
 
 
 def make_planet(x: float, y: float, production: int = 1, owner: int = -1) -> Planet:
