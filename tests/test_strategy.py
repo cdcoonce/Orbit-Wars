@@ -455,6 +455,49 @@ def test_plan_moves_no_owned_planets():
     assert moves == []
 
 
+def test_plan_moves_defending_source_does_not_also_expand():
+    """A planet that reinforces a threatened ally must NOT also launch an expansion
+    fleet in the same turn — doing so would double-spend its garrison.
+
+    plan_moves filters defense sources out of the expansion pass (strategy.py
+    `defense_used`). This builds a board where the fortress is the only viable
+    reinforcer AND the only planet with an attractive neutral in range, so the
+    exclusion is genuinely exercised: without it the fortress would appear twice.
+
+    Geometry note: the enemy must be far + slow so detect_threats reports a LARGE
+    threat.eta, while the fortress sits CLOSE to the threatened planet (small
+    intercept eta) — otherwise handle_threats' `eta <= threat.eta - eta_buffer`
+    gate rejects the reinforcement and the exclusion is never reached. The enemy's
+    flight path (the x=90 line) stays 15 units clear of the fortress, so the
+    fortress is not itself flagged THREATENED.
+    """
+    # Threatened ally, static at (90, 50).
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # Slow 5-ship enemy descending the x=90 line from (90, 25): reaches the
+    # threatened planet's threat_radius at ~turn 12 (threat.eta ≈ 12).
+    enemy_fleet = make_fleet(owner=1, x=90.0, y=25.0, angle=math.pi / 2, ships=5)
+    # Fortress 15 units from the threatened planet → reinforces in ~6 turns,
+    # comfortably under threat.eta(12) - eta_buffer(5) = 7.
+    fortress = make_planet(id=2, owner=0, x=75.0, y=50.0, ships=50, production=4)
+    # Attractive easy neutral next to the fortress — the expansion target it would
+    # otherwise launch toward (this is what the exclusion must suppress).
+    neutral = make_planet(id=3, owner=-1, x=77.0, y=50.0, ships=0, production=1)
+
+    planets = [threatened, fortress, neutral]
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5,
+              "eta_buffer": 5}
+    moves = plan_moves(planets, [enemy_fleet], player=0, angular_velocity=0.03,
+                       params=params)
+
+    # The exclusion is actually exercised: the fortress did issue a defensive move.
+    assert any(m[0] == fortress.id for m in moves), \
+        "expected the fortress to issue a defensive reinforcement"
+    # ...and therefore must not appear a second time as an expansion source.
+    fortress_move_count = sum(1 for m in moves if m[0] == fortress.id)
+    assert fortress_move_count == 1, \
+        f"fortress double-spent its garrison: appeared in {fortress_move_count} moves"
+
+
 # --- path_crosses_sun ---
 
 def test_path_crosses_sun_direct_hit():
