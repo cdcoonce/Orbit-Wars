@@ -6,6 +6,14 @@
 # the executor cannot run here until that is green. Read-only producers do not run this.
 test_command = "uv run pytest -q"
 permission_mode = "acceptEdits"
+
+# Integration model (live end-to-end test): build onto a standing staging branch
+# via the merge-queue, auto-promote afk-sized proposals, and (F2) open the
+# staging->main MR. A human still merges staging->main.
+integration_target = "afk/staging"
+autonomy_frontier = "F2"
+auto_promote = true
+
 agent_prompt = """Implement the linked GitHub issue using test-driven development \
 (red-green-refactor): write the failing test first, watch it fail, then write the \
 minimal code to pass. Keep changes minimal and scoped to the issue's acceptance \
@@ -14,3 +22,5 @@ criteria. Do not modify unrelated files. Match the surrounding code style."""
 [caps]
 max_retries = 2
 timeout_seconds = 1800
+max_parallel = 2
+auto_promote_max = 2
