@@ -173,6 +173,61 @@ def test_detect_threats_ignores_own_fleets():
     assert len(threats) == 0
 
 
+def test_detect_threats_aggregates_converging_fleets():
+    # Two enemy fleets converging on the same static planet within the ETA window
+    # collapse into a SINGLE threat: incoming_ships sums, eta is the earliest sighting.
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    fleet_a = make_fleet(id=0, owner=1, x=62.0, y=50.0, angle=0.0, ships=10)
+    fleet_b = make_fleet(id=1, owner=1, x=64.0, y=50.0, angle=0.0, ships=15)
+
+    # Derive each fleet's solo sighting eta from the function itself (self-consistent).
+    eta_a = detect_threats([planet], [fleet_a], player=0, angular_velocity=0.03)[0].eta
+    eta_b = detect_threats([planet], [fleet_b], player=0, angular_velocity=0.03)[0].eta
+
+    threats = detect_threats([planet], [fleet_a, fleet_b], player=0, angular_velocity=0.03)
+    assert len(threats) == 1
+    assert threats[0].planet_id == 1
+    assert threats[0].incoming_ships == fleet_a.ships + fleet_b.ships  # 25, summed
+    assert threats[0].eta == min(eta_a, eta_b)  # earliest sighting preserved
+
+
+def test_detect_threats_single_fleet_unchanged():
+    # Regression: a single inbound fleet produces exactly one threat with the fleet's
+    # ships and first-sighting eta — byte-for-byte identical to pre-aggregation behavior.
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    fleet = make_fleet(owner=1, x=70.0, y=50.0, angle=0.0, ships=10)
+    threats = detect_threats([planet], [fleet], player=0, angular_velocity=0.03)
+    assert len(threats) == 1
+    assert threats[0].planet_id == 1
+    assert threats[0].incoming_ships == fleet.ships
+    assert threats[0].eta == 7
+
+
+def test_handle_threats_scales_against_combined_incoming():
+    # Downstream: feeding two converging fleets through detect_threats yields a single
+    # threat whose summed incoming_ships drives magnitude-aware reinforcement — handle_threats
+    # reinforces once against the COMBINED strength, not just one fleet's ships.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=95.0, y=50.0, ships=100, production=4)
+    fleet_a = make_fleet(id=0, owner=1, x=62.0, y=50.0, angle=0.0, ships=10)
+    fleet_b = make_fleet(id=1, owner=1, x=64.0, y=50.0, angle=0.0, ships=15)
+
+    threats = detect_threats([threatened], [fleet_a, fleet_b], player=0, angular_velocity=0.03)
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.1,
+              "eta_buffer": 5, "defense_incoming_multiplier": 0.5}
+    moves = handle_threats(threats, [threatened, fortress], own_classes,
+                           angular_velocity=0.03, params=params)
+    flat = int(100 * 0.1)            # 10 — flat fraction of the fortress garrison
+    combined = int(25 * 0.5)         # 12 — magnitude scaled by SUMMED incoming (10+15)
+    single = int(15 * 0.5)           # 7  — what one fleet alone would have driven
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+    assert moves[0][2] == combined
+    assert moves[0][2] > flat
+    assert moves[0][2] > single
+
+
 # --- handle_threats ---
 
 def test_handle_threats_reinforces_when_able():

@@ -68,8 +68,11 @@ def detect_threats(
     angular_velocity: float,
     params: dict = PARAMS,
 ) -> list:
-    threats = []
+    # Aggregate every inbound fleet per planet: planet_id -> [summed_ships, earliest_eta].
+    # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
+    # handle_threats sizes reinforcement against the combined attack, not just one fleet.
     seen: set[tuple[int, int]] = set()
+    agg: dict[int, list[int]] = {}
     for fleet in fleets:
         if fleet.owner == player:
             continue
@@ -78,13 +81,22 @@ def detect_threats(
             fleet_x = fleet.x + t * speed * math.cos(fleet.angle)
             fleet_y = fleet.y + t * speed * math.sin(fleet.angle)
             for planet in my_planets:
+                # seen guards a single fleet from contributing its ships more than once
+                # to the same planet (it may stay in-radius across several t).
                 if (fleet.id, planet.id) in seen:
                     continue
                 px, py = predict_planet_position(planet, angular_velocity, t)
                 if distance(fleet_x, fleet_y, px, py) < params["threat_radius"]:
-                    threats.append(Threat(planet_id=planet.id, incoming_ships=fleet.ships, eta=t))
                     seen.add((fleet.id, planet.id))
-    return threats
+                    if planet.id in agg:
+                        agg[planet.id][0] += fleet.ships
+                        agg[planet.id][1] = min(agg[planet.id][1], t)  # earliest sighting
+                    else:
+                        agg[planet.id] = [fleet.ships, t]
+    return [
+        Threat(planet_id=pid, incoming_ships=ships, eta=eta)
+        for pid, (ships, eta) in agg.items()
+    ]
 
 
 def handle_threats(
