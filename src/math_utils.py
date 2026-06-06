@@ -37,6 +37,10 @@ def predict_planet_position(
         return (planet.x, planet.y)
     radius = orbital_radius(planet)
     period = round(2 * math.pi / angular_velocity)
+    # A very large angular_velocity rounds the period down to 0; treat that as
+    # no movement too (and avoids a divide-by-zero in turns % period below).
+    if period < 1:
+        return (planet.x, planet.y)
     normalized_turns = turns % period
     current_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
     future_angle = current_angle + angular_velocity * normalized_turns

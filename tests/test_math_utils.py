@@ -153,6 +153,16 @@ def test_orbiting_planet_zero_angular_velocity():
     assert y == pytest.approx(50.0)
 
 
+def test_orbiting_planet_large_angular_velocity():
+    # For angular_velocity > 4*pi, round(2*pi / av) == 0, so turns % period
+    # would divide by zero. Treat the rounded-to-zero period as no movement —
+    # return current position instead of crashing.
+    planet = make_planet(x=60.0, y=50.0)  # orbits, so it passes the stationary guard
+    x, y = predict_planet_position(planet, angular_velocity=13.0, turns=5)
+    assert x == pytest.approx(60.0)
+    assert y == pytest.approx(50.0)
+
+
 # --- angle_to_target ---
 
 def test_angle_right():
