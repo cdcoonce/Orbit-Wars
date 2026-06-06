@@ -7,6 +7,7 @@ from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.math_utils import path_crosses_sun
+from src.math_utils import angle_to_target
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
@@ -319,6 +320,56 @@ def test_plan_expansion_skips_below_min_garrison():
     moves = plan_expansion([planet], [target], [], own_classes,
                            angular_velocity=0.03, params=params, turn=100)
     assert len(moves) == 0
+
+
+# --- plan_expansion multi-target ship draining ---
+
+def test_plan_expansion_drains_excess_to_second_target():
+    """One source with surplus ships funds the top target, then drains the
+    remainder into a second, lower-scored target (two moves, one source)."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    own_classes = {0: "FORTRESS"}
+    # Low garrison + plenty of ships so a single source can fund two captures.
+    params = {**PARAMS, "min_garrison": 10, "min_garrison_early": 10, "garrison_ramp_turns": 1}
+    moves = plan_expansion([source], [high, low], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
+
+    assert len(moves) == 2
+    assert all(m[0] == source.id for m in moves)
+    # Two distinct targets -> two distinct headings from the same source.
+    assert moves[0][1] != moves[1][1]
+    # Higher-scored target is funded first, from the full fleet -> the larger send.
+    assert moves[0][2] > moves[1][2]
+    first_send = max(1, int(source.ships * PARAMS["frac_fortress_easy_neutral"]))
+    fx, fy, _ = intercept(source, high, 0.03, first_send)
+    assert moves[0][1] == pytest.approx(angle_to_target(source.x, source.y, fx, fy))
+    # min_garrison floor respected after draining both fleets.
+    assert source.ships - sum(m[2] for m in moves) >= params["min_garrison"]
+
+
+def test_plan_expansion_drain_clamps_at_min_garrison():
+    """When the remaining fleet sits just above min_garrison, the drain send is
+    clamped to (ships_remaining - min_garrison) so the source is not over-drained."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=35, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    own_classes = {0: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 10, "min_garrison_early": 10, "garrison_ramp_turns": 1}
+    moves = plan_expansion([source], [high, low], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
+
+    assert len(moves) == 2
+    # Primary takes int(35 * frac) ships, leaving 13 (just above the floor of 10).
+    first_send = max(1, int(source.ships * PARAMS["frac_fortress_easy_neutral"]))
+    ships_remaining = source.ships - first_send
+    # Unclamped, the drain would send int(ships_remaining * frac); the clamp caps it
+    # at (ships_remaining - min_garrison) so the source keeps exactly min_garrison.
+    unclamped = max(1, int(ships_remaining * PARAMS["frac_fortress_easy_neutral"]))
+    assert unclamped > ships_remaining - params["min_garrison"]  # floor branch is exercised
+    assert moves[1][2] == ships_remaining - params["min_garrison"]
+    assert source.ships - sum(m[2] for m in moves) == params["min_garrison"]
 
 
 # --- garrison ramp ---
