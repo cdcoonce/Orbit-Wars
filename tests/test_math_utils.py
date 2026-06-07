@@ -172,6 +172,13 @@ def test_orbiting_planet_large_angular_velocity():
     assert y == pytest.approx(50.0)
 
 
+# --- import hygiene ---
+
+def test_fleet_not_imported_into_math_utils():
+    import src.math_utils as m
+    assert not hasattr(m, 'Fleet'), "Fleet is unused in math_utils and should not be imported"
+
+
 # --- angle_to_target ---
 
 def test_angle_right():
