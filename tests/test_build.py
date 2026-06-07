@@ -7,6 +7,7 @@ run the real build in an isolated copy and assert the artifact is sound.
 """
 
 import ast
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -131,3 +132,55 @@ def test_kaggle_symbols_present_in_bundle(built_submission):
     have = _kaggle_symbols_imported(built_submission)
     missing = sorted(needed - have)
     assert not missing, f"kaggle symbols dropped from bundle import block: {missing}"
+
+
+def _build_and_import_submission(tmp_path):
+    """Build submission.py in tmp_path and return it as an imported module object."""
+    _isolated_repo(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "build.py"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"build.py failed:\n{result.stderr}"
+    submission_path = tmp_path / "submission.py"
+    assert submission_path.exists()
+    spec = importlib.util.spec_from_file_location("_submission_under_test", submission_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_submission_agent_matches_src_agent(tmp_path):
+    """submission.agent(obs) returns the same moves as src.agent.agent(obs) for a
+    fixed turn-0 observation.
+
+    Catches behavioral divergence that syntax checks alone cannot detect — e.g. if
+    build.py's regexes ever eat a non-import line, the bundle could plan different
+    moves than src/agent.py.  Module-level state is reset on both sides before each
+    call so the comparison is order-independent.
+    """
+    import src.agent as src_agent_mod
+
+    sub = _build_and_import_submission(tmp_path)
+
+    obs = {
+        "planets": [
+            (0, 0, 70.0, 50.0, 5, 20, 3),
+            (1, 1, 30.0, 50.0, 5, 15, 2),
+        ],
+        "fleets": [],
+        "player": 0,
+        "angular_velocity": 0.03,
+        "step": 0,
+        "comet_planet_ids": None,
+    }
+
+    # Reset module-level tracking state so the comparison is order-independent
+    src_agent_mod._initial_planets = None
+    src_agent_mod._prev_comet_positions = {}
+    sub._initial_planets = None
+    sub._prev_comet_positions = {}
+
+    assert src_agent_mod.agent(obs) == sub.agent(obs)
