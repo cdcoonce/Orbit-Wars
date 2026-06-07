@@ -8,6 +8,14 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
     Planet,
 )
 
+# Board edges, mirroring the engine's authoritative BOARD_SIZE (= 100.0). Kept
+# as literals rather than importing BOARD_SIZE so build.py's flat bundle needs
+# no extra kaggle symbol; test_board_bounds_match_engine_board_size pins them to
+# the engine value so they can't silently drift. Used for off-board bound checks
+# (e.g. comet intercept).
+BOARD_MIN = 0.0
+BOARD_MAX = 100.0
+
 
 def orbital_radius(planet: Planet) -> float:
     """Distance from the planet to the sun at the center (50, 50)."""
@@ -37,6 +45,10 @@ def predict_planet_position(
         return (planet.x, planet.y)
     radius = orbital_radius(planet)
     period = round(2 * math.pi / angular_velocity)
+    # A very large angular_velocity rounds the period down to 0; treat that as
+    # no movement too (and avoids a divide-by-zero in turns % period below).
+    if period < 1:
+        return (planet.x, planet.y)
     normalized_turns = turns % period
     current_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
     future_angle = current_angle + angular_velocity * normalized_turns

@@ -66,7 +66,6 @@ def step_state(
     move,
     player: int,
     angular_velocity: float,
-    initial_planets,
     opponent_fn=None,
 ) -> GameState:
     """Simulate ONE turn forward.
@@ -77,8 +76,6 @@ def step_state(
         move: [planet_id, angle, ships] or None.
         player: The acting player's index.
         angular_velocity: Global orbital angular velocity (rad/turn).
-        initial_planets: Planet list at the start of the lookahead window —
-                         used to track orbital angles.
         opponent_fn: Optional callable (state) -> list[list]. If provided,
                      opponent moves are applied after our fleet launch and before
                      fleet movement.
@@ -175,8 +172,20 @@ def step_state(
             planet.ships = surviving - 1
         elif surviving > 0:
             planet.ships = surviving
+        elif surviving == 0 and winner == planet.owner:
+            # EXACT tie won by the incumbent owner (ties break to current owner).
+            # The defender holds the planet with no ships to spare, rather than
+            # collapsing to neutral — keeps the lookahead from undervaluing holds.
+            # For a neutral planet (owner=-1) this preserves neutral-stays-neutral.
+            # Guarded on ``surviving == 0``: when the incumbent is only the
+            # largest SINGLE stack but loses to the COMBINED attackers
+            # (surviving < 0), it must NOT retain the planet — that falls through
+            # to the neutral branch below.
+            planet.ships = 0
         else:
-            # Tie — planet stays neutral with 0 ships
+            # No surviving victor — an exact tie not won by the incumbent, or the
+            # incumbent was the largest single stack but lost to the combined
+            # attackers (surviving < 0). The planet goes neutral with 0 ships.
             planet.owner = -1
             planet.ships = 0
 
@@ -224,7 +233,7 @@ def score_candidate_lookahead(
     # T+1: apply our candidate move + opponent response.
     state = build_state(initial_planets, fleets, turn)
     state = step_state(
-        state, candidate_move, player, angular_velocity, initial_planets, opponent_fn
+        state, candidate_move, player, angular_velocity, opponent_fn
     )
     # T+2..N: both players play greedily (lookahead disabled) from the evolved state.
     n_extra = params.get("lookahead_turns", 1) - 1
@@ -246,6 +255,6 @@ def score_candidate_lookahead(
         )
         fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
         state = step_state(
-            state, our_move, player, angular_velocity, initial_planets, fresh_opp_fn
+            state, our_move, player, angular_velocity, fresh_opp_fn
         )
     return score_state(state, player, params.get("lookahead_ship_weight", 0.01))

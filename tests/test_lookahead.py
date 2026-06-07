@@ -91,25 +91,22 @@ class TestStepState:
 
     def test_returns_game_state(self):
         state = self._simple_state()
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         assert isinstance(next_s, GameState)
 
     def test_production_added_to_owned_planet(self):
         state = self._simple_state(planet_ships=20, planet_owner=0)
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         p = next_s.planets[0]
         # Ships should increase by production (2) for owned planet
         assert p.ships == 22
 
     def test_production_not_added_to_neutral_planet(self):
         state = self._simple_state(planet_ships=10, planet_owner=-1)
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         p = next_s.planets[0]
         assert p.ships == 10  # No production for neutral
 
@@ -117,9 +114,8 @@ class TestStepState:
         # Static planet at x=90: orbital_radius=40, 40+10=50 >= ROTATION_RADIUS_LIMIT=50
         planet = make_planet(id=0, owner=0, x=90.0, y=50.0, radius=5.0, ships=10, production=1)
         state = build_state([planet], [], turn=0)
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         p = next_s.planets[0]
         assert p.x == pytest.approx(90.0)
         assert p.y == pytest.approx(50.0)
@@ -128,9 +124,8 @@ class TestStepState:
         # Orbiting planet at x=70 (orbital_radius=20 < 40)
         planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10, production=1)
         state = build_state([planet], [], turn=0)
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         p = next_s.planets[0]
         # Position must change after 1 turn with angular_velocity=0.03
         assert (p.x, p.y) != (70.0, 50.0)
@@ -140,10 +135,9 @@ class TestStepState:
         # radius=1 ensures launched fleet clears the planet boundary (fleet_speed(10) ≈ 1.96 > 1)
         planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2)
         state = build_state([planet], [], turn=0)
-        initial = state.planets[:]
         move = [0, 0.0, 10]  # launch 10 ships at angle 0
         next_s = step_state(state, move=move, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         source = next(p for p in next_s.planets if p.id == 0)
         # 30 ships - 10 launched + 2 production = 22; fleet stays in transit
         assert source.ships == 22
@@ -156,9 +150,8 @@ class TestStepState:
         # Fleet far from any planet, flying right at angle=0
         fleet = make_fleet(id=0, owner=0, x=10.0, y=50.0, angle=0.0, ships=5)
         state = build_state([planet], [fleet], turn=0)
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         # Find the fleet in next state (it should be in fleets if not resolved)
         remaining = next_s.fleets
         if remaining:
@@ -176,9 +169,8 @@ class TestStepState:
         fleet_x = 70.0 - speed + 0.1  # will land just inside after moving speed units right
         fleet = make_fleet(id=0, owner=0, x=fleet_x, y=50.0, angle=0.0, ships=10)
         state = build_state([planet], [fleet], turn=0)
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
         p = next_s.planets[0]
         # Production runs at start of turn, but neutral planets don't produce.
         # Fleet had 10 ships; neutral planet had 2 defending ships.
@@ -189,9 +181,8 @@ class TestStepState:
     def test_opponent_fn_defaults_to_none(self):
         """step_state must accept opponent_fn=None (default) without error."""
         state = self._simple_state()
-        initial = state.planets[:]
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial,
+                            angular_velocity=0.03,
                             opponent_fn=None)
         assert isinstance(next_s, GameState)
 
@@ -216,10 +207,9 @@ class TestStepState:
         fleet = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=1)
 
         state = build_state([planet], [fleet], turn=0)
-        initial = state.planets[:]
 
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial)
+                            angular_velocity=0.03)
 
         p = next_s.planets[0]
         # With production before combat: 0+2=2 ships defending.
@@ -233,13 +223,12 @@ class TestStepState:
         our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=1)
         opp_planet = make_planet(id=1, owner=1, x=30.0, y=50.0, radius=1.0, ships=20, production=1)
         state = build_state([our_planet, opp_planet], [], turn=0)
-        initial = [our_planet, opp_planet]
 
         def opponent_fn(s):
             return [[1, 0.0, 5]]  # opponent sends 5 ships from planet 1 at angle 0
 
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial,
+                            angular_velocity=0.03,
                             opponent_fn=opponent_fn)
         # Opponent planet should have lost 5 ships (after production: 20+1=21, then -5=16)
         opp = next(p for p in next_s.planets if p.id == 1)
@@ -251,13 +240,12 @@ class TestStepState:
         """opponent_fn referencing a planet with 0 ships is silently skipped."""
         planet = make_planet(id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=0, production=0)
         state = build_state([planet], [], turn=0)
-        initial = [planet]
 
         def opponent_fn(s):
             return [[0, 0.0, 5]]  # tries to send 5 ships from a planet with 0
 
         next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03, initial_planets=initial,
+                            angular_velocity=0.03,
                             opponent_fn=opponent_fn)
         # No fleet should be added, no exception
         assert len(next_s.fleets) == 0
@@ -265,7 +253,6 @@ class TestStepState:
     def test_opponent_fn_call_count_sentinel(self):
         """opponent_fn is called exactly once per step_state invocation."""
         state = self._simple_state()
-        initial = state.planets[:]
         call_count = [0]
 
         def counting_fn(s):
@@ -273,9 +260,98 @@ class TestStepState:
             return []
 
         step_state(state, move=None, player=0,
-                   angular_velocity=0.03, initial_planets=initial,
+                   angular_velocity=0.03,
                    opponent_fn=counting_fn)
         assert call_count[0] == 1
+
+    def test_exact_tie_keeps_owned_planet(self):
+        """A defended owned planet that exactly ties an attack stays owned.
+
+        Set up: owned planet (owner=0) with 0 ships and production=2, so it
+        defends with 2 ships after production. Enemy fleet with exactly 2 ships
+        arrives this turn → 2 vs 2 tie. Ties break to the current owner, so the
+        planet must stay owner=0 (with 0 ships left), not fall to neutral.
+        """
+        from src.math_utils import fleet_speed
+
+        # Owned planet: 0 ships, production=2 → 2 defenders after production
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
+                             ships=0, production=2)
+
+        # Enemy fleet with 2 ships, positioned to arrive this turn
+        speed = fleet_speed(2)
+        fleet_x = 70.0 - speed + 0.1  # arrives just inside radius after movement
+        fleet = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=2)
+
+        state = build_state([planet], [fleet], turn=0)
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03)
+
+        p = next_s.planets[0]
+        # Exact tie (2 vs 2) breaks to the incumbent owner: planet held, 0 ships.
+        assert p.owner == 0
+        assert p.ships == 0
+
+    def test_exact_tie_keeps_neutral_planet_neutral(self):
+        """A neutral planet that exactly ties an attack stays neutral.
+
+        Neutral planets (owner=-1) don't produce, so a planet with 2 ships
+        ties an attacker with 2 ships → 2 vs 2. The neutral defender wins the
+        tie-break but has no incumbent player, so the planet stays neutral
+        with 0 ships (unchanged from existing behavior).
+        """
+        from src.math_utils import fleet_speed
+
+        # Neutral planet with 2 defending ships
+        planet = make_planet(id=0, owner=-1, x=70.0, y=50.0, radius=1.0,
+                             ships=2, production=1)
+
+        # Attacker fleet with 2 ships, positioned to arrive this turn
+        speed = fleet_speed(2)
+        fleet_x = 70.0 - speed + 0.1  # arrives just inside radius after movement
+        fleet = make_fleet(id=0, owner=0, x=fleet_x, y=50.0, angle=0.0, ships=2)
+
+        state = build_state([planet], [fleet], turn=0)
+
+        next_s = step_state(state, move=None, player=0,
+                            angular_velocity=0.03)
+
+        p = next_s.planets[0]
+        # Tie on a neutral planet: stays neutral with 0 ships.
+        assert p.owner == -1
+        assert p.ships == 0
+
+    def test_incumbent_largest_stack_but_loses_to_combined_attackers(self):
+        """Multi-party: the incumbent is the largest SINGLE stack yet loses to
+        the COMBINED attackers (surviving < 0) → the planet goes neutral.
+
+        owner=0 holds 10 ships; owner=1 and owner=2 each send 6 (combined 12 >
+        10). The winner-by-largest-single-stack is owner 0, but surviving =
+        10 - 12 = -2, so no one holds the planet. It must NOT be retained by the
+        incumbent (the bug: an `elif winner == planet.owner` that fired on
+        surviving < 0); it falls to neutral.
+        """
+        from src.math_utils import fleet_speed
+
+        # Incumbent owned planet: 10 ships, production=0 → exactly 10 defenders.
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
+                             ships=10, production=0)
+
+        # Two attackers from DIFFERENT owners, each 6 ships, arriving this turn.
+        speed = fleet_speed(6)
+        fleet_x = 70.0 - speed + 0.1
+        f1 = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=6)
+        f2 = make_fleet(id=1, owner=2, x=fleet_x, y=50.0, angle=0.0, ships=6)
+
+        state = build_state([planet], [f1, f2], turn=0)
+
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
+
+        p = next_s.planets[0]
+        # Largest single stack (10) loses to combined 6+6=12 → neutral, 0 ships.
+        assert p.owner == -1
+        assert p.ships == 0
 
 
 # ---------------------------------------------------------------------------
@@ -426,12 +502,12 @@ class TestPlanExpansionBlend:
 
         # Build a state and manually run step_state twice to get turn=7 state
         state_1turn = build_state(all_planets, [], turn=5)
-        state_1turn = step_state(state_1turn, None, 0, 0.03, all_planets)
+        state_1turn = step_state(state_1turn, None, 0, 0.03)
         score_after_1 = score_state(state_1turn, player=0)
 
         state_2turn = build_state(all_planets, [], turn=5)
-        state_2turn = step_state(state_2turn, None, 0, 0.03, all_planets)
-        state_2turn = step_state(state_2turn, None, 0, 0.03, all_planets)
+        state_2turn = step_state(state_2turn, None, 0, 0.03)
+        state_2turn = step_state(state_2turn, None, 0, 0.03)
         score_after_2 = score_state(state_2turn, player=0)
 
         # Scores must differ (production compounds — 2-turn score != 1-turn score)
@@ -595,7 +671,7 @@ class TestPlanExpansionBlend:
         opp_move = opp_moves_list[0]
         next_state = step_state(
             state, opp_move, player=1,
-            angular_velocity=0.03, initial_planets=all_planets,
+            angular_velocity=0.03,
         )
         final_ships = next(
             p.ships for p in next_state.planets if p.owner == 1

@@ -53,18 +53,25 @@ def strip_imports(source: str) -> str:
     return source
 
 
-chunks = [HEADER, KAGGLE_IMPORTS_BLOCK, "\n"]
-for path in SRC_FILES:
-    source = path.read_text()
-    cleaned = strip_imports(source)
-    chunks.append(f"# --- {path} ---\n")
-    chunks.append(cleaned.strip() + "\n\n")
+def build() -> Path:
+    """Bundle src/ into submission.py and return the written path."""
+    chunks = [HEADER, KAGGLE_IMPORTS_BLOCK, "\n"]
+    for path in SRC_FILES:
+        source = path.read_text()
+        cleaned = strip_imports(source)
+        chunks.append(f"# --- {path} ---\n")
+        chunks.append(cleaned.strip() + "\n\n")
 
-output = Path("submission.py")
-output.write_text("".join(chunks))
-print(f"Written {output} ({output.stat().st_size} bytes)")
+    output = Path("submission.py")
+    output.write_text("".join(chunks))
+    return output
 
-# Quick sanity check
-content = output.read_text()
-assert "def agent(" in content, "submission.py is missing agent() function!"
-print("OK: agent() function found in submission.py")
+
+if __name__ == "__main__":
+    output = build()
+    print(f"Written {output} ({output.stat().st_size} bytes)")
+
+    # Quick sanity check
+    content = output.read_text()
+    assert "def agent(" in content, "submission.py is missing agent() function!"
+    print("OK: agent() function found in submission.py")

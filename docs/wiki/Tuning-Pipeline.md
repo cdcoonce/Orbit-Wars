@@ -8,10 +8,10 @@ All live in `trials/run_trials.py`:
 
 | Constant              | Value | Meaning                                  |
 | --------------------- | ----- | ---------------------------------------- |
-| `N_GAMES`             | 20    | Games per trial (challenger vs champion) |
+| `N_GAMES`             | 40    | Games per trial (challenger vs champion) |
 | `N_WORKERS`           | 4     | Parallel Optuna jobs (`n_jobs`)          |
 | `N_TRIALS`            | 200   | Total trials per `study.optimize()` call |
-| `PROMOTION_THRESHOLD` | 0.55  | Minimum win rate to promote challenger   |
+| `PROMOTION_THRESHOLD` | 0.65  | Minimum win rate to promote challenger   |
 
 ## `objective(trial)`
 
@@ -92,7 +92,7 @@ Champion vs original defaults: 70%  (14W / 0D / 6L)
 | Win rate    | Interpretation                                                                                  |
 | ----------- | ----------------------------------------------------------------------------------------------- |
 | > 0.55      | Champion is statistically better than the original defaults — healthy                           |
-| 0.45 – 0.55 | Uncertain; too close to call with 20 games                                                      |
+| 0.45 – 0.55 | Uncertain; too close to call with 40 games                                                      |
 | < 0.45      | Regression — the current champion may be worse than original tuning; investigate recent changes |
 
 A regression usually means a simulator change shifted the landscape and the promoted champion was tuned on the old code. Delete `study.db` and re-run.

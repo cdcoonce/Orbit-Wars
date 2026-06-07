@@ -3,6 +3,8 @@ import math
 import pytest
 
 from src.math_utils import (
+    BOARD_MAX,
+    BOARD_MIN,
     angle_to_target,
     distance,
     fleet_speed,
@@ -13,11 +15,18 @@ from src.math_utils import (
 )
 from kaggle_environments import make
 from kaggle_environments.envs.orbit_wars.orbit_wars import (
+    BOARD_SIZE,
     CENTER,
     ROTATION_RADIUS_LIMIT,
     SUN_RADIUS,
     Planet,
 )
+
+
+def test_board_bounds_match_engine_board_size():
+    """BOARD_MIN/BOARD_MAX stay tied to the engine's authoritative BOARD_SIZE."""
+    assert BOARD_MIN == 0.0
+    assert BOARD_MAX == BOARD_SIZE
 
 
 def make_planet(x: float, y: float, production: int = 1, owner: int = -1) -> Planet:
@@ -149,6 +158,16 @@ def test_orbiting_planet_zero_angular_velocity():
     # return current position instead of dividing by zero.
     planet = make_planet(x=60.0, y=50.0)  # orbits, so it passes the stationary guard
     x, y = predict_planet_position(planet, angular_velocity=0.0, turns=5)
+    assert x == pytest.approx(60.0)
+    assert y == pytest.approx(50.0)
+
+
+def test_orbiting_planet_large_angular_velocity():
+    # For angular_velocity > 4*pi, round(2*pi / av) == 0, so turns % period
+    # would divide by zero. Treat the rounded-to-zero period as no movement —
+    # return current position instead of crashing.
+    planet = make_planet(x=60.0, y=50.0)  # orbits, so it passes the stationary guard
+    x, y = predict_planet_position(planet, angular_velocity=13.0, turns=5)
     assert x == pytest.approx(60.0)
     assert y == pytest.approx(50.0)
 

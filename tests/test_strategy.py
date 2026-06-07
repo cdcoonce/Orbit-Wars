@@ -7,6 +7,8 @@ from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.math_utils import path_crosses_sun
+from src.math_utils import angle_to_target
+from src.math_utils import predict_planet_position, turns_to_arrive
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
@@ -61,6 +63,44 @@ def test_intercept_returns_three_tuple():
     assert isinstance(future_y, float)
     assert isinstance(eta, int)
     assert eta >= 1
+
+
+def test_intercept_converges_to_orbiting_target_future_position():
+    """The convergence loop aims at the target's *future* orbit position, not its
+    current one, and returns a self-consistent (position, eta) fixed point."""
+    av = 0.02
+    source = make_planet(id=0, x=20.0, y=50.0)
+    # x=70: orbital_radius=20, 20+SUN_RADIUS(10)=30 < ROTATION_RADIUS_LIMIT(50) → orbits
+    target = make_planet(id=1, x=70.0, y=50.0)
+    ships = 20
+
+    future_x, future_y, eta = intercept(source, target, av, ships)
+
+    # Returned point equals the orbit prediction for the returned eta.
+    expected_x, expected_y = predict_planet_position(target, av, eta)
+    assert abs(future_x - expected_x) < 1e-9
+    assert abs(future_y - expected_y) < 1e-9
+
+    # The fast-orbiting target actually moved, so aiming at the current position
+    # would have been wrong — this proves the loop did real work.
+    assert abs(future_x - target.x) > 1e-6 or abs(future_y - target.y) > 1e-6
+
+    # ETA is self-consistent with the aim point it produced.
+    assert turns_to_arrive(source.x, source.y, future_x, future_y, ships) == eta
+
+
+def test_intercept_stationary_target_returns_current_position():
+    """Contrast case: a target outside ROTATION_RADIUS_LIMIT never moves, so the
+    loop returns its unchanged current position."""
+    av = 0.03
+    source = make_planet(id=0, x=10.0, y=50.0)
+    # x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50) → static
+    target = make_planet(id=1, x=90.0, y=50.0)
+
+    future_x, future_y, _eta = intercept(source, target, av, 30)
+
+    assert future_x == target.x
+    assert future_y == target.y
 
 
 # --- classify_own ---
@@ -321,6 +361,56 @@ def test_plan_expansion_skips_below_min_garrison():
     assert len(moves) == 0
 
 
+# --- plan_expansion multi-target ship draining ---
+
+def test_plan_expansion_drains_excess_to_second_target():
+    """One source with surplus ships funds the top target, then drains the
+    remainder into a second, lower-scored target (two moves, one source)."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    own_classes = {0: "FORTRESS"}
+    # Low garrison + plenty of ships so a single source can fund two captures.
+    params = {**PARAMS, "min_garrison": 10, "min_garrison_early": 10, "garrison_ramp_turns": 1}
+    moves = plan_expansion([source], [high, low], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
+
+    assert len(moves) == 2
+    assert all(m[0] == source.id for m in moves)
+    # Two distinct targets -> two distinct headings from the same source.
+    assert moves[0][1] != moves[1][1]
+    # Higher-scored target is funded first, from the full fleet -> the larger send.
+    assert moves[0][2] > moves[1][2]
+    first_send = max(1, int(source.ships * PARAMS["frac_fortress_easy_neutral"]))
+    fx, fy, _ = intercept(source, high, 0.03, first_send)
+    assert moves[0][1] == pytest.approx(angle_to_target(source.x, source.y, fx, fy))
+    # min_garrison floor respected after draining both fleets.
+    assert source.ships - sum(m[2] for m in moves) >= params["min_garrison"]
+
+
+def test_plan_expansion_drain_clamps_at_min_garrison():
+    """When the remaining fleet sits just above min_garrison, the drain send is
+    clamped to (ships_remaining - min_garrison) so the source is not over-drained."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=35, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    own_classes = {0: "FORTRESS"}
+    params = {**PARAMS, "min_garrison": 10, "min_garrison_early": 10, "garrison_ramp_turns": 1}
+    moves = plan_expansion([source], [high, low], [], own_classes,
+                           angular_velocity=0.03, params=params, turn=100)
+
+    assert len(moves) == 2
+    # Primary takes int(35 * frac) ships, leaving 13 (just above the floor of 10).
+    first_send = max(1, int(source.ships * PARAMS["frac_fortress_easy_neutral"]))
+    ships_remaining = source.ships - first_send
+    # Unclamped, the drain would send int(ships_remaining * frac); the clamp caps it
+    # at (ships_remaining - min_garrison) so the source keeps exactly min_garrison.
+    unclamped = max(1, int(ships_remaining * PARAMS["frac_fortress_easy_neutral"]))
+    assert unclamped > ships_remaining - params["min_garrison"]  # floor branch is exercised
+    assert moves[1][2] == ships_remaining - params["min_garrison"]
+    assert source.ships - sum(m[2] for m in moves) == params["min_garrison"]
+
+
 # --- garrison ramp ---
 
 def test_garrison_ramp_at_turn_zero_uses_early_value():
@@ -402,6 +492,49 @@ def test_plan_moves_no_owned_planets():
     neutral = make_planet(id=0, owner=-1, x=70.0, y=50.0, ships=10, production=2)
     moves = plan_moves([neutral], fleets=[], player=0, angular_velocity=0.03)
     assert moves == []
+
+
+def test_plan_moves_defending_source_does_not_also_expand():
+    """A planet that reinforces a threatened ally must NOT also launch an expansion
+    fleet in the same turn — doing so would double-spend its garrison.
+
+    plan_moves filters defense sources out of the expansion pass (strategy.py
+    `defense_used`). This builds a board where the fortress is the only viable
+    reinforcer AND the only planet with an attractive neutral in range, so the
+    exclusion is genuinely exercised: without it the fortress would appear twice.
+
+    Geometry note: the enemy must be far + slow so detect_threats reports a LARGE
+    threat.eta, while the fortress sits CLOSE to the threatened planet (small
+    intercept eta) — otherwise handle_threats' `eta <= threat.eta - eta_buffer`
+    gate rejects the reinforcement and the exclusion is never reached. The enemy's
+    flight path (the x=90 line) stays 15 units clear of the fortress, so the
+    fortress is not itself flagged THREATENED.
+    """
+    # Threatened ally, static at (90, 50).
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # Slow 5-ship enemy descending the x=90 line from (90, 25): reaches the
+    # threatened planet's threat_radius at ~turn 12 (threat.eta ≈ 12).
+    enemy_fleet = make_fleet(owner=1, x=90.0, y=25.0, angle=math.pi / 2, ships=5)
+    # Fortress 15 units from the threatened planet → reinforces in ~6 turns,
+    # comfortably under threat.eta(12) - eta_buffer(5) = 7.
+    fortress = make_planet(id=2, owner=0, x=75.0, y=50.0, ships=50, production=4)
+    # Attractive easy neutral next to the fortress — the expansion target it would
+    # otherwise launch toward (this is what the exclusion must suppress).
+    neutral = make_planet(id=3, owner=-1, x=77.0, y=50.0, ships=0, production=1)
+
+    planets = [threatened, fortress, neutral]
+    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5,
+              "eta_buffer": 5}
+    moves = plan_moves(planets, [enemy_fleet], player=0, angular_velocity=0.03,
+                       params=params)
+
+    # The exclusion is actually exercised: the fortress did issue a defensive move.
+    assert any(m[0] == fortress.id for m in moves), \
+        "expected the fortress to issue a defensive reinforcement"
+    # ...and therefore must not appear a second time as an expansion source.
+    fortress_move_count = sum(1 for m in moves if m[0] == fortress.id)
+    assert fortress_move_count == 1, \
+        f"fortress double-spent its garrison: appeared in {fortress_move_count} moves"
 
 
 # --- path_crosses_sun ---

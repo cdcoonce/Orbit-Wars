@@ -128,7 +128,7 @@ Create the `trials/` directory with three files.
 
 `trials/game_runner.py` — provides `make_agent(params)` (returns an agent closure with per-closure `initial_planets` cache so each game resets independently on turn 0), `run_game(params_a, params_b)` wrapped in a `concurrent.futures.ThreadPoolExecutor` with a 60-second timeout (timed-out games count as draws), and `run_games(challenger, champion, n_games)` which alternates player 0/1 assignment across games (game 0: challenger=player 0; game 1: challenger=player 1; etc.) and returns challenger win count.
 
-`trials/run_trials.py` — Optuna study with SQLite persistence, 4 parallel workers, 200 trials. Champion promotion via atomic write (`os.replace`) when win rate ≥ 55%. All promoted values validated as finite before write. Logging via Optuna callback: prints trial number, win rate, best win rate seen so far, and a `[PROMOTED]` flag on each promotion.
+`trials/run_trials.py` — Optuna study with SQLite persistence, 4 parallel workers, 200 trials. Champion promotion via atomic write (`os.replace`) when win rate meets `PROMOTION_THRESHOLD` (currently ≥ 65%). All promoted values validated as finite before write. Logging via Optuna callback: prints trial number, win rate, best win rate seen so far, and a `[PROMOTED]` flag on each promotion.
 
 Add `trials/study.db` to `.gitignore`.
 
@@ -141,7 +141,7 @@ Add `trials/study.db` to `.gitignore`.
 - [ ] Champion promotion uses `os.replace` (atomic write); validates all values are finite before write
 - [ ] Optuna study uses `load_if_exists=True` — resumable across runs
 - [ ] Optuna callback logs: `Trial N: win_rate=X.XX | best=X.XX [PROMOTED]` (PROMOTED only on promotion)
-- [ ] Configurable constants at module top: `N_GAMES=10`, `N_WORKERS=4`, `N_TRIALS=200`, `PROMOTION_THRESHOLD=0.55`
+- [ ] Configurable constants at module top: `N_GAMES=40`, `N_WORKERS=4`, `N_TRIALS=200`, `PROMOTION_THRESHOLD=0.65`
 - [ ] `trials/study.db` is in `.gitignore`
 - [ ] `trials/champion.py` is tracked in git (not gitignored)
 - [ ] Test: `make_agent(params)` returns a callable that accepts `obs`
