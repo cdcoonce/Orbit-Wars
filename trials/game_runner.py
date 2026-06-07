@@ -13,12 +13,15 @@ and from sibling workers. Reusing one pool amortises the engine import cost
 across the thousands of games a tuning run plays.
 """
 import concurrent.futures
+import logging
 import random
 import threading
 
 from kaggle_environments import make
 
 from src.agent import plan_turn
+
+logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 60
 
@@ -111,6 +114,7 @@ def run_game(
     except concurrent.futures.TimeoutError:
         return "draw"
     except Exception:
+        logger.exception("Worker raised an unexpected exception; scoring as draw")
         return "draw"
 
 
