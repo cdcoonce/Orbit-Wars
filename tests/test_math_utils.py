@@ -194,3 +194,27 @@ def test_angle_down():
 def test_angle_left():
     assert angle_to_target(0, 0, -1, 0) == pytest.approx(math.pi) or \
            angle_to_target(0, 0, -1, 0) == pytest.approx(-math.pi)
+
+
+# --- turns_to_arrive ---
+
+def test_turns_to_arrive_same_position_returns_one():
+    # max(1, ...) floor: zero distance must not return 0 turns.
+    assert turns_to_arrive(0.0, 0.0, 0.0, 0.0, 1) == 1
+
+
+def test_turns_to_arrive_ceil_rounding():
+    # A distance just above an exact speed multiple must round up, not truncate.
+    num_ships = 10
+    speed = fleet_speed(num_ships)
+    exact_turns = 5
+    d = speed * exact_turns + 0.001
+    assert turns_to_arrive(0.0, 0.0, d, 0.0, num_ships) == exact_turns + 1
+
+
+def test_turns_to_arrive_larger_fleet_no_slower_than_single_ship():
+    # fleet_speed grows with fleet size, so larger fleets arrive in no more turns
+    # than a 1-ship fleet covering the same distance.
+    single_ship_turns = turns_to_arrive(0.0, 0.0, 30.0, 0.0, 1)
+    for n in [10, 100, 1000]:
+        assert turns_to_arrive(0.0, 0.0, 30.0, 0.0, n) <= single_ship_turns
