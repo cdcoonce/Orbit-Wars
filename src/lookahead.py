@@ -66,7 +66,6 @@ def step_state(
     move,
     player: int,
     angular_velocity: float,
-    initial_planets,
     opponent_fn=None,
 ) -> GameState:
     """Simulate ONE turn forward.
@@ -77,8 +76,6 @@ def step_state(
         move: [planet_id, angle, ships] or None.
         player: The acting player's index.
         angular_velocity: Global orbital angular velocity (rad/turn).
-        initial_planets: Planet list at the start of the lookahead window —
-                         used to track orbital angles.
         opponent_fn: Optional callable (state) -> list[list]. If provided,
                      opponent moves are applied after our fleet launch and before
                      fleet movement.
@@ -230,7 +227,7 @@ def score_candidate_lookahead(
     # T+1: apply our candidate move + opponent response.
     state = build_state(initial_planets, fleets, turn)
     state = step_state(
-        state, candidate_move, player, angular_velocity, initial_planets, opponent_fn
+        state, candidate_move, player, angular_velocity, opponent_fn
     )
     # T+2..N: both players play greedily (lookahead disabled) from the evolved state.
     n_extra = params.get("lookahead_turns", 1) - 1
@@ -252,6 +249,6 @@ def score_candidate_lookahead(
         )
         fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
         state = step_state(
-            state, our_move, player, angular_velocity, initial_planets, fresh_opp_fn
+            state, our_move, player, angular_velocity, fresh_opp_fn
         )
     return score_state(state, player, params.get("lookahead_ship_weight", 0.01))
