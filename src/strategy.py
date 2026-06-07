@@ -162,6 +162,33 @@ def _effective_distance_power(turn: int, params: dict) -> float:
     return params["distance_power_early"] + t * (params["distance_power_late"] - params["distance_power_early"])
 
 
+def _blended_best(candidates: list, blend: float):
+    """Select the winning (target, fraction) from scored expansion candidates.
+
+    ``candidates`` is a list of ``(greedy_score, lookahead_score, target, fraction)``.
+    A single candidate or ``blend == 0.0`` takes the greedy fast-path (highest
+    greedy score wins). Otherwise greedy and lookahead scores are each min-max
+    normalized to ``[0, 1]`` — the ``+1e-9`` guards against a zero range when all
+    candidates share a score — and combined as ``(1 - blend) * ng + blend * nl``.
+    """
+    if len(candidates) == 1 or blend == 0.0:
+        best = max(candidates, key=lambda c: c[0])
+        return best[2], best[3]
+
+    lo_g = min(c[0] for c in candidates)
+    hi_g = max(c[0] for c in candidates)
+    lo_l = min(c[1] for c in candidates)
+    hi_l = max(c[1] for c in candidates)
+    scored = []
+    for g, l, tgt, frac in candidates:
+        ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
+        nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
+        final = (1 - blend) * ng + blend * nl
+        scored.append((final, tgt, frac))
+    best_scored = max(scored, key=lambda x: x[0])
+    return best_scored[1], best_scored[2]
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -266,23 +293,7 @@ def plan_expansion(
         if not candidates:
             continue
 
-        if len(candidates) == 1 or blend == 0.0:
-            best = max(candidates, key=lambda c: c[0])
-        else:
-            lo_g = min(c[0] for c in candidates)
-            hi_g = max(c[0] for c in candidates)
-            lo_l = min(c[1] for c in candidates)
-            hi_l = max(c[1] for c in candidates)
-            scored = []
-            for g, l, tgt, frac in candidates:
-                ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
-                nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
-                final = (1 - blend) * ng + blend * nl
-                scored.append((final, tgt, frac))
-            best_scored = max(scored, key=lambda x: x[0])
-            best = (None, None, best_scored[1], best_scored[2])
-
-        _, _, best_target, best_fraction = best
+        best_target, best_fraction = _blended_best(candidates, blend)
 
         # Primary fleet
         ships_remaining = source.ships

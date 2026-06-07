@@ -717,3 +717,48 @@ class TestInterceptComet:
         )
         assert abs(fx_no_comet - fx_with_comet) < 1e-9
         assert eta_no == eta_with
+
+
+# --- _blended_best ---
+
+class TestBlendedBest:
+    """Direct unit tests for the lookahead/greedy blend-normalization selection.
+
+    candidates are (greedy_score, lookahead_score, target, fraction) tuples;
+    target is opaque to the helper, so plain strings stand in for planets.
+    """
+
+    def test_single_candidate_returns_it(self):
+        from src.strategy import _blended_best
+        candidates = [(3.0, 99.0, "only", 0.5)]
+        assert _blended_best(candidates, blend=0.7) == ("only", 0.5)
+
+    def test_blend_zero_picks_greedy_winner(self):
+        from src.strategy import _blended_best
+        # "lo" has the higher lookahead score but blend=0.0 must ignore it.
+        candidates = [
+            (10.0, 0.0, "hi", 0.4),
+            (1.0, 100.0, "lo", 0.6),
+        ]
+        assert _blended_best(candidates, blend=0.0) == ("hi", 0.4)
+
+    def test_all_equal_greedy_uses_lookahead_without_dividing_by_zero(self):
+        from src.strategy import _blended_best
+        # hi_g == lo_g would be a ZeroDivisionError without the 1e-9 guard;
+        # greedy terms collapse to ~0, so lookahead decides the winner.
+        candidates = [
+            (5.0, 1.0, "weak_look", 0.3),
+            (5.0, 9.0, "strong_look", 0.7),
+        ]
+        assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7)
+
+    def test_blended_winner_differs_from_greedy_winner(self):
+        from src.strategy import _blended_best
+        # Greedy winner is "g" (greedy 10), but with blend weighted toward
+        # lookahead, normalized scores favor "l" (lookahead 10).
+        candidates = [
+            (10.0, 0.0, "g", 0.4),
+            (0.0, 10.0, "l", 0.6),
+        ]
+        assert _blended_best(candidates, blend=0.0) == ("g", 0.4)
+        assert _blended_best(candidates, blend=0.8) == ("l", 0.6)
