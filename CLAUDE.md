@@ -59,3 +59,26 @@ To re-tune:
 2. `uv run python trials/run_trials.py` — run fresh Optuna self-play tuning
 3. Copy the winning params into `src/config.py` PARAMS
 4. `python build.py` then submit
+
+## Doc-Invariant Test Conventions
+
+Tests that assert "no doc references the old value X" must follow three rules (see issue #97 for the PR #72 failure modes that motivated this):
+
+1. **Match all value representations.** Check every encoding of the guarded value
+   — percent form (e.g. `65%`), decimal form (e.g. `0.65`), and any other
+   representation in use. Scanning for a single literal allows other forms to slip
+   through undetected (in PR #72 the percent-form guard missed the decimal form
+   `0.55` in living docs).
+
+2. **Scan the full repo.** The test must walk the entire repository. Any excluded
+   directory (e.g. dated `archive/` or `superpowers/` snapshots that are historical
+   records, not living docs) must be listed in an exclusion set with a comment
+   explaining why the exclusion is valid. Silent omission of a directory is not
+   acceptable even when that directory holds the stale value.
+
+3. **Document CI limitations explicitly.** When a doc tree cannot be governed from
+   CI — for example, the Claude Code harness auto-denies edits to `.claude/`, so
+   `.claude/docs/project.md` cannot be policed by a pytest assertion — add a comment
+   in the test explaining the limitation and what manual action is required. Do not
+   silently exclude ungovernable trees; document the gap so maintainers know to fix
+   those files by hand.
