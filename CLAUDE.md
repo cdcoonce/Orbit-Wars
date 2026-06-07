@@ -39,6 +39,14 @@ kaggle competitions submit -c orbit-wars -f submission.py -m "description"  # su
 
 After any significant simulator change: **delete `trials/study.db` first** to clear stale Bayesian priors.
 
+### Tuned-constant update rule
+
+Whenever a tuned constant changes value (e.g. `PROMOTION_THRESHOLD` or `N_GAMES`):
+
+1. **grep the entire repo** for the old value in every representation — both the percent form (e.g. `65%`) and the decimal form (e.g. `0.65`) — and update every live reference, including files under `.claude/docs/`.
+2. **Cite constants by name** in new or edited docs (e.g. "see `PROMOTION_THRESHOLD` in `trials/run_trials.py`") instead of hardcoding the number, so docs cannot silently drift when the value changes.
+3. **Exemption**: intentionally-dated snapshots in `archive/` or `superpowers/` preserve the historical figure on purpose and need not be updated.
+
 ### Pending re-tune: multi-fleet defense aggregation
 
 Inbound fleets are now aggregated per planet before defense scaling, so
