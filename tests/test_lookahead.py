@@ -322,6 +322,37 @@ class TestStepState:
         assert p.owner == -1
         assert p.ships == 0
 
+    def test_incumbent_largest_stack_but_loses_to_combined_attackers(self):
+        """Multi-party: the incumbent is the largest SINGLE stack yet loses to
+        the COMBINED attackers (surviving < 0) → the planet goes neutral.
+
+        owner=0 holds 10 ships; owner=1 and owner=2 each send 6 (combined 12 >
+        10). The winner-by-largest-single-stack is owner 0, but surviving =
+        10 - 12 = -2, so no one holds the planet. It must NOT be retained by the
+        incumbent (the bug: an `elif winner == planet.owner` that fired on
+        surviving < 0); it falls to neutral.
+        """
+        from src.math_utils import fleet_speed
+
+        # Incumbent owned planet: 10 ships, production=0 → exactly 10 defenders.
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
+                             ships=10, production=0)
+
+        # Two attackers from DIFFERENT owners, each 6 ships, arriving this turn.
+        speed = fleet_speed(6)
+        fleet_x = 70.0 - speed + 0.1
+        f1 = make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=6)
+        f2 = make_fleet(id=1, owner=2, x=fleet_x, y=50.0, angle=0.0, ships=6)
+
+        state = build_state([planet], [f1, f2], turn=0)
+
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
+
+        p = next_s.planets[0]
+        # Largest single stack (10) loses to combined 6+6=12 → neutral, 0 ships.
+        assert p.owner == -1
+        assert p.ships == 0
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreState

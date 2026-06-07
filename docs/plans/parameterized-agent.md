@@ -141,7 +141,7 @@ Add `trials/study.db` to `.gitignore`.
 - [ ] Champion promotion uses `os.replace` (atomic write); validates all values are finite before write
 - [ ] Optuna study uses `load_if_exists=True` — resumable across runs
 - [ ] Optuna callback logs: `Trial N: win_rate=X.XX | best=X.XX [PROMOTED]` (PROMOTED only on promotion)
-- [ ] Configurable constants at module top: `N_GAMES=10`, `N_WORKERS=4`, `N_TRIALS=200`, `PROMOTION_THRESHOLD=0.55`
+- [ ] Configurable constants at module top: `N_GAMES=40`, `N_WORKERS=4`, `N_TRIALS=200`, `PROMOTION_THRESHOLD=0.65`
 - [ ] `trials/study.db` is in `.gitignore`
 - [ ] `trials/champion.py` is tracked in git (not gitignored)
 - [ ] Test: `make_agent(params)` returns a callable that accepts `obs`

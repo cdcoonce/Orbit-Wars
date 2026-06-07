@@ -34,7 +34,7 @@ tests/
   test_trial_runner.py       — Optuna objective smoke tests (requires optuna)
 
 trials/
-  run_trials.py   — Optuna self-play driver (200 trials, 4 workers, promotes at ≥55% win rate)
+  run_trials.py   — Optuna self-play driver (200 trials, 4 workers, promotes at ≥65% win rate)
   champion.py     — CHAMPION_PARAMS: best known params (updated on promotion)
   game_runner.py  — run_games(params_a, params_b, n_games): returns (win_rate, results)
   benchmark.py    — champion vs original hand-tuned defaults (20 games)
@@ -130,7 +130,7 @@ Early-game `min_garrison` ramps linearly from `min_garrison_early` (2) to `min_g
 
 ### Optuna Trial Framework
 
-`trials/run_trials.py` runs self-play: challenger (Optuna sample from PARAM_SPACE) vs current champion (from `champion.py`). Promotion threshold: 55% win rate over 20 games. 4 parallel workers write to a shared `study.db`. On promotion, `champion.py` is atomically overwritten.
+`trials/run_trials.py` runs self-play: challenger (Optuna sample from PARAM_SPACE) vs current champion (from `champion.py`). Promotion threshold: 65% win rate over 40 games. 4 parallel workers write to a shared `study.db`. On promotion, `champion.py` is atomically overwritten.
 
 When retuning after a major simulator change: **delete `study.db` first** — stale Bayesian priors from a broken simulator mislead sampling.
 

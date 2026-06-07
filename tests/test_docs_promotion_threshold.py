@@ -55,20 +55,33 @@ class TestNoStaleFigureAnywhere:
         assert not offenders, f"stale 55% figure still present in: {rel}"
 
 
-class TestWikiReferenceMatchesCode:
-    """The wiki is live reference documentation (not a dated snapshot), so any
-    numeric value it states for PROMOTION_THRESHOLD must equal the code constant.
-    This catches the decimal form (0.55) that the percentage scan above misses."""
+# Dated snapshots (archived plans, design specs) record the ORIGINAL figure
+# (0.55) on purpose — they are historical records, not living reference, so they
+# are exempt from the match-the-code decimal check below.
+_HISTORICAL_PARTS = {"archive", "superpowers"}
 
-    def test_wiki_threshold_values_match_code(self):
-        wiki = REPO_ROOT / "docs" / "wiki"
+
+def _living_doc_files():
+    """Living Markdown docs: skip vendored/protected trees and dated snapshots."""
+    skip = _EXCLUDED_PARTS | _HISTORICAL_PARTS
+    return [p for p in REPO_ROOT.rglob("*.md") if skip.isdisjoint(p.parts)]
+
+
+class TestThresholdDecimalMatchesCode:
+    """Any living doc that states a decimal PROMOTION_THRESHOLD must equal the
+    code constant — catches the decimal form (0.55) the percentage scan misses,
+    repo-wide across living docs (not just docs/wiki). Lines that merely mention
+    PROMOTION_THRESHOLD without a decimal (e.g. "≥ 65%", or by name) are ignored,
+    as are unrelated decimals on other lines (param values, win-rate buckets)."""
+
+    def test_living_docs_threshold_decimal_matches_code(self):
         expected = str(PROMOTION_THRESHOLD)
         bad = []
-        for md in wiki.rglob("*.md"):
+        for md in _living_doc_files():
             for line in md.read_text().splitlines():
                 if "PROMOTION_THRESHOLD" not in line:
                     continue
                 for dec in re.findall(r"0\.\d+", line):
                     if dec != expected:
                         bad.append(f"{md.relative_to(REPO_ROOT)}: {dec} (want {expected})")
-        assert not bad, f"stale PROMOTION_THRESHOLD value in wiki: {bad}"
+        assert not bad, f"stale PROMOTION_THRESHOLD decimal in living docs: {bad}"
