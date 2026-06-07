@@ -39,6 +39,14 @@ kaggle competitions submit -c orbit-wars -f submission.py -m "description"  # su
 
 After any significant simulator change: **delete `trials/study.db` first** to clear stale Bayesian priors.
 
+### Tuned-constant update rule
+
+Whenever a tuned constant changes value (e.g. `PROMOTION_THRESHOLD` or `N_GAMES`):
+
+1. **grep the entire repo** for the old value in every representation — both the percent form (e.g. `65%`) and the decimal form (e.g. `0.65`) — and update every live reference, including files under `.claude/docs/`.
+2. **Cite constants by name** in new or edited docs (e.g. "see `PROMOTION_THRESHOLD` in `trials/run_trials.py`") instead of hardcoding the number, so docs cannot silently drift when the value changes.
+3. **Exemption**: intentionally-dated snapshots in `archive/` or `superpowers/` preserve the historical figure on purpose and need not be updated.
+
 ### Pending re-tune: multi-fleet defense aggregation
 
 Inbound fleets are now aggregated per planet before defense scaling, so
@@ -51,3 +59,26 @@ To re-tune:
 2. `uv run python trials/run_trials.py` — run fresh Optuna self-play tuning
 3. Copy the winning params into `src/config.py` PARAMS
 4. `python build.py` then submit
+
+## Doc-Invariant Test Conventions
+
+Tests that assert "no doc references the old value X" must follow three rules (see issue #97 for the PR #72 failure modes that motivated this):
+
+1. **Match all value representations.** Check every encoding of the guarded value
+   — percent form (e.g. `65%`), decimal form (e.g. `0.65`), and any other
+   representation in use. Scanning for a single literal allows other forms to slip
+   through undetected (in PR #72 the percent-form guard missed the decimal form
+   `0.55` in living docs).
+
+2. **Scan the full repo.** The test must walk the entire repository. Any excluded
+   directory (e.g. dated `archive/` or `superpowers/` snapshots that are historical
+   records, not living docs) must be listed in an exclusion set with a comment
+   explaining why the exclusion is valid. Silent omission of a directory is not
+   acceptable even when that directory holds the stale value.
+
+3. **Document CI limitations explicitly.** When a doc tree cannot be governed from
+   CI — for example, the Claude Code harness auto-denies edits to `.claude/`, so
+   `.claude/docs/project.md` cannot be policed by a pytest assertion — add a comment
+   in the test explaining the limitation and what manual action is required. Do not
+   silently exclude ungovernable trees; document the gap so maintainers know to fix
+   those files by hand.

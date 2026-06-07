@@ -3,6 +3,7 @@ import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
 from src.strategy import PARAMS, Threat, is_stationary  # noqa: F401
+from src.strategy import aggression
 from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
@@ -784,3 +785,26 @@ class TestBlendedBest:
         ]
         assert _blended_best(candidates, blend=0.0) == ("g", 0.4)
         assert _blended_best(candidates, blend=0.8) == ("l", 0.6)
+
+
+# --- aggression ---
+
+_AGG_PARAMS = {"game_length": 100, "aggression_max": 0.9, "aggression_min": 0.3}
+
+
+def test_aggression_at_turn_zero_returns_max():
+    assert aggression(0, _AGG_PARAMS) == pytest.approx(0.9)
+
+
+def test_aggression_at_game_length_returns_min():
+    assert aggression(100, _AGG_PARAMS) == pytest.approx(0.3)
+
+
+def test_aggression_beyond_game_length_clamps_to_min():
+    # min(turn, game_length) guard prevents going below aggression_min
+    assert aggression(200, _AGG_PARAMS) == pytest.approx(0.3)
+
+
+def test_aggression_midpoint_interpolates_linearly():
+    # t = 50/100 = 0.5; value = 0.9 + 0.5*(0.3 - 0.9) = 0.6
+    assert aggression(50, _AGG_PARAMS) == pytest.approx(0.6)

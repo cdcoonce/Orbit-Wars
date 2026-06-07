@@ -4,7 +4,6 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
     CENTER,
     ROTATION_RADIUS_LIMIT,
     SUN_RADIUS,
-    Fleet,
     Planet,
 )
 
