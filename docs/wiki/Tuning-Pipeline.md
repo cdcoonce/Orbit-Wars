@@ -64,7 +64,7 @@ for i in range(n_games):
     result = run_game(challenger_params, champion_params, challenger_player=i % 2)
 ```
 
-- `challenger_player=i % 2` alternates who plays as player 0 (first-mover). Over 20 games the challenger plays 10 games as P0 and 10 as P1 — any first-move advantage cancels out.
+- `challenger_player=i % 2` alternates who plays as player 0 (first-mover). Over 40 games the challenger plays 20 games as P0 and 20 as P1 — any first-move advantage cancels out.
 - Each `run_game` spawns a `ThreadPoolExecutor(max_workers=1)` and enforces `timeout=60s`. A timeout or uncaught exception returns `"draw"`, preventing a hanging game from blocking an Optuna worker indefinitely.
 - Each agent closure captures its own `initial_planets` state so parallel games don't share mutable caches.
 - Win rate = `wins / n_games` (draws count as zero wins for the challenger).
