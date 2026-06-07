@@ -2,8 +2,7 @@
 # Read by ProjectConfig (afk_driver/config.py). See cdcoonce/afk-agent-system.
 
 # The verification gate the EXECUTOR uses: a slice only reaches a draft PR if this passes.
-# NOTE: the suite currently has 1 pre-existing failure (test_champion_params_has_all_keys);
-# the executor cannot run here until that is green. Read-only producers do not run this.
+# Full suite green as of 2026-06-07 (206 passed) — the executor can run here.
 test_command = "uv run pytest -q"
 permission_mode = "acceptEdits"
 
@@ -24,3 +23,15 @@ max_retries = 2
 timeout_seconds = 1800
 max_parallel = 2
 auto_promote_max = 2
+
+# Cheap default tier; escalated retry reaches opus. Keeps scheduled-drain cost low.
+[model]
+cheap = "sonnet"
+frontier = "opus"
+default_tier = "cheap"
+
+# Scheduled --cycle producers. With auto_promote=true + F2 above, a pass produces
+# → auto-promotes (≤2) → drains onto afk/staging → opens the staging→main MR.
+# A human still merges staging→main (the merge gate holds).
+[cycle]
+producers = ["scout", "harvest"]
