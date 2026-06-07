@@ -22,7 +22,9 @@ def should_play_defensive(
     if turn < threshold_turn:
         return False
 
-    # Determine the enemy player id by finding any planet not owned by player or neutral
+    # Sum every enemy's ships — across all non-player, non-neutral owners — over
+    # both planets and in-transit fleets (same planets+fleets shape as
+    # total_ships above; the owner filter matches score_state in lookahead.py).
     enemy_ships = sum(
         p.ships for p in planets if p.owner not in (-1, player)
     ) + sum(
