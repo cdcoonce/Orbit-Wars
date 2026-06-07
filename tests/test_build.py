@@ -122,6 +122,29 @@ def _kaggle_symbols_in_src():
     return names
 
 
+def test_src_files_covers_all_src_modules():
+    """Every src/*.py (except __init__.py) must appear in build.SRC_FILES.
+
+    Guards against adding a module to src/ and forgetting to list it in the
+    bundle, which causes a silent NameError at Kaggle runtime while local
+    imports continue working fine.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build", BUILD_SCRIPT)
+    build_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_mod)
+
+    src_modules = {p.name for p in SRC_DIR.glob("*.py") if p.name != "__init__.py"}
+    bundled = {Path(p).name for p in build_mod.SRC_FILES}
+
+    missing = sorted(src_modules - bundled)
+    assert not missing, (
+        f"src/ module(s) missing from build.SRC_FILES: {missing} — "
+        f"add them to SRC_FILES in build.py"
+    )
+
+
 def test_kaggle_symbols_present_in_bundle(built_submission):
     """Every kaggle symbol imported in src/ must survive into the bundle's import
     block — catches the silent-drop fragility when a new symbol is added to a
