@@ -8,6 +8,7 @@ from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
+from src.math_utils import predict_planet_position, turns_to_arrive
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
@@ -62,6 +63,44 @@ def test_intercept_returns_three_tuple():
     assert isinstance(future_y, float)
     assert isinstance(eta, int)
     assert eta >= 1
+
+
+def test_intercept_converges_to_orbiting_target_future_position():
+    """The convergence loop aims at the target's *future* orbit position, not its
+    current one, and returns a self-consistent (position, eta) fixed point."""
+    av = 0.02
+    source = make_planet(id=0, x=20.0, y=50.0)
+    # x=70: orbital_radius=20, 20+SUN_RADIUS(10)=30 < ROTATION_RADIUS_LIMIT(50) → orbits
+    target = make_planet(id=1, x=70.0, y=50.0)
+    ships = 20
+
+    future_x, future_y, eta = intercept(source, target, av, ships)
+
+    # Returned point equals the orbit prediction for the returned eta.
+    expected_x, expected_y = predict_planet_position(target, av, eta)
+    assert abs(future_x - expected_x) < 1e-9
+    assert abs(future_y - expected_y) < 1e-9
+
+    # The fast-orbiting target actually moved, so aiming at the current position
+    # would have been wrong — this proves the loop did real work.
+    assert abs(future_x - target.x) > 1e-6 or abs(future_y - target.y) > 1e-6
+
+    # ETA is self-consistent with the aim point it produced.
+    assert turns_to_arrive(source.x, source.y, future_x, future_y, ships) == eta
+
+
+def test_intercept_stationary_target_returns_current_position():
+    """Contrast case: a target outside ROTATION_RADIUS_LIMIT never moves, so the
+    loop returns its unchanged current position."""
+    av = 0.03
+    source = make_planet(id=0, x=10.0, y=50.0)
+    # x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50) → static
+    target = make_planet(id=1, x=90.0, y=50.0)
+
+    future_x, future_y, _eta = intercept(source, target, av, 30)
+
+    assert future_x == target.x
+    assert future_y == target.y
 
 
 # --- classify_own ---
