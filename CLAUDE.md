@@ -38,3 +38,16 @@ kaggle competitions submit -c orbit-wars -f submission.py -m "description"  # su
 3. Run `python build.py` then submit
 
 After any significant simulator change: **delete `trials/study.db` first** to clear stale Bayesian priors.
+
+### Pending re-tune: multi-fleet defense aggregation
+
+Inbound fleets are now aggregated per planet before defense scaling, so
+`defense_incoming_multiplier` (`src/config.py`) multiplies the _combined_ incoming
+ships rather than a single fleet's. The defensive params in `src/config.py` were
+tuned against the old per-fleet behavior and **must NOT be promoted until re-tuned**.
+To re-tune:
+
+1. `rm trials/study.db` — clear stale Bayesian priors
+2. `uv run python trials/run_trials.py` — run fresh Optuna self-play tuning
+3. Copy the winning params into `src/config.py` PARAMS
+4. `python build.py` then submit
