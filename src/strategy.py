@@ -72,7 +72,9 @@ def detect_threats(
     # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
     # handle_threats sizes reinforcement against the combined attack, not just one fleet.
     seen: set[tuple[int, int]] = set()
-    agg: dict[int, list[int]] = {}
+    # planet_id -> (summed_ships, earliest_eta). An explicit 2-tuple keeps each
+    # slot self-documenting (no positional [0]/[1] mutation to accidentally swap).
+    agg: dict[int, tuple[int, int]] = {}
     for fleet in fleets:
         if fleet.owner == player:
             continue
@@ -89,10 +91,11 @@ def detect_threats(
                 if distance(fleet_x, fleet_y, px, py) < params["threat_radius"]:
                     seen.add((fleet.id, planet.id))
                     if planet.id in agg:
-                        agg[planet.id][0] += fleet.ships
-                        agg[planet.id][1] = min(agg[planet.id][1], t)  # earliest sighting
+                        prev_ships, prev_eta = agg[planet.id]
+                        # sum ships across fleets; keep the earliest sighting as ETA
+                        agg[planet.id] = (prev_ships + fleet.ships, min(prev_eta, t))
                     else:
-                        agg[planet.id] = [fleet.ships, t]
+                        agg[planet.id] = (fleet.ships, t)
     return [
         Threat(planet_id=pid, incoming_ships=ships, eta=eta)
         for pid, (ships, eta) in agg.items()
