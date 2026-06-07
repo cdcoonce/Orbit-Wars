@@ -9,9 +9,9 @@ permission_mode = "acceptEdits"
 # Integration model (live end-to-end test): build onto a standing staging branch
 # via the merge-queue, auto-promote afk-sized proposals, and (F2) open the
 # staging->main MR. A human still merges staging->main.
-integration_target = "afk/staging"
-autonomy_frontier = "F2"
-auto_promote = true
+integration_target = "main"
+autonomy_frontier = "F1"
+auto_promote = false
 
 agent_prompt = """Implement the linked GitHub issue using test-driven development \
 (red-green-refactor): write the failing test first, watch it fail, then write the \
