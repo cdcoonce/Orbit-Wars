@@ -24,9 +24,14 @@ from .lookahead import build_state, score_candidate_lookahead
 Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
 
+def _turn_ramp(turn: int, ramp_turns: int, start: float, end: float) -> float:
+    """Linearly interpolate from start to end over [0, ramp_turns], clamped at ramp_turns."""
+    t = min(turn, ramp_turns) / ramp_turns
+    return start + t * (end - start)
+
+
 def aggression(turn: int, params: dict = PARAMS) -> float:
-    t = min(turn, params["game_length"]) / params["game_length"]
-    return params["aggression_max"] - t * (params["aggression_max"] - params["aggression_min"])
+    return _turn_ramp(turn, params["game_length"], params["aggression_max"], params["aggression_min"])
 
 
 def classify_own(planet: Planet, threats: list, params: dict = PARAMS) -> str:
@@ -152,14 +157,44 @@ def _effective_min_garrison(turn: int, params: dict) -> int:
     early = params["min_garrison_early"]
     full = params["min_garrison"]
     ramp = params["garrison_ramp_turns"]
-    t = min(turn, ramp) / ramp
-    return int(early + t * (full - early))
+    return int(_turn_ramp(turn, ramp, early, full))
 
 
 def _effective_distance_power(turn: int, params: dict) -> float:
     """Linearly ramp distance exponent from distance_power_early down to distance_power_late."""
-    t = min(turn, params["distance_ramp_turns"]) / params["distance_ramp_turns"]
-    return params["distance_power_early"] + t * (params["distance_power_late"] - params["distance_power_early"])
+    return _turn_ramp(
+        turn,
+        params["distance_ramp_turns"],
+        params["distance_power_early"],
+        params["distance_power_late"],
+    )
+
+
+def _blended_best(candidates: list, blend: float):
+    """Select the winning (target, fraction) from scored expansion candidates.
+
+    ``candidates`` is a list of ``(greedy_score, lookahead_score, target, fraction)``.
+    A single candidate or ``blend == 0.0`` takes the greedy fast-path (highest
+    greedy score wins). Otherwise greedy and lookahead scores are each min-max
+    normalized to ``[0, 1]`` — the ``+1e-9`` guards against a zero range when all
+    candidates share a score — and combined as ``(1 - blend) * ng + blend * nl``.
+    """
+    if len(candidates) == 1 or blend == 0.0:
+        best = max(candidates, key=lambda c: c[0])
+        return best[2], best[3]
+
+    lo_g = min(c[0] for c in candidates)
+    hi_g = max(c[0] for c in candidates)
+    lo_l = min(c[1] for c in candidates)
+    hi_l = max(c[1] for c in candidates)
+    scored = []
+    for g, l, tgt, frac in candidates:
+        ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
+        nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
+        final = (1 - blend) * ng + blend * nl
+        scored.append((final, tgt, frac))
+    best_scored = max(scored, key=lambda x: x[0])
+    return best_scored[1], best_scored[2]
 
 
 def plan_expansion(
@@ -266,23 +301,7 @@ def plan_expansion(
         if not candidates:
             continue
 
-        if len(candidates) == 1 or blend == 0.0:
-            best = max(candidates, key=lambda c: c[0])
-        else:
-            lo_g = min(c[0] for c in candidates)
-            hi_g = max(c[0] for c in candidates)
-            lo_l = min(c[1] for c in candidates)
-            hi_l = max(c[1] for c in candidates)
-            scored = []
-            for g, l, tgt, frac in candidates:
-                ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
-                nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
-                final = (1 - blend) * ng + blend * nl
-                scored.append((final, tgt, frac))
-            best_scored = max(scored, key=lambda x: x[0])
-            best = (None, None, best_scored[1], best_scored[2])
-
-        _, _, best_target, best_fraction = best
+        best_target, best_fraction = _blended_best(candidates, blend)
 
         # Primary fleet
         ships_remaining = source.ships
