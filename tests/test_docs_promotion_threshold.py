@@ -18,7 +18,12 @@ CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 # auto-denies edits to it, so docs under there cannot be governed from here.
 # `.claude/docs/project.md` still carries the stale figure and must be fixed by
 # a maintainer with `.claude/` write access (see issue #67 notes).
-_EXCLUDED_PARTS = {".venv", "node_modules", ".claude"}
+#
+# `.afk/` holds afk-agent-system's gitignored integration worktrees (staging /
+# epic branch checkouts). Those are transient copies of *branches*, not this
+# repo's canonical docs, so they must not be policed here — otherwise a stale
+# doc on an in-flight afk branch fails main's suite.
+_EXCLUDED_PARTS = {".venv", "node_modules", ".claude", ".afk"}
 
 
 def _doc_files():
