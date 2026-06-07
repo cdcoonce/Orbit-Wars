@@ -24,6 +24,7 @@ def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2)
 
 # --- is_stationary ---
 
+
 def test_is_stationary_true():
     # x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50) → static
     assert is_stationary(make_planet(x=90.0, y=50.0)) is True
@@ -35,6 +36,7 @@ def test_is_stationary_false():
 
 
 # --- can_capture ---
+
 
 def test_can_capture_neutral_ignores_production():
     # Neutral planet: only ships count, production is ignored
@@ -53,6 +55,7 @@ def test_can_capture_enemy_includes_production():
 
 
 # --- intercept ---
+
 
 def test_intercept_returns_three_tuple():
     source = make_planet(id=0, x=50.0, y=10.0)
@@ -105,6 +108,7 @@ def test_intercept_stationary_target_returns_current_position():
 
 
 # --- classify_own ---
+
 
 def test_classify_own_threatened():
     planet = make_planet(id=1, ships=50, production=5)
@@ -170,7 +174,9 @@ def test_classify_enemy_contested():
     # Use explicit ratios with a clear gap so integer arithmetic stays in range
     params = {**PARAMS, "contested_ratio": 1.1, "weak_ratio": 2.0}
     ships_to_send = int(15 * 1.5)  # 22/15=1.47, between 1.1 and 2.0
-    assert classify_enemy(target, ships_to_send, eta, params=params) == "CONTESTED_ENEMY"
+    assert (
+        classify_enemy(target, ships_to_send, eta, params=params) == "CONTESTED_ENEMY"
+    )
 
 
 def test_classify_enemy_zero_defenders():
@@ -184,7 +190,6 @@ def test_classify_enemy_hardened():
     # expected_defenders = 15; ratio below contested_ratio
     ships_to_send = int(15 * PARAMS["contested_ratio"]) - 1
     assert classify_enemy(target, ships_to_send, eta) == "HARDENED_ENEMY"
-
 
 
 def make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=0.0, from_planet_id=99, ships=10):
@@ -225,11 +230,29 @@ def test_detect_threats_aggregates_converging_fleets():
     eta_a = detect_threats([planet], [fleet_a], player=0, angular_velocity=0.03)[0].eta
     eta_b = detect_threats([planet], [fleet_b], player=0, angular_velocity=0.03)[0].eta
 
-    threats = detect_threats([planet], [fleet_a, fleet_b], player=0, angular_velocity=0.03)
+    threats = detect_threats(
+        [planet], [fleet_a, fleet_b], player=0, angular_velocity=0.03
+    )
     assert len(threats) == 1
     assert threats[0].planet_id == 1
     assert threats[0].incoming_ships == fleet_a.ships + fleet_b.ships  # 25, summed
     assert threats[0].eta == min(eta_a, eta_b)  # earliest sighting preserved
+
+
+def test_detect_threats_aggregates_fleets_with_colliding_ids():
+    # Two distinct fleet objects sharing id=-1 (sim-spawned sentinel) must BOTH
+    # contribute their ships — the dedup key must be object-identity-based, not
+    # .id-based, or the second fleet is silently dropped (regression for lookahead path).
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    fleet_a = make_fleet(id=-1, owner=1, x=62.0, y=50.0, angle=0.0, ships=10)
+    fleet_b = make_fleet(id=-1, owner=1, x=64.0, y=50.0, angle=0.0, ships=15)
+
+    threats = detect_threats(
+        [planet], [fleet_a, fleet_b], player=0, angular_velocity=0.03
+    )
+    assert len(threats) == 1
+    assert threats[0].planet_id == 1
+    assert threats[0].incoming_ships == fleet_a.ships + fleet_b.ships  # 25, not 10
 
 
 def test_detect_threats_single_fleet_unchanged():
@@ -253,15 +276,27 @@ def test_handle_threats_scales_against_combined_incoming():
     fleet_a = make_fleet(id=0, owner=1, x=62.0, y=50.0, angle=0.0, ships=10)
     fleet_b = make_fleet(id=1, owner=1, x=64.0, y=50.0, angle=0.0, ships=15)
 
-    threats = detect_threats([threatened], [fleet_a, fleet_b], player=0, angular_velocity=0.03)
+    threats = detect_threats(
+        [threatened], [fleet_a, fleet_b], player=0, angular_velocity=0.03
+    )
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.1,
-              "eta_buffer": 5, "defense_incoming_multiplier": 0.5}
-    moves = handle_threats(threats, [threatened, fortress], own_classes,
-                           angular_velocity=0.03, params=params)
-    flat = int(100 * 0.1)            # 10 — flat fraction of the fortress garrison
-    combined = int(25 * 0.5)         # 12 — magnitude scaled by SUMMED incoming (10+15)
-    single = int(15 * 0.5)           # 7  — what one fleet alone would have driven
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.1,
+        "eta_buffer": 5,
+        "defense_incoming_multiplier": 0.5,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    flat = int(100 * 0.1)  # 10 — flat fraction of the fortress garrison
+    combined = int(25 * 0.5)  # 12 — magnitude scaled by SUMMED incoming (10+15)
+    single = int(15 * 0.5)  # 7  — what one fleet alone would have driven
     assert len(moves) == 1
     assert moves[0][0] == 2
     assert moves[0][2] == combined
@@ -271,15 +306,26 @@ def test_handle_threats_scales_against_combined_incoming():
 
 # --- handle_threats ---
 
+
 def test_handle_threats_reinforces_when_able():
     threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
     # Fortress at (70, 50): distance=20, arrives in ~8 turns <= threat.eta(20)-buffer(5)=15
     fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
     threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5, "eta_buffer": 5}
-    moves = handle_threats(threats, [threatened, fortress], own_classes,
-                           angular_velocity=0.03, params=params)
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
     assert len(moves) == 1
     assert moves[0][0] == 2
 
@@ -290,7 +336,9 @@ def test_handle_threats_skips_when_too_slow():
     far_fortress = make_planet(id=2, owner=0, x=10.0, y=50.0, ships=50, production=4)
     threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    moves = handle_threats(threats, [threatened, far_fortress], own_classes, angular_velocity=0.03)
+    moves = handle_threats(
+        threats, [threatened, far_fortress], own_classes, angular_velocity=0.03
+    )
     assert len(moves) == 0
 
 
@@ -299,7 +347,9 @@ def test_handle_threats_skips_outpost():
     outpost = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=1)
     threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
     own_classes = {1: "THREATENED", 2: "OUTPOST"}
-    moves = handle_threats(threats, [threatened, outpost], own_classes, angular_velocity=0.03)
+    moves = handle_threats(
+        threats, [threatened, outpost], own_classes, angular_velocity=0.03
+    )
     assert len(moves) == 0
 
 
@@ -313,10 +363,18 @@ def test_handle_threats_already_used_not_reused():
         Threat(planet_id=3, incoming_ships=30, eta=20),
     ]
     own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED"}
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5, "eta_buffer": 5}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
     moves = handle_threats(
-        threats, [threatened1, fortress, threatened2], own_classes,
-        angular_velocity=0.03, params=params,
+        threats,
+        [threatened1, fortress, threatened2],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
     )
     # Fortress assigned to first threat, then blocked for second → only 1 move
     assert len(moves) == 1
@@ -331,10 +389,20 @@ def test_handle_threats_identical_at_zero_multiplier():
     fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
     threats = [Threat(planet_id=1, incoming_ships=200, eta=20)]
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5,
-              "eta_buffer": 5, "defense_incoming_multiplier": 0.0}
-    moves = handle_threats(threats, [threatened, fortress], own_classes,
-                           angular_velocity=0.03, params=params)
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+        "defense_incoming_multiplier": 0.0,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
     assert len(moves) == 1
     assert moves[0][2] == int(50 * 0.5)  # flat fraction only — incoming_ships ignored
 
@@ -346,12 +414,22 @@ def test_handle_threats_scales_reinforcement_with_incoming_when_enabled():
     fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=100, production=4)
     threats = [Threat(planet_id=1, incoming_ships=100, eta=20)]
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.1,
-              "eta_buffer": 5, "defense_incoming_multiplier": 0.5}
-    moves = handle_threats(threats, [threatened, fortress], own_classes,
-                           angular_velocity=0.03, params=params)
-    flat = int(100 * 0.1)        # 10
-    magnitude = int(100 * 0.5)   # 50 — the attack-scaled term
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.1,
+        "eta_buffer": 5,
+        "defense_incoming_multiplier": 0.5,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    flat = int(100 * 0.1)  # 10
+    magnitude = int(100 * 0.5)  # 50 — the attack-scaled term
     assert len(moves) == 1
     assert moves[0][2] == magnitude
     assert moves[0][2] > flat
@@ -363,25 +441,41 @@ def test_handle_threats_larger_incoming_reinforces_at_least_as_much():
     threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
     fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=100, production=4)
     own_classes = {1: "THREATENED", 2: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.1,
-              "eta_buffer": 5, "defense_incoming_multiplier": 0.5}
-    small = handle_threats([Threat(planet_id=1, incoming_ships=30, eta=20)],
-                           [threatened, fortress], own_classes,
-                           angular_velocity=0.03, params=params)
-    large = handle_threats([Threat(planet_id=1, incoming_ships=100, eta=20)],
-                           [threatened, fortress], own_classes,
-                           angular_velocity=0.03, params=params)
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.1,
+        "eta_buffer": 5,
+        "defense_incoming_multiplier": 0.5,
+    }
+    small = handle_threats(
+        [Threat(planet_id=1, incoming_ships=30, eta=20)],
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    large = handle_threats(
+        [Threat(planet_id=1, incoming_ships=100, eta=20)],
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
     assert small and large
     assert large[0][2] >= small[0][2]
 
 
 # --- plan_expansion ---
 
+
 def test_plan_expansion_fortress_attacks_soft_enemy():
     fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
     soft_enemy = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=1, production=1)
     own_classes = {0: "FORTRESS"}
-    moves = plan_expansion([fortress], [], [soft_enemy], own_classes, angular_velocity=0.03)
+    moves = plan_expansion(
+        [fortress], [], [soft_enemy], own_classes, angular_velocity=0.03
+    )
     assert len(moves) == 1
     assert moves[0][0] == 0
     expected_ships = max(1, int(60 * PARAMS["frac_fortress_soft_enemy"]))
@@ -392,7 +486,9 @@ def test_plan_expansion_outpost_skips_hard_neutral():
     outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
     hard_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=100, production=2)
     own_classes = {0: "OUTPOST"}
-    moves = plan_expansion([outpost], [hard_neutral], [], own_classes, angular_velocity=0.03)
+    moves = plan_expansion(
+        [outpost], [hard_neutral], [], own_classes, angular_velocity=0.03
+    )
     assert len(moves) == 0
 
 
@@ -401,23 +497,39 @@ def test_plan_expansion_outpost_takes_easy_low_neutral():
     easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
     own_classes = {0: "OUTPOST"}
     params = {**PARAMS, "min_garrison": 10, "weak_ratio": 1.5}
-    moves = plan_expansion([outpost], [easy_low], [], own_classes,
-                           angular_velocity=0.03, params=params)
+    moves = plan_expansion(
+        [outpost], [easy_low], [], own_classes, angular_velocity=0.03, params=params
+    )
     assert len(moves) == 1
     assert moves[0][0] == 0
 
 
 def test_plan_expansion_skips_below_min_garrison():
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
-    planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=params["min_garrison"] - 1)
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+    }
+    planet = make_planet(
+        id=0, owner=0, x=70.0, y=50.0, ships=params["min_garrison"] - 1
+    )
     target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
     own_classes = {0: "FORTRESS"}
-    moves = plan_expansion([planet], [target], [], own_classes,
-                           angular_velocity=0.03, params=params, turn=100)
+    moves = plan_expansion(
+        [planet],
+        [target],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        turn=100,
+    )
     assert len(moves) == 0
 
 
 # --- plan_expansion multi-target ship draining ---
+
 
 def test_plan_expansion_drains_excess_to_second_target():
     """One source with surplus ships funds the top target, then drains the
@@ -427,9 +539,21 @@ def test_plan_expansion_drains_excess_to_second_target():
     low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
     own_classes = {0: "FORTRESS"}
     # Low garrison + plenty of ships so a single source can fund two captures.
-    params = {**PARAMS, "min_garrison": 10, "min_garrison_early": 10, "garrison_ramp_turns": 1}
-    moves = plan_expansion([source], [high, low], [], own_classes,
-                           angular_velocity=0.03, params=params, turn=100)
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "min_garrison_early": 10,
+        "garrison_ramp_turns": 1,
+    }
+    moves = plan_expansion(
+        [source],
+        [high, low],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        turn=100,
+    )
 
     assert len(moves) == 2
     assert all(m[0] == source.id for m in moves)
@@ -451,9 +575,21 @@ def test_plan_expansion_drain_clamps_at_min_garrison():
     high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
     low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
     own_classes = {0: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 10, "min_garrison_early": 10, "garrison_ramp_turns": 1}
-    moves = plan_expansion([source], [high, low], [], own_classes,
-                           angular_velocity=0.03, params=params, turn=100)
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "min_garrison_early": 10,
+        "garrison_ramp_turns": 1,
+    }
+    moves = plan_expansion(
+        [source],
+        [high, low],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        turn=100,
+    )
 
     assert len(moves) == 2
     # Primary takes int(35 * frac) ships, leaving 13 (just above the floor of 10).
@@ -462,34 +598,61 @@ def test_plan_expansion_drain_clamps_at_min_garrison():
     # Unclamped, the drain would send int(ships_remaining * frac); the clamp caps it
     # at (ships_remaining - min_garrison) so the source keeps exactly min_garrison.
     unclamped = max(1, int(ships_remaining * PARAMS["frac_fortress_easy_neutral"]))
-    assert unclamped > ships_remaining - params["min_garrison"]  # floor branch is exercised
+    assert (
+        unclamped > ships_remaining - params["min_garrison"]
+    )  # floor branch is exercised
     assert moves[1][2] == ships_remaining - params["min_garrison"]
     assert source.ships - sum(m[2] for m in moves) == params["min_garrison"]
 
 
 # --- garrison ramp ---
 
+
 def test_garrison_ramp_at_turn_zero_uses_early_value():
     from src.strategy import _effective_min_garrison
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+    }
     assert _effective_min_garrison(0, params) == 5
 
 
 def test_garrison_ramp_at_full_turn_uses_full_value():
     from src.strategy import _effective_min_garrison
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+    }
     assert _effective_min_garrison(50, params) == 30
 
 
 def test_garrison_ramp_midpoint():
     from src.strategy import _effective_min_garrison
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+    }
     assert _effective_min_garrison(25, params) == 17  # int(5 + 0.5 * 25) = 17
 
 
 def test_garrison_ramp_beyond_ramp_turns_clamps_to_full():
     from src.strategy import _effective_min_garrison
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5, "garrison_ramp_turns": 50}
+
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+    }
     assert _effective_min_garrison(200, params) == 30
 
 
@@ -498,10 +661,22 @@ def test_early_game_attacks_with_low_ships():
     planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=8, production=2)
     target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
     own_classes = {0: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5,
-              "garrison_ramp_turns": 50, "weak_ratio": 1.5}
-    moves = plan_expansion([planet], [target], [], own_classes,
-                           angular_velocity=0.03, params=params, turn=0)
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+        "weak_ratio": 1.5,
+    }
+    moves = plan_expansion(
+        [planet],
+        [target],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        turn=0,
+    )
     assert len(moves) == 1
 
 
@@ -510,10 +685,22 @@ def test_late_game_holds_below_full_garrison():
     planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=8, production=2)
     target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
     own_classes = {0: "FORTRESS"}
-    params = {**PARAMS, "min_garrison": 30, "min_garrison_early": 5,
-              "garrison_ramp_turns": 50, "weak_ratio": 1.5}
-    moves = plan_expansion([planet], [target], [], own_classes,
-                           angular_velocity=0.03, params=params, turn=100)
+    params = {
+        **PARAMS,
+        "min_garrison": 30,
+        "min_garrison_early": 5,
+        "garrison_ramp_turns": 50,
+        "weak_ratio": 1.5,
+    }
+    moves = plan_expansion(
+        [planet],
+        [target],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        turn=100,
+    )
     assert len(moves) == 0
 
 
@@ -528,9 +715,13 @@ def test_plan_expansion_skips_threatened():
 def test_plan_expansion_outpost_attacks_easy_neutral_any_value():
     # OUTPOSTs no longer have a value-tier gate — can_capture + distance_power handle selectivity.
     outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
-    high_value_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4)
+    high_value_neutral = make_planet(
+        id=1, owner=-1, x=72.0, y=50.0, ships=0, production=4
+    )
     own_classes = {0: "OUTPOST"}
-    moves = plan_expansion([outpost], [high_value_neutral], [], own_classes, angular_velocity=0.03)
+    moves = plan_expansion(
+        [outpost], [high_value_neutral], [], own_classes, angular_velocity=0.03
+    )
     assert len(moves) == 1
 
 
@@ -579,21 +770,29 @@ def test_plan_moves_defending_source_does_not_also_expand():
     neutral = make_planet(id=3, owner=-1, x=77.0, y=50.0, ships=0, production=1)
 
     planets = [threatened, fortress, neutral]
-    params = {**PARAMS, "min_garrison": 10, "defense_reinforce_fraction": 0.5,
-              "eta_buffer": 5}
-    moves = plan_moves(planets, [enemy_fleet], player=0, angular_velocity=0.03,
-                       params=params)
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    moves = plan_moves(
+        planets, [enemy_fleet], player=0, angular_velocity=0.03, params=params
+    )
 
     # The exclusion is actually exercised: the fortress did issue a defensive move.
-    assert any(m[0] == fortress.id for m in moves), \
+    assert any(m[0] == fortress.id for m in moves), (
         "expected the fortress to issue a defensive reinforcement"
+    )
     # ...and therefore must not appear a second time as an expansion source.
     fortress_move_count = sum(1 for m in moves if m[0] == fortress.id)
-    assert fortress_move_count == 1, \
+    assert fortress_move_count == 1, (
         f"fortress double-spent its garrison: appeared in {fortress_move_count} moves"
+    )
 
 
 # --- path_crosses_sun ---
+
 
 def test_path_crosses_sun_direct_hit():
     # Segment passes straight through CENTER (50, 50)
@@ -612,39 +811,50 @@ def test_path_crosses_sun_endpoint_inside():
 
 def test_path_crosses_sun_grazes_edge():
     from kaggle_environments.envs.orbit_wars.orbit_wars import SUN_RADIUS
+
     # Segment passes exactly at SUN_RADIUS distance — should NOT cross (< not <=)
     assert path_crosses_sun(50.0 - SUN_RADIUS, 0.0, 50.0 - SUN_RADIUS, 100.0) is False
 
 
 # --- _turn_ramp ---
 
+
 def test_turn_ramp_at_start_returns_start():
     from src.strategy import _turn_ramp
+
     assert _turn_ramp(0, 100, 4.0, 2.0) == 4.0
 
 
 def test_turn_ramp_at_ramp_turns_returns_end():
     from src.strategy import _turn_ramp
+
     assert _turn_ramp(100, 100, 4.0, 2.0) == 2.0
 
 
 def test_turn_ramp_clamps_beyond_ramp_turns():
     from src.strategy import _turn_ramp
+
     assert _turn_ramp(200, 100, 4.0, 2.0) == 2.0
 
 
 def test_turn_ramp_midpoint_is_linear():
     from src.strategy import _turn_ramp
+
     assert _turn_ramp(50, 100, 4.0, 2.0) == 3.0
 
 
 # --- _effective_distance_power ---
 
+
 def test_effective_distance_power_ramp():
-    params = {"distance_power_early": 4.0, "distance_power_late": 2.0, "distance_ramp_turns": 100}
+    params = {
+        "distance_power_early": 4.0,
+        "distance_power_late": 2.0,
+        "distance_ramp_turns": 100,
+    }
     assert _effective_distance_power(0, params) == 4.0
     assert _effective_distance_power(100, params) == 2.0
-    assert _effective_distance_power(200, params) == 2.0   # clamped post-ramp
+    assert _effective_distance_power(200, params) == 2.0  # clamped post-ramp
     mid = _effective_distance_power(50, params)
     assert 2.0 < mid < 4.0
 
@@ -654,12 +864,13 @@ def test_distance_power_penalizes_farther_planets():
     eta_near, eta_far = 2, 8
     # With steep early-game exponent, far planet is much worse relative to near
     early_ratio = (prod / (eta_near + 1) ** 4.0) / (prod / (eta_far + 1) ** 4.0)
-    late_ratio  = (prod / (eta_near + 1) ** 2.0) / (prod / (eta_far + 1) ** 2.0)
+    late_ratio = (prod / (eta_near + 1) ** 2.0) / (prod / (eta_far + 1) ** 2.0)
     # Steeper power → larger ratio (near planet scores proportionally more)
     assert early_ratio > late_ratio
 
 
 # --- comet intercept ---
+
 
 def make_planet_at(id=0, x=50.0, y=50.0, owner=-1, ships=0, production=1, radius=3):
     return Planet(id, owner, x, y, radius, ships, production)
@@ -669,12 +880,16 @@ class TestInterceptComet:
     def test_comet_intercept_uses_linear_velocity(self):
         """With velocity data, comet intercept predicts linearly, not circularly."""
         source = make_planet_at(id=0, x=10.0, y=50.0, owner=0, ships=40)
-        comet  = make_planet_at(id=5, x=60.0, y=50.0)
+        comet = make_planet_at(id=5, x=60.0, y=50.0)
         # Comet moving downward — stays on board throughout intercept window
         vel = (0.0, -1.0)
         result = intercept(
-            source, comet, angular_velocity=0.03, ships_to_send=40,
-            comet_ids={5}, comet_velocities={5: vel},
+            source,
+            comet,
+            angular_velocity=0.03,
+            ships_to_send=40,
+            comet_ids={5},
+            comet_velocities={5: vel},
         )
         assert result != (None, None, None)
         fx, fy, eta = result
@@ -685,10 +900,14 @@ class TestInterceptComet:
     def test_comet_no_velocity_returns_none(self):
         """Without velocity data (first sighting), intercept returns sentinel None."""
         source = make_planet_at(id=0, x=10.0, y=50.0, owner=0, ships=20)
-        comet  = make_planet_at(id=5, x=60.0, y=50.0)
+        comet = make_planet_at(id=5, x=60.0, y=50.0)
         result = intercept(
-            source, comet, angular_velocity=0.03, ships_to_send=20,
-            comet_ids={5}, comet_velocities={},
+            source,
+            comet,
+            angular_velocity=0.03,
+            ships_to_send=20,
+            comet_ids={5},
+            comet_velocities={},
         )
         assert result == (None, None, None)
 
@@ -699,8 +918,12 @@ class TestInterceptComet:
         comet = make_planet_at(id=5, x=98.0, y=50.0)
         vel = (4.0, 0.0)
         result = intercept(
-            source, comet, angular_velocity=0.03, ships_to_send=1,
-            comet_ids={5}, comet_velocities={5: vel},
+            source,
+            comet,
+            angular_velocity=0.03,
+            ships_to_send=1,
+            comet_ids={5},
+            comet_velocities={5: vel},
         )
         assert result == (None, None, None)
 
@@ -734,7 +957,10 @@ class TestInterceptComet:
         target = make_planet_at(id=1, x=70.0, y=50.0)
         fx_no_comet, _, eta_no = intercept(source, target, 0.03, 30)
         fx_with_comet, _, eta_with = intercept(
-            source, target, 0.03, 30,
+            source,
+            target,
+            0.03,
+            30,
             comet_ids={99},  # target.id=1 is not in comet_ids
             comet_velocities={99: (3.0, 0.0)},
         )
@@ -743,6 +969,7 @@ class TestInterceptComet:
 
 
 # --- _blended_best ---
+
 
 class TestBlendedBest:
     """Direct unit tests for the lookahead/greedy blend-normalization selection.
@@ -753,11 +980,13 @@ class TestBlendedBest:
 
     def test_single_candidate_returns_it(self):
         from src.strategy import _blended_best
+
         candidates = [(3.0, 99.0, "only", 0.5)]
         assert _blended_best(candidates, blend=0.7) == ("only", 0.5)
 
     def test_blend_zero_picks_greedy_winner(self):
         from src.strategy import _blended_best
+
         # "lo" has the higher lookahead score but blend=0.0 must ignore it.
         candidates = [
             (10.0, 0.0, "hi", 0.4),
@@ -767,6 +996,7 @@ class TestBlendedBest:
 
     def test_all_equal_greedy_uses_lookahead_without_dividing_by_zero(self):
         from src.strategy import _blended_best
+
         # hi_g == lo_g would be a ZeroDivisionError without the 1e-9 guard;
         # greedy terms collapse to ~0, so lookahead decides the winner.
         candidates = [
@@ -777,6 +1007,7 @@ class TestBlendedBest:
 
     def test_blended_winner_differs_from_greedy_winner(self):
         from src.strategy import _blended_best
+
         # Greedy winner is "g" (greedy 10), but with blend weighted toward
         # lookahead, normalized scores favor "l" (lookahead 10).
         candidates = [
