@@ -21,6 +21,11 @@ PARAMS = {
     "threat_radius": 7.361366948460609,
     "threat_eta_window": 15,
     "defense_reinforce_fraction": 0.3476899630999006,
+    # NOTE: inbound fleets are now aggregated per planet, so this multiplies the
+    # *combined* incoming ships, not a single fleet's. This value was tuned against
+    # the old per-fleet behavior — do NOT promote until re-tuned. See CLAUDE.md
+    # "Pending re-tune: multi-fleet defense aggregation" (rm trials/study.db →
+    # run_trials.py → copy winners here → build.py).
     "defense_incoming_multiplier": 0.6176537815824305,
     "eta_buffer": 8,
     "min_garrison": 26,
