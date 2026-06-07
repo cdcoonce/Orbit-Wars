@@ -615,6 +615,28 @@ def test_path_crosses_sun_grazes_edge():
     assert path_crosses_sun(50.0 - SUN_RADIUS, 0.0, 50.0 - SUN_RADIUS, 100.0) is False
 
 
+# --- _turn_ramp ---
+
+def test_turn_ramp_at_start_returns_start():
+    from src.strategy import _turn_ramp
+    assert _turn_ramp(0, 100, 4.0, 2.0) == 4.0
+
+
+def test_turn_ramp_at_ramp_turns_returns_end():
+    from src.strategy import _turn_ramp
+    assert _turn_ramp(100, 100, 4.0, 2.0) == 2.0
+
+
+def test_turn_ramp_clamps_beyond_ramp_turns():
+    from src.strategy import _turn_ramp
+    assert _turn_ramp(200, 100, 4.0, 2.0) == 2.0
+
+
+def test_turn_ramp_midpoint_is_linear():
+    from src.strategy import _turn_ramp
+    assert _turn_ramp(50, 100, 4.0, 2.0) == 3.0
+
+
 # --- _effective_distance_power ---
 
 def test_effective_distance_power_ramp():
