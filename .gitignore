@@ -5,3 +5,4 @@ __pycache__/
 .env
 submission.py
 trials/study.db
+trials/study.db.stale*
