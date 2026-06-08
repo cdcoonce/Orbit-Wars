@@ -175,6 +175,30 @@ def _build_and_import_submission(tmp_path):
     return mod
 
 
+def test_module_docstring_not_stale():
+    """build.py module docstring must not name a stale subset of bundled modules.
+
+    If the docstring enumerates any .py filenames, every module in SRC_FILES
+    must be named — not just the three that existed before config, lookahead,
+    comets, and endgame were added.
+    """
+    spec = importlib.util.spec_from_file_location("build", BUILD_SCRIPT)
+    build_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_mod)
+
+    docstring = build_mod.__doc__ or ""
+    bundled_names = {Path(p).name for p in build_mod.SRC_FILES}
+
+    # If the docstring mentions any bundled module by name, all must be present.
+    named = {name for name in bundled_names if name in docstring}
+    if named:
+        missing = sorted(bundled_names - named)
+        assert not missing, (
+            f"build.py docstring names some modules ({sorted(named)}) "
+            f"but omits: {missing}"
+        )
+
+
 def test_submission_agent_matches_src_agent(tmp_path):
     """submission.agent(obs) returns the same moves as src.agent.agent(obs) for a
     fixed turn-0 observation.
