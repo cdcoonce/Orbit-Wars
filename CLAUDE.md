@@ -31,6 +31,34 @@ kaggle competitions submit -c orbit-wars -f submission.py -m "description"  # su
 | `trials/champion.py`  | Best known params — promoted automatically by `run_trials.py` |
 | `trials/benchmark.py` | Quick champion vs original-defaults sanity check (20 games)   |
 
+## Simulator Correctness
+
+### Boundary-split guard rule
+
+When a single `<=` (or `>=`) guard on a boundary value is decomposed into multiple
+`if`/`elif` branches (e.g. `> 0`, `== 0`, `else`), follow these two rules:
+
+1. **Equality branches must test the exact boundary (`== 0`), never a loose `elif`.**
+   A loose `elif winner == planet.owner` silently fires when `surviving < 0` — the
+   incumbent may be the largest _single_ stack yet still lose to the _combined_
+   attackers. The strictly-negative case must either fall through to the `else`
+   branch or be handled explicitly. Using `elif surviving == 0 and winner == planet.owner`
+   (exact boundary) prevents the silent capture.
+
+   _Motivating failure:_ PR #72 combat-resolution in `step_state` — an
+   `elif winner == planet.owner` branch fired on `surviving < 0` (10 vs 6+6 = −2),
+   incorrectly retaining the planet for the incumbent. Fix: guard on
+   `surviving == 0` exactly.
+
+2. **Every such split must ship a regression test covering the strictly-negative
+   (or strictly-greater) case**, not just the boundary value itself. A test that
+   only exercises `surviving == 0` cannot catch a guard that also fires for
+   `surviving < 0`.
+
+   _Example:_ `test_incumbent_largest_stack_but_loses_to_combined_attackers` in
+   `tests/test_lookahead.py` — owner=0 holds 10 ships, owners 1 and 2 each send 6
+   (combined 12 > 10, `surviving = −2`) — the planet must go neutral.
+
 ## Tuning Workflow
 
 1. Run `uv run python trials/run_trials.py` — promotes challengers to `trials/champion.py` when their win rate meets `PROMOTION_THRESHOLD` in `trials/run_trials.py` (currently ≥65%)
