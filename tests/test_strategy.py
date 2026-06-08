@@ -466,6 +466,55 @@ def test_handle_threats_larger_incoming_reinforces_at_least_as_much():
     assert large[0][2] >= small[0][2]
 
 
+def test_handle_threats_flat_baseline_can_leave_source_below_min_garrison():
+    """Flat baseline overrides the garrison guard when flat > source.ships - min_garrison.
+
+    Concrete reproduction (from issue #125):
+      source.ships=50, defense_reinforce_fraction=0.6  → flat=30
+      min_garrison=26                                  → source.ships - min_garrison=24
+      max(30, min(30, 24)) = 30                        (flat wins)
+      30 >= 26 (send-size check passes)  →  move fires, source left with 20 < 26
+
+    This is *current documented behavior*: the outer max(flat, ...) deliberately
+    preserves the legacy flat-fraction floor, so the garrison dip is intentional.
+    If leaving the source below min_garrison should be prevented, this test is the
+    red test for that fix — change the assertion on `remaining < min_garrison` to
+    `remaining >= min_garrison`.
+    """
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 26,
+        "defense_reinforce_fraction": 0.6,
+        "eta_buffer": 5,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    flat = int(50 * 0.6)  # 30 — legacy flat baseline
+    garrison_headroom = (
+        50 - params["min_garrison"]
+    )  # 24 — ships available above min_garrison
+    # Precondition: flat exceeds garrison headroom, so the outer max overrides the inner cap.
+    assert flat > garrison_headroom, (
+        "precondition: flat must exceed ships - min_garrison"
+    )
+    # The move fires: send-size (30) >= min_garrison (26), so the guard at line 155 passes.
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+    assert moves[0][2] == flat  # sends full flat baseline, not the garrison-capped 24
+    # Source is left with 20 ships — below min_garrison (26).
+    remaining = fortress.ships - moves[0][2]
+    assert remaining < params["min_garrison"]
+
+
 # --- plan_expansion ---
 
 
