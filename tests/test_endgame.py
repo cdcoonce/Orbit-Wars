@@ -1,4 +1,3 @@
-import pytest
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet
 
 from src.endgame import total_ships, should_play_defensive
@@ -14,6 +13,7 @@ def make_fleet(id=0, owner=0, ships=10, x=70.0, y=50.0, angle=0.0, from_planet_i
 
 
 # --- total_ships ---
+
 
 class TestTotalShips:
     def test_counts_planet_ships_for_player(self):
@@ -61,6 +61,7 @@ class TestTotalShips:
 
 # --- should_play_defensive ---
 
+
 class TestShouldPlayDefensive:
     def test_activates_when_winning_and_past_threshold(self):
         # player 1 has 120 ships, player 2 has 100 ships → ratio 1.2 == lead_margin
@@ -70,8 +71,7 @@ class TestShouldPlayDefensive:
         ]
         fleets = []
         result = should_play_defensive(
-            planets, fleets, player=1,
-            turn=450, threshold_turn=450, lead_margin=1.2
+            planets, fleets, player=1, turn=450, threshold_turn=450, lead_margin=1.2
         )
         assert result is True
 
@@ -83,8 +83,7 @@ class TestShouldPlayDefensive:
         ]
         fleets = []
         result = should_play_defensive(
-            planets, fleets, player=1,
-            turn=460, threshold_turn=450, lead_margin=1.2
+            planets, fleets, player=1, turn=460, threshold_turn=450, lead_margin=1.2
         )
         assert result is False
 
@@ -96,8 +95,7 @@ class TestShouldPlayDefensive:
         ]
         fleets = []
         result = should_play_defensive(
-            planets, fleets, player=1,
-            turn=449, threshold_turn=450, lead_margin=1.2
+            planets, fleets, player=1, turn=449, threshold_turn=450, lead_margin=1.2
         )
         assert result is False
 
@@ -106,8 +104,7 @@ class TestShouldPlayDefensive:
         planets = [make_planet(id=0, owner=1, ships=100)]
         fleets = []
         result = should_play_defensive(
-            planets, fleets, player=1,
-            turn=480, threshold_turn=450, lead_margin=1.2
+            planets, fleets, player=1, turn=480, threshold_turn=450, lead_margin=1.2
         )
         assert result is False
 
@@ -119,8 +116,7 @@ class TestShouldPlayDefensive:
         ]
         fleets = []
         result = should_play_defensive(
-            planets, fleets, player=1,
-            turn=450, threshold_turn=450, lead_margin=1.2
+            planets, fleets, player=1, turn=450, threshold_turn=450, lead_margin=1.2
         )
         assert result is True
 
@@ -133,13 +129,28 @@ class TestShouldPlayDefensive:
         ]
         fleets = [make_fleet(id=0, owner=1, ships=60)]
         result = should_play_defensive(
-            planets, fleets, player=1,
-            turn=460, threshold_turn=450, lead_margin=1.2
+            planets, fleets, player=1, turn=460, threshold_turn=450, lead_margin=1.2
         )
         assert result is True
 
+    def test_enemy_in_transit_fleet_counted_in_denominator(self):
+        # Planet-only enemy ships = 50; player 1 planet ships = 120.
+        # Ratio ignoring fleet: 120/50 = 2.4 ≥ 1.2 → would wrongly return True.
+        # Enemy has 60 ships in transit → combined enemy = 110.
+        # Ratio with fleet: 120/110 ≈ 1.09 < 1.2 → must return False.
+        planets = [
+            make_planet(id=0, owner=1, ships=120),
+            make_planet(id=1, owner=2, ships=50),
+        ]
+        fleets = [make_fleet(id=0, owner=2, ships=60)]
+        result = should_play_defensive(
+            planets, fleets, player=1, turn=460, threshold_turn=450, lead_margin=1.2
+        )
+        assert result is False
+
 
 # --- plan_moves integration with should_play_defensive ---
+
 
 class TestPlanMovesDefensiveIntegration:
     def test_plan_moves_skips_expansion_when_defensive(self):
@@ -149,8 +160,12 @@ class TestPlanMovesDefensiveIntegration:
         # neutral target has 0 ships (trivially capturable under normal conditions)
         # player 2 has only 10 ships → ratio = 200/10 = 20 >> lead_margin
         my_planet = make_planet(id=0, owner=1, x=70.0, y=50.0, ships=200, production=4)
-        neutral_planet = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
-        enemy_planet = make_planet(id=2, owner=2, x=30.0, y=50.0, ships=10, production=1)
+        neutral_planet = make_planet(
+            id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1
+        )
+        enemy_planet = make_planet(
+            id=2, owner=2, x=30.0, y=50.0, ships=10, production=1
+        )
         planets = [my_planet, neutral_planet, enemy_planet]
         fleets = []
 
@@ -158,8 +173,12 @@ class TestPlanMovesDefensiveIntegration:
         params_normal = dict(PARAMS)
         params_normal["endgame_threshold_turn"] = 450
         moves_normal = plan_moves(
-            planets, fleets, player=1, angular_velocity=0.03,
-            turn=0, params=params_normal
+            planets,
+            fleets,
+            player=1,
+            angular_velocity=0.03,
+            turn=0,
+            params=params_normal,
         )
 
         # With defensive mode active (winning + past threshold turn)
@@ -167,8 +186,12 @@ class TestPlanMovesDefensiveIntegration:
         params_defensive["endgame_threshold_turn"] = 450
         params_defensive["endgame_lead_margin"] = 1.2
         moves_defensive = plan_moves(
-            planets, fleets, player=1, angular_velocity=0.03,
-            turn=460, params=params_defensive
+            planets,
+            fleets,
+            player=1,
+            angular_velocity=0.03,
+            turn=460,
+            params=params_defensive,
         )
 
         # Normal turn produces expansion moves (toward neutral or enemy)
@@ -181,8 +204,12 @@ class TestPlanMovesDefensiveIntegration:
         # player 1 has 200 ships; player 2 has 500 → ratio = 0.4 < 1.2
         # neutral has 0 ships → easily capturable
         my_planet = make_planet(id=0, owner=1, x=70.0, y=50.0, ships=200, production=4)
-        neutral_planet = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1)
-        enemy_planet = make_planet(id=2, owner=2, x=30.0, y=50.0, ships=500, production=1)
+        neutral_planet = make_planet(
+            id=1, owner=-1, x=72.0, y=50.0, ships=0, production=1
+        )
+        enemy_planet = make_planet(
+            id=2, owner=2, x=30.0, y=50.0, ships=500, production=1
+        )
         planets = [my_planet, neutral_planet, enemy_planet]
         fleets = []
 
@@ -190,8 +217,7 @@ class TestPlanMovesDefensiveIntegration:
         params["endgame_threshold_turn"] = 450
         params["endgame_lead_margin"] = 1.2
         moves = plan_moves(
-            planets, fleets, player=1, angular_velocity=0.03,
-            turn=480, params=params
+            planets, fleets, player=1, angular_velocity=0.03, turn=480, params=params
         )
         # Should still expand toward neutral (ratio = 200/500 = 0.4 < 1.2 → not defensive)
         assert len(moves) > 0
