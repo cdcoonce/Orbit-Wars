@@ -1,4 +1,5 @@
 """Tests for src/lookahead.py — TDD: red phase."""
+
 import math
 import pytest
 
@@ -19,6 +20,7 @@ from src.lookahead import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=20, production=2):
     return Planet(id, owner, x, y, radius, ships, production)
 
@@ -30,6 +32,7 @@ def make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=0.0, from_planet_id=99, ship
 # ---------------------------------------------------------------------------
 # Class: TestBuildState
 # ---------------------------------------------------------------------------
+
 
 class TestBuildState:
     def test_returns_game_state(self):
@@ -43,7 +46,11 @@ class TestBuildState:
         assert state.turn == 42
 
     def test_planets_converted_to_sim_planet(self):
-        planets = [make_planet(id=3, owner=0, x=70.0, y=50.0, radius=5.0, ships=20, production=2)]
+        planets = [
+            make_planet(
+                id=3, owner=0, x=70.0, y=50.0, radius=5.0, ships=20, production=2
+            )
+        ]
         state = build_state(planets, [], turn=0)
         assert len(state.planets) == 1
         p = state.planets[0]
@@ -83,50 +90,57 @@ class TestBuildState:
 # Class: TestStepState
 # ---------------------------------------------------------------------------
 
+
 class TestStepState:
     def _simple_state(self, planet_x=70.0, planet_ships=20, planet_owner=0):
         """One orbiting planet, no fleets."""
-        planet = make_planet(id=0, owner=planet_owner, x=planet_x, y=50.0,
-                             radius=5.0, ships=planet_ships, production=2)
+        planet = make_planet(
+            id=0,
+            owner=planet_owner,
+            x=planet_x,
+            y=50.0,
+            radius=5.0,
+            ships=planet_ships,
+            production=2,
+        )
         return build_state([planet], [], turn=1)
 
     def test_returns_game_state(self):
         state = self._simple_state()
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         assert isinstance(next_s, GameState)
 
     def test_production_added_to_owned_planet(self):
         state = self._simple_state(planet_ships=20, planet_owner=0)
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         p = next_s.planets[0]
         # Ships should increase by production (2) for owned planet
         assert p.ships == 22
 
     def test_production_not_added_to_neutral_planet(self):
         state = self._simple_state(planet_ships=10, planet_owner=-1)
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         p = next_s.planets[0]
         assert p.ships == 10  # No production for neutral
 
     def test_static_planet_does_not_rotate(self):
         # Static planet at x=90: orbital_radius=40, 40+10=50 >= ROTATION_RADIUS_LIMIT=50
-        planet = make_planet(id=0, owner=0, x=90.0, y=50.0, radius=5.0, ships=10, production=1)
+        planet = make_planet(
+            id=0, owner=0, x=90.0, y=50.0, radius=5.0, ships=10, production=1
+        )
         state = build_state([planet], [], turn=0)
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         p = next_s.planets[0]
         assert p.x == pytest.approx(90.0)
         assert p.y == pytest.approx(50.0)
 
     def test_orbiting_planet_rotates(self):
         # Orbiting planet at x=70 (orbital_radius=20 < 40)
-        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10, production=1)
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10, production=1
+        )
         state = build_state([planet], [], turn=0)
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         p = next_s.planets[0]
         # Position must change after 1 turn with angular_velocity=0.03
         assert (p.x, p.y) != (70.0, 50.0)
@@ -134,25 +148,63 @@ class TestStepState:
     def test_move_deducts_ships_from_source(self):
         """Launching a fleet must deduct ships from the source planet and leave fleet in transit."""
         # radius=1 ensures launched fleet clears the planet boundary (fleet_speed(10) ≈ 1.96 > 1)
-        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2)
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
         state = build_state([planet], [], turn=0)
         move = [0, 0.0, 10]  # launch 10 ships at angle 0
-        next_s = step_state(state, move=move, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=move, player=0, angular_velocity=0.03)
         source = next(p for p in next_s.planets if p.id == 0)
         # 30 ships - 10 launched + 2 production = 22; fleet stays in transit
         assert source.ships == 22
         assert len(next_s.fleets) == 1
 
+    def test_slow_fleet_stays_in_transit_after_launch(self):
+        """Slow fleet (fleet_speed < source.radius) must not re-land on the origin planet.
+
+        Without the spawn-offset fix the fleet starts at the planet center and
+        after one move step (fleet_speed ≈ 1.56) is still inside the source
+        radius (5.0), so step-5 incorrectly lands it back and the launch
+        becomes a silent no-op.  With the fix the fleet is spawned at
+        source.radius + 0.1 along the launch angle, clearing the boundary.
+        """
+        from src.math_utils import fleet_speed
+
+        ships_to_send = 5
+        source_radius = 5.0
+        assert fleet_speed(ships_to_send) < source_radius, (
+            "precondition: fleet speed must be less than source radius"
+        )
+
+        source = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=source_radius, ships=30, production=2
+        )
+        # Far target — fleet must not reach it in one step either
+        target = make_planet(
+            id=1, owner=-1, x=200.0, y=50.0, radius=5.0, ships=0, production=0
+        )
+        state = build_state([source, target], [], turn=0)
+        move = [0, 0.0, ships_to_send]  # launch slow fleet rightward
+        next_s = step_state(state, move=move, player=0, angular_velocity=0.0)
+
+        src = next(p for p in next_s.planets if p.id == 0)
+        # 30 - 5 launched + 2 production = 27; fleet must remain in transit
+        assert src.ships == 27
+        assert len(next_s.fleets) == 1, (
+            "slow fleet must stay in transit, not re-land on source planet"
+        )
+
     def test_fleet_moves_forward(self):
         """A fleet flying in open space advances by fleet_speed each turn."""
         from src.math_utils import fleet_speed
-        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=5, production=1)
+
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=5, production=1
+        )
         # Fleet far from any planet, flying right at angle=0
         fleet = make_fleet(id=0, owner=0, x=10.0, y=50.0, angle=0.0, ships=5)
         state = build_state([planet], [fleet], turn=0)
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         # Find the fleet in next state (it should be in fleets if not resolved)
         remaining = next_s.fleets
         if remaining:
@@ -163,15 +215,19 @@ class TestStepState:
     def test_fleet_captures_neutral_planet(self):
         """A fleet arriving at a neutral planet captures it."""
         # Neutral planet at (70, 50), radius=5; fleet heading right
-        planet = make_planet(id=0, owner=-1, x=70.0, y=50.0, radius=5.0, ships=2, production=1)
+        planet = make_planet(
+            id=0, owner=-1, x=70.0, y=50.0, radius=5.0, ships=2, production=1
+        )
         from src.math_utils import fleet_speed
+
         speed = fleet_speed(10)
         # Place fleet close enough to land this turn (within radius after movement)
-        fleet_x = 70.0 - speed + 0.1  # will land just inside after moving speed units right
+        fleet_x = (
+            70.0 - speed + 0.1
+        )  # will land just inside after moving speed units right
         fleet = make_fleet(id=0, owner=0, x=fleet_x, y=50.0, angle=0.0, ships=10)
         state = build_state([planet], [fleet], turn=0)
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
         p = next_s.planets[0]
         # Production runs at start of turn, but neutral planets don't produce.
         # Fleet had 10 ships; neutral planet had 2 defending ships.
@@ -182,9 +238,9 @@ class TestStepState:
     def test_opponent_fn_defaults_to_none(self):
         """step_state must accept opponent_fn=None (default) without error."""
         state = self._simple_state()
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03,
-                            opponent_fn=None)
+        next_s = step_state(
+            state, move=None, player=0, angular_velocity=0.03, opponent_fn=None
+        )
         assert isinstance(next_s, GameState)
 
     def test_production_runs_before_combat(self):
@@ -199,8 +255,9 @@ class TestStepState:
         from src.math_utils import fleet_speed
 
         # Owned planet: 0 ships, production=2
-        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
-                             ships=0, production=2)
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=0, production=2
+        )
 
         # Enemy fleet with 1 ship, positioned to arrive this turn
         speed = fleet_speed(1)
@@ -209,8 +266,7 @@ class TestStepState:
 
         state = build_state([planet], [fleet], turn=0)
 
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
 
         p = next_s.planets[0]
         # With production before combat: 0+2=2 ships defending.
@@ -221,16 +277,20 @@ class TestStepState:
     def test_opponent_fn_applied(self):
         """opponent_fn fleet appears in state.fleets and deducts from source."""
         # Two planets: ours at (70,50), opponent's at (30,50)
-        our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=1)
-        opp_planet = make_planet(id=1, owner=1, x=30.0, y=50.0, radius=1.0, ships=20, production=1)
+        our_planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=1
+        )
+        opp_planet = make_planet(
+            id=1, owner=1, x=30.0, y=50.0, radius=1.0, ships=20, production=1
+        )
         state = build_state([our_planet, opp_planet], [], turn=0)
 
         def opponent_fn(s):
             return [[1, 0.0, 5]]  # opponent sends 5 ships from planet 1 at angle 0
 
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03,
-                            opponent_fn=opponent_fn)
+        next_s = step_state(
+            state, move=None, player=0, angular_velocity=0.03, opponent_fn=opponent_fn
+        )
         # Opponent planet should have lost 5 ships (after production: 20+1=21, then -5=16)
         opp = next(p for p in next_s.planets if p.id == 1)
         assert opp.ships == 16
@@ -239,15 +299,17 @@ class TestStepState:
 
     def test_opponent_fn_silent_skip(self):
         """opponent_fn referencing a planet with 0 ships is silently skipped."""
-        planet = make_planet(id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=0, production=0)
+        planet = make_planet(
+            id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=0, production=0
+        )
         state = build_state([planet], [], turn=0)
 
         def opponent_fn(s):
             return [[0, 0.0, 5]]  # tries to send 5 ships from a planet with 0
 
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03,
-                            opponent_fn=opponent_fn)
+        next_s = step_state(
+            state, move=None, player=0, angular_velocity=0.03, opponent_fn=opponent_fn
+        )
         # No fleet should be added, no exception
         assert len(next_s.fleets) == 0
 
@@ -260,9 +322,9 @@ class TestStepState:
             call_count[0] += 1
             return []
 
-        step_state(state, move=None, player=0,
-                   angular_velocity=0.03,
-                   opponent_fn=counting_fn)
+        step_state(
+            state, move=None, player=0, angular_velocity=0.03, opponent_fn=counting_fn
+        )
         assert call_count[0] == 1
 
     def test_exact_tie_keeps_owned_planet(self):
@@ -276,8 +338,9 @@ class TestStepState:
         from src.math_utils import fleet_speed
 
         # Owned planet: 0 ships, production=2 → 2 defenders after production
-        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
-                             ships=0, production=2)
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=0, production=2
+        )
 
         # Enemy fleet with 2 ships, positioned to arrive this turn
         speed = fleet_speed(2)
@@ -286,8 +349,7 @@ class TestStepState:
 
         state = build_state([planet], [fleet], turn=0)
 
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
 
         p = next_s.planets[0]
         # Exact tie (2 vs 2) breaks to the incumbent owner: planet held, 0 ships.
@@ -305,8 +367,9 @@ class TestStepState:
         from src.math_utils import fleet_speed
 
         # Neutral planet with 2 defending ships
-        planet = make_planet(id=0, owner=-1, x=70.0, y=50.0, radius=1.0,
-                             ships=2, production=1)
+        planet = make_planet(
+            id=0, owner=-1, x=70.0, y=50.0, radius=1.0, ships=2, production=1
+        )
 
         # Attacker fleet with 2 ships, positioned to arrive this turn
         speed = fleet_speed(2)
@@ -315,8 +378,7 @@ class TestStepState:
 
         state = build_state([planet], [fleet], turn=0)
 
-        next_s = step_state(state, move=None, player=0,
-                            angular_velocity=0.03)
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
 
         p = next_s.planets[0]
         # Tie on a neutral planet: stays neutral with 0 ships.
@@ -336,8 +398,9 @@ class TestStepState:
         from src.math_utils import fleet_speed
 
         # Incumbent owned planet: 10 ships, production=0 → exactly 10 defenders.
-        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0,
-                             ships=10, production=0)
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=10, production=0
+        )
 
         # Two attackers from DIFFERENT owners, each 6 ships, arriving this turn.
         speed = fleet_speed(6)
@@ -359,12 +422,14 @@ class TestStepState:
 # Class: TestResolveCombat — direct unit tests for the extracted helper
 # ---------------------------------------------------------------------------
 
+
 class TestResolveCombat:
     """Direct unit tests for _resolve_combat — one test per branch."""
 
     def _planet(self, owner=0, ships=10):
-        return SimPlanet(id=0, owner=owner, x=0.0, y=0.0, radius=5.0,
-                         ships=ships, production=2)
+        return SimPlanet(
+            id=0, owner=owner, x=0.0, y=0.0, radius=5.0, ships=ships, production=2
+        )
 
     def _fleet(self, owner=1, ships=5):
         return SimFleet(owner=owner, x=0.0, y=0.0, angle=0.0, ships=ships)
@@ -409,6 +474,7 @@ class TestResolveCombat:
 # ---------------------------------------------------------------------------
 # Class: TestScoreState
 # ---------------------------------------------------------------------------
+
 
 class TestScoreState:
     def test_returns_float(self):
@@ -459,6 +525,7 @@ class TestScoreState:
 # Class: TestPlanExpansionBlend
 # ---------------------------------------------------------------------------
 
+
 class TestPlanExpansionBlend:
     """Tests that plan_expansion() integrates lookahead correctly."""
 
@@ -468,7 +535,9 @@ class TestPlanExpansionBlend:
         from src.config import PARAMS
 
         fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
-        easy_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2)
+        easy_neutral = make_planet(
+            id=1, owner=-1, x=72.0, y=50.0, ships=1, production=2
+        )
         soft_enemy = make_planet(id=2, owner=1, x=75.0, y=50.0, ships=2, production=1)
         own_classes = {0: "FORTRESS"}
 
@@ -476,16 +545,29 @@ class TestPlanExpansionBlend:
 
         # Without lookahead arguments
         moves_baseline = plan_expansion(
-            [fortress], [easy_neutral], [soft_enemy], own_classes,
-            angular_velocity=0.03, agg=1.0, params=params_no_blend
+            [fortress],
+            [easy_neutral],
+            [soft_enemy],
+            own_classes,
+            angular_velocity=0.03,
+            agg=1.0,
+            params=params_no_blend,
         )
 
         # With blend=0 and lookahead args provided
         all_planets = [fortress, easy_neutral, soft_enemy]
         moves_blended = plan_expansion(
-            [fortress], [easy_neutral], [soft_enemy], own_classes,
-            angular_velocity=0.03, agg=1.0, params=params_no_blend,
-            initial_planets=all_planets, fleets=[], player=0, turn=0
+            [fortress],
+            [easy_neutral],
+            [soft_enemy],
+            own_classes,
+            angular_velocity=0.03,
+            agg=1.0,
+            params=params_no_blend,
+            initial_planets=all_planets,
+            fleets=[],
+            player=0,
+            turn=0,
         )
 
         assert moves_baseline == moves_blended
@@ -501,9 +583,17 @@ class TestPlanExpansionBlend:
         params_blend = {**PARAMS, "lookahead_blend": 0.5}
         all_planets = [fortress, only_target]
         moves = plan_expansion(
-            [fortress], [only_target], [], own_classes,
-            angular_velocity=0.03, agg=1.0, params=params_blend,
-            initial_planets=all_planets, fleets=[], player=0, turn=0
+            [fortress],
+            [only_target],
+            [],
+            own_classes,
+            angular_velocity=0.03,
+            agg=1.0,
+            params=params_blend,
+            initial_planets=all_planets,
+            fleets=[],
+            player=0,
+            turn=0,
         )
         assert len(moves) == 1
 
@@ -524,20 +614,33 @@ class TestPlanExpansionBlend:
         all_planets = [fortress, t1, t2]
         # Should not raise
         moves = plan_expansion(
-            [fortress], [t1, t2], [], own_classes,
-            angular_velocity=0.03, agg=1.0, params=params_blend,
-            initial_planets=all_planets, fleets=[], player=0, turn=0
+            [fortress],
+            [t1, t2],
+            [],
+            own_classes,
+            angular_velocity=0.03,
+            agg=1.0,
+            params=params_blend,
+            initial_planets=all_planets,
+            fleets=[],
+            player=0,
+            turn=0,
         )
         assert isinstance(moves, list)
 
     def test_plan_moves_passes_initial_planets(self):
         """plan_moves must forward initial_planets to plan_expansion without error."""
         from src.strategy import plan_moves
+
         owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
         neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
         moves = plan_moves(
-            [owned, neutral], fleets=[], player=0, angular_velocity=0.03, turn=5,
-            initial_planets=[owned, neutral]
+            [owned, neutral],
+            fleets=[],
+            player=0,
+            angular_velocity=0.03,
+            turn=5,
+            initial_planets=[owned, neutral],
         )
         assert isinstance(moves, list)
 
@@ -566,12 +669,24 @@ class TestPlanExpansionBlend:
         assert score_after_2 != score_after_1
 
         # Also verify plan_expansion with lookahead_turns=2 runs without crash
-        params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
-                        "min_garrison": 10}
+        params_2turn = {
+            **PARAMS,
+            "lookahead_blend": 1.0,
+            "lookahead_turns": 2,
+            "min_garrison": 10,
+        }
         moves = plan_expansion(
-            [fortress], [target], [], own_classes,
-            angular_velocity=0.03, agg=1.0, params=params_2turn,
-            initial_planets=all_planets, fleets=[], player=0, turn=5
+            [fortress],
+            [target],
+            [],
+            own_classes,
+            angular_velocity=0.03,
+            agg=1.0,
+            params=params_2turn,
+            initial_planets=all_planets,
+            fleets=[],
+            player=0,
+            turn=5,
         )
         assert isinstance(moves, list)
 
@@ -587,13 +702,25 @@ class TestPlanExpansionBlend:
         # Enemy fleet far away, stays in transit across both simulated turns
         in_transit = make_fleet(id=7, owner=1, x=10.0, y=50.0, angle=0.0, ships=3)
 
-        params_2turn = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 2,
-                        "min_garrison": 10}
+        params_2turn = {
+            **PARAMS,
+            "lookahead_blend": 1.0,
+            "lookahead_turns": 2,
+            "min_garrison": 10,
+        }
         # This would crash with AttributeError before the SimFleet.id fix
         moves = plan_expansion(
-            [fortress], [target], [], own_classes,
-            angular_velocity=0.03, agg=1.0, params=params_2turn,
-            initial_planets=all_planets, fleets=[in_transit], player=0, turn=5
+            [fortress],
+            [target],
+            [],
+            own_classes,
+            angular_velocity=0.03,
+            agg=1.0,
+            params=params_2turn,
+            initial_planets=all_planets,
+            fleets=[in_transit],
+            player=0,
+            turn=5,
         )
         assert isinstance(moves, list)
 
@@ -620,8 +747,12 @@ class TestPlanExpansionBlend:
         all_planets = [src1, src2, tgt1, tgt2]
         own_classes = {0: "FORTRESS", 1: "FORTRESS"}
 
-        params_blend = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 1,
-                        "min_garrison": 10}
+        params_blend = {
+            **PARAMS,
+            "lookahead_blend": 1.0,
+            "lookahead_turns": 1,
+            "min_garrison": 10,
+        }
 
         opponent_call_count = [0]
         original_plan_moves = strategy_module.plan_moves
@@ -630,15 +761,25 @@ class TestPlanExpansionBlend:
             # Count calls where player is the opponent (player != 0)
             if player != 0:
                 opponent_call_count[0] += 1
-            return original_plan_moves(planets, fleets, player, angular_velocity, **kwargs)
+            return original_plan_moves(
+                planets, fleets, player, angular_velocity, **kwargs
+            )
 
         strategy_module.plan_moves = counting_plan_moves
         try:
             plan_expansion(
-                [src1, src2], [tgt1, tgt2], [], own_classes,
-                angular_velocity=0.03, agg=1.0, params=params_blend,
+                [src1, src2],
+                [tgt1, tgt2],
+                [],
+                own_classes,
+                angular_velocity=0.03,
+                agg=1.0,
+                params=params_blend,
                 comet_ids=frozenset(),
-                initial_planets=all_planets, fleets=[], player=0, turn=0,
+                initial_planets=all_planets,
+                fleets=[],
+                player=0,
+                turn=0,
             )
         finally:
             strategy_module.plan_moves = original_plan_moves
@@ -673,19 +814,29 @@ class TestPlanExpansionBlend:
         # neutral_for_opp: low production=1 so the opponent (FORTRESS) can expand
         #   there; ensures opponent_fn is non-empty.
         our_planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=120, production=4)
-        enemy_planet = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=30, production=4)
-        neutral_for_opp = make_planet(id=2, owner=-1, x=74.0, y=50.0, ships=1, production=1)
+        enemy_planet = make_planet(
+            id=1, owner=1, x=72.0, y=50.0, ships=30, production=4
+        )
+        neutral_for_opp = make_planet(
+            id=2, owner=-1, x=74.0, y=50.0, ships=1, production=1
+        )
         all_planets = [our_planet, enemy_planet, neutral_for_opp]
         own_classes = {0: "FORTRESS"}
 
-        params_blend = {**PARAMS, "lookahead_blend": 1.0, "lookahead_turns": 1,
-                        "min_garrison": 10}
+        params_blend = {
+            **PARAMS,
+            "lookahead_blend": 1.0,
+            "lookahead_turns": 1,
+            "min_garrison": 10,
+        }
 
         opponent_calls = []
         original_plan_moves = strategy_module.plan_moves
 
         def capturing_plan_moves(planets, fleets, player, angular_velocity, **kwargs):
-            result = original_plan_moves(planets, fleets, player, angular_velocity, **kwargs)
+            result = original_plan_moves(
+                planets, fleets, player, angular_velocity, **kwargs
+            )
             if player != 0:
                 opponent_calls.append(result)
             return result
@@ -693,10 +844,18 @@ class TestPlanExpansionBlend:
         strategy_module.plan_moves = capturing_plan_moves
         try:
             moves = plan_expansion(
-                [our_planet], [neutral_for_opp], [enemy_planet], own_classes,
-                angular_velocity=0.03, agg=1.0, params=params_blend,
+                [our_planet],
+                [neutral_for_opp],
+                [enemy_planet],
+                own_classes,
+                angular_velocity=0.03,
+                agg=1.0,
+                params=params_blend,
                 comet_ids=frozenset(),
-                initial_planets=all_planets, fleets=[], player=0, turn=0,
+                initial_planets=all_planets,
+                fleets=[],
+                player=0,
+                turn=0,
             )
         finally:
             strategy_module.plan_moves = original_plan_moves
@@ -716,18 +875,16 @@ class TestPlanExpansionBlend:
             "Opponent should have moves to launch given 30 ships well above min_garrison=10"
         )
         state = build_state(all_planets, [], turn=0)
-        initial_ships = next(
-            p.ships for p in state.planets if p.owner == 1
-        )
+        initial_ships = next(p.ships for p in state.planets if p.owner == 1)
         # Apply opponent move (opponent sends ships => their planet loses ships)
         opp_move = opp_moves_list[0]
         next_state = step_state(
-            state, opp_move, player=1,
+            state,
+            opp_move,
+            player=1,
             angular_velocity=0.03,
         )
-        final_ships = next(
-            p.ships for p in next_state.planets if p.owner == 1
-        )
+        final_ships = next(p.ships for p in next_state.planets if p.owner == 1)
         # After production (+4) and launching ships, the result should differ
         # from just production alone (initial_ships + production). If a fleet was sent,
         # fewer ships remain.
@@ -740,6 +897,7 @@ class TestPlanExpansionBlend:
 # ---------------------------------------------------------------------------
 # Class: TestScoreCandidateLookaheadHoist
 # ---------------------------------------------------------------------------
+
 
 class TestScoreCandidateLookaheadHoist:
     """score_candidate_lookahead builds greedy_params once, not per roll-forward turn."""
@@ -784,7 +942,12 @@ class TestScoreCandidateLookaheadHoist:
 
         planet = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
         score_candidate_lookahead(
-            [planet], [], 0, None, 0, 0.03,
+            [planet],
+            [],
+            0,
+            None,
+            0,
+            0.03,
             opponent_fn=lambda s: [],
             params=params,
             plan_moves_fn=fake_plan_moves,

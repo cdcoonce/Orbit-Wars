@@ -1,4 +1,5 @@
 """Lightweight 1–2 turn simulator for lookahead scoring."""
+
 import math
 from dataclasses import dataclass
 
@@ -29,7 +30,7 @@ class SimFleet:
 @dataclass
 class GameState:
     planets: list  # list[SimPlanet]
-    fleets: list   # list[SimFleet]
+    fleets: list  # list[SimFleet]
     turn: int
 
 
@@ -81,7 +82,9 @@ def _resolve_combat(planet: SimPlanet, arrivals: list) -> None:
         owner_ships[f.owner] = owner_ships.get(f.owner, 0) + f.ships
 
     # Find the winner (largest total); ties go to current owner.
-    winner = max(owner_ships, key=lambda o: (owner_ships[o], 1 if o == planet.owner else 0))
+    winner = max(
+        owner_ships, key=lambda o: (owner_ships[o], 1 if o == planet.owner else 0)
+    )
     winner_ships = owner_ships[winner]
     total_others = sum(v for o, v in owner_ships.items() if o != winner)
     surviving = winner_ships - total_others
@@ -153,8 +156,8 @@ def step_state(
             source.ships -= ships_to_send
             new_fleet = SimFleet(
                 owner=player,
-                x=source.x,
-                y=source.y,
+                x=source.x + math.cos(angle) * (source.radius + 0.1),
+                y=source.y + math.sin(angle) * (source.radius + 0.1),
                 angle=angle,
                 ships=ships_to_send,
             )
@@ -168,13 +171,15 @@ def step_state(
             opp_source = next((p for p in state.planets if p.id == planet_id), None)
             if opp_source is not None and opp_source.ships >= ships:
                 opp_source.ships -= ships
-                state.fleets.append(SimFleet(
-                    owner=1 - player,
-                    x=opp_source.x,
-                    y=opp_source.y,
-                    angle=angle,
-                    ships=ships,
-                ))
+                state.fleets.append(
+                    SimFleet(
+                        owner=1 - player,
+                        x=opp_source.x + math.cos(angle) * (opp_source.radius + 0.1),
+                        y=opp_source.y + math.sin(angle) * (opp_source.radius + 0.1),
+                        angle=angle,
+                        ships=ships,
+                    )
+                )
 
     # --- Step 4: Move all fleets ---
     for fleet in state.fleets:
@@ -213,13 +218,9 @@ def step_state(
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
     """Score a GameState from `player`'s perspective."""
     my_prod = sum(p.production for p in state.planets if p.owner == player)
-    enemy_prod = sum(
-        p.production for p in state.planets if p.owner not in (-1, player)
-    )
+    enemy_prod = sum(p.production for p in state.planets if p.owner not in (-1, player))
     my_ships = sum(p.ships for p in state.planets if p.owner == player)
-    enemy_ships = sum(
-        p.ships for p in state.planets if p.owner not in (-1, player)
-    )
+    enemy_ships = sum(p.ships for p in state.planets if p.owner not in (-1, player))
     return (my_prod - enemy_prod) + ship_weight * (my_ships - enemy_ships)
 
 
@@ -246,9 +247,7 @@ def score_candidate_lookahead(
     """
     # T+1: apply our candidate move + opponent response.
     state = build_state(initial_planets, fleets, turn)
-    state = step_state(
-        state, candidate_move, player, angular_velocity, opponent_fn
-    )
+    state = step_state(state, candidate_move, player, angular_velocity, opponent_fn)
     # T+2..N: both players play greedily (lookahead disabled) from the evolved state.
     n_extra = params.get("lookahead_turns", 1) - 1
     # Loop-invariant: greedy_params depends only on params, never on the evolving
@@ -256,19 +255,27 @@ def score_candidate_lookahead(
     greedy_params = {**params, "lookahead_blend": 0.0}
     for _ in range(n_extra):
         our_greedy = plan_moves_fn(
-            state.planets, state.fleets, player, angular_velocity,
-            turn=state.turn, params=greedy_params,
+            state.planets,
+            state.fleets,
+            player,
+            angular_velocity,
+            turn=state.turn,
+            params=greedy_params,
             initial_planets=initial_planets,
         )
-        our_move = our_greedy[0] if our_greedy else None  # one move per sim step (approximation)
+        our_move = (
+            our_greedy[0] if our_greedy else None
+        )  # one move per sim step (approximation)
         # Fresh opponent response from the evolved state (not the frozen initial state).
         opp_greedy = plan_moves_fn(
-            state.planets, state.fleets, 1 - player, angular_velocity,
-            turn=state.turn, params=greedy_params,
+            state.planets,
+            state.fleets,
+            1 - player,
+            angular_velocity,
+            turn=state.turn,
+            params=greedy_params,
             initial_planets=initial_planets,
         )
         fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
-        state = step_state(
-            state, our_move, player, angular_velocity, fresh_opp_fn
-        )
+        state = step_state(state, our_move, player, angular_velocity, fresh_opp_fn)
     return score_state(state, player, params.get("lookahead_ship_weight", 0.01))
