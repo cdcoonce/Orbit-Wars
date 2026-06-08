@@ -203,9 +203,9 @@ def _blended_best(candidates: list, blend: float):
     lo_l = min(c[1] for c in candidates)
     hi_l = max(c[1] for c in candidates)
     scored = []
-    for g, l, tgt, frac in candidates:
-        ng = (g - lo_g) / (hi_g - lo_g + 1e-9)
-        nl = (l - lo_l) / (hi_l - lo_l + 1e-9)
+    for greedy, look, tgt, frac in candidates:
+        ng = (greedy - lo_g) / (hi_g - lo_g + 1e-9)
+        nl = (look - lo_l) / (hi_l - lo_l + 1e-9)
         final = (1 - blend) * ng + blend * nl
         scored.append((final, tgt, frac))
     best_scored = max(scored, key=lambda x: x[0])
