@@ -61,6 +61,57 @@ def build_state(planets, fleets, turn: int) -> GameState:
     return GameState(planets=sim_planets, fleets=sim_fleets, turn=turn)
 
 
+def _resolve_combat(planet: SimPlanet, arrivals: list) -> None:
+    """Resolve combat on a single planet when one or more fleets arrive.
+
+    Mutates planet.owner and planet.ships in place. Assumes arrivals is non-empty
+    (the caller is responsible for skipping planets with no arrivals).
+
+    Four branches:
+    1. New owner wins with surviving > 0 ships (minus 1 foothold cost).
+    2. Defender holds with surviving > 0 ships.
+    3. Exact tie (surviving == 0) won by the incumbent — planet held, 0 ships.
+    4. Incumbent loses to combined attackers (surviving < 0) — planet goes neutral.
+    """
+    # Group by owner; include planet's own garrison as a defender.
+    # Neutral planets (owner=-1) defend with their ships under key -1.
+    owner_ships: dict[int, int] = {}
+    owner_ships[planet.owner] = planet.ships
+    for f in arrivals:
+        owner_ships[f.owner] = owner_ships.get(f.owner, 0) + f.ships
+
+    # Find the winner (largest total); ties go to current owner.
+    winner = max(owner_ships, key=lambda o: (owner_ships[o], 1 if o == planet.owner else 0))
+    winner_ships = owner_ships[winner]
+    total_others = sum(v for o, v in owner_ships.items() if o != winner)
+    surviving = winner_ships - total_others
+
+    if surviving > 0 and winner != planet.owner:
+        planet.owner = winner
+        # -1 ship cost models the "foothold" overhead of taking a new planet.
+        # The real engine doesn't have this cost; it's a deliberate pessimism
+        # bias in the 1-turn lookahead to avoid over-valuing conquest moves.
+        planet.ships = surviving - 1
+    elif surviving > 0:
+        planet.ships = surviving
+    elif surviving == 0 and winner == planet.owner:
+        # EXACT tie won by the incumbent owner (ties break to current owner).
+        # The defender holds the planet with no ships to spare, rather than
+        # collapsing to neutral — keeps the lookahead from undervaluing holds.
+        # For a neutral planet (owner=-1) this preserves neutral-stays-neutral.
+        # Guarded on ``surviving == 0``: when the incumbent is only the
+        # largest SINGLE stack but loses to the COMBINED attackers
+        # (surviving < 0), it must NOT retain the planet — that falls through
+        # to the neutral branch below.
+        planet.ships = 0
+    else:
+        # No surviving victor — an exact tie not won by the incumbent, or the
+        # incumbent was the largest single stack but lost to the combined
+        # attackers (surviving < 0). The planet goes neutral with 0 ships.
+        planet.owner = -1
+        planet.ships = 0
+
+
 def step_state(
     state: GameState,
     move,
@@ -150,44 +201,7 @@ def step_state(
         arrivals = planet_arrivals[planet.id]
         if not arrivals:
             continue
-
-        # Group by owner; include planet's own garrison as a defender.
-        # Neutral planets (owner=-1) defend with their ships under key -1.
-        owner_ships: dict[int, int] = {}
-        owner_ships[planet.owner] = planet.ships  # always include planet garrison
-        for f in arrivals:
-            owner_ships[f.owner] = owner_ships.get(f.owner, 0) + f.ships
-
-        # Find the winner (largest total); ties go to current owner
-        winner = max(owner_ships, key=lambda o: (owner_ships[o], 1 if o == planet.owner else 0))
-        winner_ships = owner_ships[winner]
-        total_others = sum(v for o, v in owner_ships.items() if o != winner)
-        surviving = winner_ships - total_others
-
-        if surviving > 0 and winner != planet.owner:
-            planet.owner = winner
-            # -1 ship cost models the "foothold" overhead of taking a new planet.
-            # The real engine doesn't have this cost; it's a deliberate pessimism
-            # bias in the 1-turn lookahead to avoid over-valuing conquest moves.
-            planet.ships = surviving - 1
-        elif surviving > 0:
-            planet.ships = surviving
-        elif surviving == 0 and winner == planet.owner:
-            # EXACT tie won by the incumbent owner (ties break to current owner).
-            # The defender holds the planet with no ships to spare, rather than
-            # collapsing to neutral — keeps the lookahead from undervaluing holds.
-            # For a neutral planet (owner=-1) this preserves neutral-stays-neutral.
-            # Guarded on ``surviving == 0``: when the incumbent is only the
-            # largest SINGLE stack but loses to the COMBINED attackers
-            # (surviving < 0), it must NOT retain the planet — that falls through
-            # to the neutral branch below.
-            planet.ships = 0
-        else:
-            # No surviving victor — an exact tie not won by the incumbent, or the
-            # incumbent was the largest single stack but lost to the combined
-            # attackers (surviving < 0). The planet goes neutral with 0 ships.
-            planet.owner = -1
-            planet.ships = 0
+        _resolve_combat(planet, arrivals)
 
     # Keep only fleets that didn't land on any planet
     state.fleets = remaining_fleets
