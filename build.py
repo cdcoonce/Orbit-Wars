@@ -1,10 +1,10 @@
 """
 Bundle src/ into a single submission.py for Kaggle submission.
 
-Reads math_utils.py, strategy.py, and agent.py in dependency order, strips
-relative imports (from .module import ...) and deduplicates kaggle_environments
-imports into a single block at the top. The kaggle_environments package is
-installed in the Kaggle runtime but must still be imported explicitly.
+Reads every module listed in SRC_FILES in dependency order, strips relative
+imports (from .module import ...) and deduplicates kaggle_environments imports
+into a single block at the top. The kaggle_environments package is installed
+in the Kaggle runtime but must still be imported explicitly.
 """
 
 import re
