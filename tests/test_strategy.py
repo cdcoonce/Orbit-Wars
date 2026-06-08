@@ -840,6 +840,25 @@ def test_plan_moves_defending_source_does_not_also_expand():
     )
 
 
+# --- plan_expansion structural ---
+
+
+def test_plan_expansion_lookahead_guard_not_duplicated():
+    """plan_expansion must hoist the lookahead-enablement condition into a single
+    flag rather than repeating the guard verbatim at two call sites.  Duplication
+    means the two sites can silently drift out of sync."""
+    import inspect
+    from src.strategy import plan_expansion
+
+    src = inspect.getsource(plan_expansion)
+    guard = "blend > 0 and initial_planets is not None and fleets is not None"
+    count = src.count(guard)
+    assert count <= 1, (
+        f"The guard '{guard}' appears {count} times in plan_expansion — "
+        "hoist it into a single `use_lookahead` flag instead."
+    )
+
+
 # --- path_crosses_sun ---
 
 

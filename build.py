@@ -36,6 +36,13 @@ KAGGLE_IMPORT_RE = re.compile(
     re.DOTALL,
 )
 
+# Matches top-level `import X` and `from X import Y` lines (non-relative, non-kaggle).
+# Applied after KAGGLE_IMPORT_RE so `^from \w` cannot accidentally match kaggle lines.
+STDLIB_IMPORT_RE = re.compile(
+    r"^import \w[^\n]*\n?|^from \w[^\n]*\n?",
+    re.MULTILINE,
+)
+
 KAGGLE_IMPORTS_BLOCK = (
     "from kaggle_environments.envs.orbit_wars.orbit_wars import (\n"
     "    CENTER,\n"
@@ -50,17 +57,33 @@ KAGGLE_IMPORTS_BLOCK = (
 def strip_imports(source: str) -> str:
     source = RELATIVE_IMPORT_RE.sub("", source)
     source = KAGGLE_IMPORT_RE.sub("", source)
+    source = STDLIB_IMPORT_RE.sub("", source)
     return source
 
 
 def build() -> Path:
     """Bundle src/ into submission.py and return the written path."""
-    chunks = [HEADER, KAGGLE_IMPORTS_BLOCK, "\n"]
+    seen: set[str] = set()
+    stdlib_imports: list[str] = []
+    module_chunks: list[str] = []
+
     for path in SRC_FILES:
         source = path.read_text()
-        cleaned = strip_imports(source)
-        chunks.append(f"# --- {path} ---\n")
-        chunks.append(cleaned.strip() + "\n\n")
+        # Strip relative and kaggle first so STDLIB_IMPORT_RE cannot see kaggle lines.
+        partial = KAGGLE_IMPORT_RE.sub("", RELATIVE_IMPORT_RE.sub("", source))
+        for match in STDLIB_IMPORT_RE.finditer(partial):
+            line = match.group().rstrip("\n")
+            if line not in seen:
+                seen.add(line)
+                stdlib_imports.append(line)
+        module_chunks.append(f"# --- {path} ---\n")
+        module_chunks.append(strip_imports(source).strip() + "\n\n")
+
+    chunks = [HEADER, KAGGLE_IMPORTS_BLOCK]
+    if stdlib_imports:
+        chunks.append("\n".join(stdlib_imports) + "\n")
+    chunks.append("\n")
+    chunks.extend(module_chunks)
 
     output = Path("submission.py")
     output.write_text("".join(chunks))
