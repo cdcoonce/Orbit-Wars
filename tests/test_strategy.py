@@ -1017,6 +1017,20 @@ class TestBlendedBest:
         assert _blended_best(candidates, blend=0.0) == ("g", 0.4)
         assert _blended_best(candidates, blend=0.8) == ("l", 0.6)
 
+    def test_loop_variables_use_descriptive_names(self):
+        import inspect
+        from src.strategy import _blended_best
+
+        src = inspect.getsource(_blended_best)
+        # PEP8 E741: `l` is indistinguishable from `1`/`I`. The loop unpacking
+        # in the blended-normalization path must use descriptive names.
+        assert " l," not in src, (
+            "_blended_best still uses ambiguous single-letter `l` as a loop variable"
+        )
+        assert " g," not in src, (
+            "_blended_best still uses ambiguous single-letter `g` as a loop variable"
+        )
+
 
 # --- aggression ---
 
