@@ -232,6 +232,7 @@ def plan_expansion(
     min_garrison = int(_effective_min_garrison(turn, params) / agg)
     dist_power = _effective_distance_power(turn, params)
     blend = params.get("lookahead_blend", 0.0)
+    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
 
     # Precompute the opponent's frozen response ONCE per plan_expansion call. Every
     # input (initial_planets, fleets, turn, player, angular_velocity, params) is
@@ -240,7 +241,7 @@ def plan_expansion(
     # opponent plan_moves per owned planet every turn (the lookahead path runs with
     # lookahead_blend≈0.97 in real games and across self-play). Forces blend=0 to
     # prevent recursive lookahead (recursion termination).
-    if blend > 0 and initial_planets is not None and fleets is not None:
+    if use_lookahead:
         opp_player = 1 - player
         greedy_params_opp = {**params, "lookahead_blend": 0.0}
         _opp_base = build_state(initial_planets, fleets, turn)
@@ -318,7 +319,7 @@ def plan_expansion(
 
             # Lookahead score — simulate the candidate forward and score it.
             # opponent_fn is constructed once per plan_expansion call (above) and reused.
-            if blend > 0 and initial_planets is not None and fleets is not None:
+            if use_lookahead:
                 candidate_move = [
                     source.id,
                     angle_to_target(source.x, source.y, future_x, future_y),
