@@ -10,6 +10,7 @@ from src.math_utils import (
     fleet_speed,
     is_stationary,
     orbital_radius,
+    path_crosses_sun,
     predict_planet_position,
     turns_to_arrive,
 )
@@ -172,7 +173,23 @@ def test_orbiting_planet_large_angular_velocity():
     assert y == pytest.approx(50.0)
 
 
+# --- path_crosses_sun (zero-length segment) ---
+
+
+def test_path_crosses_sun_coincident_point_inside_sun():
+    # When start == end, d_len_sq == 0; function checks distance from CENTER.
+    # CENTER is 50.0, so (CENTER, CENTER) is distance 0 — well within SUN_RADIUS.
+    assert path_crosses_sun(CENTER, CENTER, CENTER, CENTER) is True
+
+
+def test_path_crosses_sun_coincident_point_outside_sun():
+    # When start == end, d_len_sq == 0; function checks distance from CENTER.
+    # (1.0, 1.0) is ~69 units from CENTER(50,50), well beyond SUN_RADIUS(10).
+    assert path_crosses_sun(1.0, 1.0, 1.0, 1.0) is False
+
+
 # --- import hygiene ---
+
 
 def test_fleet_not_imported_into_math_utils():
     import src.math_utils as m
