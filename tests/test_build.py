@@ -96,6 +96,34 @@ def test_no_relative_imports_survive(built_submission):
     assert leftover is None, f"leftover relative import: {leftover.group(0)!r}"
 
 
+def test_no_duplicate_stdlib_imports(built_submission):
+    """Each stdlib import must appear exactly once in the bundle."""
+    stdlib_lines = [
+        line
+        for line in built_submission.splitlines()
+        if re.match(r"^import \w|^from \w", line)
+        and not line.startswith("from kaggle_environments")
+    ]
+    counts = {}
+    for line in stdlib_lines:
+        counts[line] = counts.get(line, 0) + 1
+    duplicates = {line: n for line, n in counts.items() if n > 1}
+    assert not duplicates, f"duplicate stdlib imports in bundle: {duplicates}"
+
+
+def test_no_mid_file_stdlib_imports(built_submission):
+    """All stdlib imports must be in the top block, not scattered mid-file."""
+    lines = built_submission.splitlines()
+    first_section = next(
+        (i for i, line in enumerate(lines) if line.startswith("# ---")),
+        None,
+    )
+    assert first_section is not None, "no '# ---' section header found in bundle"
+    body = "\n".join(lines[first_section:])
+    mid_import = re.search(r"^(import \w|from \w)", body, re.MULTILINE)
+    assert mid_import is None, f"import found mid-file: {mid_import.group(0)!r}"
+
+
 def _kaggle_symbols_imported(source: str):
     """Collect every name imported from kaggle_environments in the given source.
 
@@ -108,8 +136,10 @@ def _kaggle_symbols_imported(source: str):
     """
     names = set()
     for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(
-            "kaggle_environments"
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module.startswith("kaggle_environments")
         ):
             names.update(alias.name for alias in node.names)
     return names
@@ -169,7 +199,9 @@ def _build_and_import_submission(tmp_path):
     assert result.returncode == 0, f"build.py failed:\n{result.stderr}"
     submission_path = tmp_path / "submission.py"
     assert submission_path.exists()
-    spec = importlib.util.spec_from_file_location("_submission_under_test", submission_path)
+    spec = importlib.util.spec_from_file_location(
+        "_submission_under_test", submission_path
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
