@@ -8,6 +8,7 @@ from src.lookahead import (
     GameState,
     SimFleet,
     SimPlanet,
+    _resolve_combat,
     build_state,
     score_state,
     step_state,
@@ -352,6 +353,57 @@ class TestStepState:
         # Largest single stack (10) loses to combined 6+6=12 → neutral, 0 ships.
         assert p.owner == -1
         assert p.ships == 0
+
+
+# ---------------------------------------------------------------------------
+# Class: TestResolveCombat — direct unit tests for the extracted helper
+# ---------------------------------------------------------------------------
+
+class TestResolveCombat:
+    """Direct unit tests for _resolve_combat — one test per branch."""
+
+    def _planet(self, owner=0, ships=10):
+        return SimPlanet(id=0, owner=owner, x=0.0, y=0.0, radius=5.0,
+                         ships=ships, production=2)
+
+    def _fleet(self, owner=1, ships=5):
+        return SimFleet(owner=owner, x=0.0, y=0.0, angle=0.0, ships=ships)
+
+    def test_new_owner_with_foothold_cost(self):
+        """Attacker wins: new owner takes planet with surviving - 1 ships (foothold cost)."""
+        planet = self._planet(owner=0, ships=5)
+        arrivals = [self._fleet(owner=1, ships=10)]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == 1
+        assert planet.ships == 4  # surviving = 10 - 5 = 5, minus 1 foothold cost
+
+    def test_defender_holds(self):
+        """Defender wins: planet owner unchanged, surviving ships remain."""
+        planet = self._planet(owner=0, ships=10)
+        arrivals = [self._fleet(owner=1, ships=5)]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == 0
+        assert planet.ships == 5  # surviving = 10 - 5 = 5
+
+    def test_exact_tie_incumbent_holds(self):
+        """Exact tie (surviving == 0) breaks to incumbent; planet held with 0 ships."""
+        planet = self._planet(owner=0, ships=5)
+        arrivals = [self._fleet(owner=1, ships=5)]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == 0
+        assert planet.ships == 0
+
+    def test_combined_attackers_win_goes_neutral(self):
+        """Largest single stack (incumbent) loses to combined attackers → neutral."""
+        planet = self._planet(owner=0, ships=10)
+        arrivals = [
+            self._fleet(owner=1, ships=6),
+            self._fleet(owner=2, ships=6),
+        ]
+        _resolve_combat(planet, arrivals)
+        # Incumbent (10) loses to combined 6+6=12 → neutral with 0 ships
+        assert planet.owner == -1
+        assert planet.ships == 0
 
 
 # ---------------------------------------------------------------------------

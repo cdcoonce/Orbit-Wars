@@ -31,7 +31,9 @@ def _turn_ramp(turn: int, ramp_turns: int, start: float, end: float) -> float:
 
 
 def aggression(turn: int, params: dict = PARAMS) -> float:
-    return _turn_ramp(turn, params["game_length"], params["aggression_max"], params["aggression_min"])
+    return _turn_ramp(
+        turn, params["game_length"], params["aggression_max"], params["aggression_min"]
+    )
 
 
 def classify_own(planet: Planet, threats: list, params: dict = PARAMS) -> str:
@@ -56,7 +58,9 @@ def classify_neutral(target: Planet, ships_to_send: int, params: dict = PARAMS) 
     return "HARD_NEUTRAL"
 
 
-def classify_enemy(target: Planet, ships_to_send: int, eta: int, params: dict = PARAMS) -> str:
+def classify_enemy(
+    target: Planet, ships_to_send: int, eta: int, params: dict = PARAMS
+) -> str:
     expected_defenders = target.ships + target.production * eta
     if expected_defenders == 0:
         return "SOFT_ENEMY"
@@ -78,6 +82,9 @@ def detect_threats(
     # Aggregate every inbound fleet per planet: planet_id -> [summed_ships, earliest_eta].
     # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
     # handle_threats sizes reinforcement against the combined attack, not just one fleet.
+    # Use id(fleet) (object identity) rather than fleet.id so that distinct fleet
+    # objects sharing the same .id value (e.g. sim-spawned sentinels where id=-1)
+    # each contribute their ships exactly once.
     seen: set[tuple[int, int]] = set()
     # planet_id -> (summed_ships, earliest_eta). An explicit 2-tuple keeps each
     # slot self-documenting (no positional [0]/[1] mutation to accidentally swap).
@@ -90,13 +97,15 @@ def detect_threats(
             fleet_x = fleet.x + t * speed * math.cos(fleet.angle)
             fleet_y = fleet.y + t * speed * math.sin(fleet.angle)
             for planet in my_planets:
-                # seen guards a single fleet from contributing its ships more than once
-                # to the same planet (it may stay in-radius across several t).
-                if (fleet.id, planet.id) in seen:
+                # seen guards a single fleet object from contributing its ships
+                # more than once to the same planet (it may stay in-radius across
+                # several t). Keyed on object identity so fleets sharing .id=-1
+                # (lookahead sim-spawned sentinels) are not collapsed.
+                if (id(fleet), planet.id) in seen:
                     continue
                 px, py = predict_planet_position(planet, angular_velocity, t)
                 if distance(fleet_x, fleet_y, px, py) < params["threat_radius"]:
-                    seen.add((fleet.id, planet.id))
+                    seen.add((id(fleet), planet.id))
                     if planet.id in agg:
                         prev_ships, prev_eta = agg[planet.id]
                         # sum ships across fleets; keep the earliest sighting as ETA
@@ -134,14 +143,20 @@ def handle_threats(
             # 0.0, so magnitude collapses to 0 and ships_to_send == flat — byte-for-byte
             # identical to the pre-feature behavior until Optuna raises the knob.
             flat = int(source.ships * params["defense_reinforce_fraction"])
-            magnitude = int(threat.incoming_ships * params.get("defense_incoming_multiplier", 0.0))
+            magnitude = int(
+                threat.incoming_ships * params.get("defense_incoming_multiplier", 0.0)
+            )
             ships_to_send = max(flat, magnitude)
             # Cap magnitude-driven growth so the source keeps min_garrison, but never
             # below the flat baseline (preserves the legacy floor when the knob is 0).
-            ships_to_send = max(flat, min(ships_to_send, source.ships - params["min_garrison"]))
+            ships_to_send = max(
+                flat, min(ships_to_send, source.ships - params["min_garrison"])
+            )
             if ships_to_send < params["min_garrison"]:
                 continue
-            future_x, future_y, eta = intercept(source, target, angular_velocity, ships_to_send)
+            future_x, future_y, eta = intercept(
+                source, target, angular_velocity, ships_to_send
+            )
             if eta <= threat.eta - params["eta_buffer"]:
                 if path_crosses_sun(source.x, source.y, future_x, future_y):
                     continue
@@ -230,8 +245,13 @@ def plan_expansion(
         greedy_params_opp = {**params, "lookahead_blend": 0.0}
         _opp_base = build_state(initial_planets, fleets, turn)
         _opp_moves = plan_moves(
-            _opp_base.planets, _opp_base.fleets, opp_player, angular_velocity,
-            turn=turn, params=greedy_params_opp, initial_planets=initial_planets,
+            _opp_base.planets,
+            _opp_base.fleets,
+            opp_player,
+            angular_velocity,
+            turn=turn,
+            params=greedy_params_opp,
+            initial_planets=initial_planets,
         )
         opponent_fn = lambda state, m=_opp_moves: m  # noqa: E731
     else:
@@ -254,7 +274,14 @@ def plan_expansion(
             if target.owner == -1:
                 tgt_class = classify_neutral(target, probe_ships, params)
             else:
-                probe_result = intercept(source, target, angular_velocity, probe_ships, comet_ids, comet_velocities)
+                probe_result = intercept(
+                    source,
+                    target,
+                    angular_velocity,
+                    probe_ships,
+                    comet_ids,
+                    comet_velocities,
+                )
                 if probe_result[0] is None:
                     continue
                 _, _, probe_eta = probe_result
@@ -267,7 +294,14 @@ def plan_expansion(
                 continue
 
             ships_to_send = max(1, int(source.ships * fraction * agg))
-            intercept_result = intercept(source, target, angular_velocity, ships_to_send, comet_ids, comet_velocities)
+            intercept_result = intercept(
+                source,
+                target,
+                angular_velocity,
+                ships_to_send,
+                comet_ids,
+                comet_velocities,
+            )
             if intercept_result[0] is None:
                 continue
             future_x, future_y, eta = intercept_result
@@ -277,7 +311,9 @@ def plan_expansion(
                 continue
 
             bonus = params["stationary_value_bonus"] if is_stationary(target) else 0
-            eff_prod = effective_production(target, comet_ids, params["comet_value_multiplier"])
+            eff_prod = effective_production(
+                target, comet_ids, params["comet_value_multiplier"]
+            )
             greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
 
             # Lookahead score — simulate the candidate forward and score it.
@@ -290,8 +326,15 @@ def plan_expansion(
                 ]
                 # plan_moves injected so lookahead.py stays free of a strategy import.
                 lookahead_score = score_candidate_lookahead(
-                    initial_planets, fleets, turn, candidate_move, player,
-                    angular_velocity, opponent_fn, params, plan_moves,
+                    initial_planets,
+                    fleets,
+                    turn,
+                    candidate_move,
+                    player,
+                    angular_velocity,
+                    opponent_fn,
+                    params,
+                    plan_moves,
                 )
             else:
                 lookahead_score = greedy_score  # fallback keeps blend=0 equivalent
@@ -306,17 +349,32 @@ def plan_expansion(
         # Primary fleet
         ships_remaining = source.ships
         first_send = max(1, int(ships_remaining * best_fraction * agg))
-        final_result = intercept(source, best_target, angular_velocity, first_send, comet_ids, comet_velocities)
+        final_result = intercept(
+            source,
+            best_target,
+            angular_velocity,
+            first_send,
+            comet_ids,
+            comet_velocities,
+        )
         if final_result[0] is None:
             continue  # comet became un-intercept-able between scoring and final selection
         future_x, future_y, _ = final_result
-        moves.append([source.id, angle_to_target(source.x, source.y, future_x, future_y), first_send])
+        moves.append(
+            [
+                source.id,
+                angle_to_target(source.x, source.y, future_x, future_y),
+                first_send,
+            ]
+        )
         ships_remaining -= first_send
 
         # Multi-target: drain excess ships to lower-scored candidates
         if ships_remaining > min_garrison:
             already_sent = {best_target.id}
-            for _, _, extra_target, extra_fraction in sorted(candidates, key=lambda c: c[0], reverse=True):
+            for _, _, extra_target, extra_fraction in sorted(
+                candidates, key=lambda c: c[0], reverse=True
+            ):
                 if ships_remaining <= min_garrison:
                     break
                 if extra_target.id in already_sent:
@@ -327,7 +385,14 @@ def plan_expansion(
                     extra_send = ships_remaining - min_garrison
                 if extra_send <= 0:
                     break
-                extra_result = intercept(source, extra_target, angular_velocity, extra_send, comet_ids, comet_velocities)
+                extra_result = intercept(
+                    source,
+                    extra_target,
+                    angular_velocity,
+                    extra_send,
+                    comet_ids,
+                    comet_velocities,
+                )
                 if extra_result[0] is None:
                     continue
                 ex, ey, ex_eta = extra_result
@@ -335,7 +400,9 @@ def plan_expansion(
                     continue
                 if path_crosses_sun(source.x, source.y, ex, ey):
                     continue
-                moves.append([source.id, angle_to_target(source.x, source.y, ex, ey), extra_send])
+                moves.append(
+                    [source.id, angle_to_target(source.x, source.y, ex, ey), extra_send]
+                )
                 ships_remaining -= extra_send
                 already_sent.add(extra_target.id)
 
@@ -364,10 +431,15 @@ def plan_moves(
     threats = detect_threats(owned, fleets, player, angular_velocity, params)
     own_classes = {p.id: classify_own(p, threats, params) for p in owned}
 
-    defense_moves = handle_threats(threats, owned, own_classes, angular_velocity, params)
+    defense_moves = handle_threats(
+        threats, owned, own_classes, angular_velocity, params
+    )
 
     if should_play_defensive(
-        planets, fleets, player, turn,
+        planets,
+        fleets,
+        player,
+        turn,
         params["endgame_threshold_turn"],
         params["endgame_lead_margin"],
     ):
@@ -378,8 +450,14 @@ def plan_moves(
     expansion_owned = [p for p in owned if p.id not in defense_used]
     expansion_classes = {k: v for k, v in own_classes.items() if k not in defense_used}
     expansion_moves = plan_expansion(
-        expansion_owned, neutrals, enemies, expansion_classes,
-        angular_velocity, agg, params, comet_ids,
+        expansion_owned,
+        neutrals,
+        enemies,
+        expansion_classes,
+        angular_velocity,
+        agg,
+        params,
+        comet_ids,
         initial_planets=initial_planets,
         fleets=fleets,
         player=player,
@@ -403,8 +481,13 @@ def enemy_planets(planets: list[Planet], player: int) -> list[Planet]:
 
 
 def _intercept_comet_linear(
-    sx: float, sy: float, tx: float, ty: float,
-    vx: float, vy: float, ships: int,
+    sx: float,
+    sy: float,
+    tx: float,
+    ty: float,
+    vx: float,
+    vy: float,
+    ships: int,
 ) -> tuple[float, float, int] | None:
     """Iterative linear intercept for a comet moving at constant velocity.
 
