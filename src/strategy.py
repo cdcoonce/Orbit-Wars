@@ -373,6 +373,7 @@ def plan_expansion(
         # Multi-target: drain excess ships to lower-scored candidates
         if ships_remaining > min_garrison:
             already_sent = {best_target.id}
+            # Drain ranks by raw greedy c[0], not blended: lookahead is expensive and leftover-fleet stakes are low.
             for _, _, extra_target, extra_fraction in sorted(
                 candidates, key=lambda c: c[0], reverse=True
             ):
