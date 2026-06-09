@@ -255,6 +255,27 @@ def test_detect_threats_aggregates_fleets_with_colliding_ids():
     assert threats[0].incoming_ships == fleet_a.ships + fleet_b.ships  # 25, not 10
 
 
+def test_detect_threats_aggregation_dict_not_named_agg():
+    # Enforce the rename: the threat-aggregation dict inside detect_threats must not
+    # use the overloaded name `agg` (which elsewhere means aggression: float).
+    import inspect
+    import ast
+
+    source = inspect.getsource(detect_threats)
+    tree = ast.parse(source)
+    # Collect all local variable names assigned within detect_threats.
+    assigned_names = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    }
+    assert "agg" not in assigned_names, (
+        "detect_threats still uses 'agg' as a local variable name; "
+        "rename the aggregation dict to something self-documenting "
+        "(e.g. 'inbound_by_planet' or 'threat_agg')"
+    )
+
+
 def test_detect_threats_single_fleet_unchanged():
     # Regression: a single inbound fleet produces exactly one threat with the fleet's
     # ships and first-sighting eta — byte-for-byte identical to pre-aggregation behavior.
@@ -654,6 +675,90 @@ def test_plan_expansion_drain_clamps_at_min_garrison():
     assert source.ships - sum(m[2] for m in moves) == params["min_garrison"]
 
 
+def test_plan_expansion_drain_ranks_by_greedy_not_blended():
+    """Drain loop sorts by raw greedy score c[0], not the blended score used for
+    primary selection.  Under lookahead_blend > 0 the primary and drain targets
+    can therefore differ: primary = blended-best, drain = greedy-best of remaining.
+
+    Setup: target_a is close with moderate production (high greedy score, low
+    lookahead); target_b is farther with high production (low greedy score, high
+    lookahead score once its fleet arrives within the 5-step window).  With
+    lookahead_blend ≈ 0.9 the primary flips from a to b, yet the drain still
+    visits a first because the drain sorts by greedy c[0].
+
+    If this divergence is judged unintended, this test is the red test for
+    aligning the drain ranking to the blended score; do not change behavior here.
+    """
+    # radius=10 ensures both fleets land within the 5-step lookahead window.
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=300, production=4)
+    target_a = make_planet(
+        id=1, owner=-1, x=85.0, y=50.0, ships=0, production=3, radius=10
+    )
+    target_b = make_planet(
+        id=2, owner=-1, x=50.0, y=70.0, ships=0, production=10, radius=10
+    )
+    own_classes = {0: "FORTRESS"}
+    all_planets = [source, target_a, target_b]
+
+    base = {
+        **PARAMS,
+        "min_garrison": 10,
+        "min_garrison_early": 10,
+        "garrison_ramp_turns": 1,
+    }
+    greedy_params = {**base, "lookahead_blend": 0.0}
+    blend_params = {**base, "lookahead_blend": 0.9032, "lookahead_turns": 5}
+
+    # blend=0: primary → a (greedy-best: close, moderate production)
+    moves_greedy = plan_expansion(
+        [source],
+        [target_a, target_b],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=greedy_params,
+        turn=0,
+    )
+    # blend=0.9032 + lookahead: primary → b (lookahead-best: high production),
+    # drain → a (greedy-best of remaining — drain ignores blend).
+    moves_blend = plan_expansion(
+        [source],
+        [target_a, target_b],
+        [],
+        own_classes,
+        angular_velocity=0.03,
+        params=blend_params,
+        turn=0,
+        initial_planets=all_planets,
+        fleets=[],
+        player=0,
+    )
+
+    frac = PARAMS["frac_fortress_easy_neutral"]
+    first_send = max(1, int(source.ships * frac))
+    ships_after = source.ships - first_send
+    extra_send = max(1, int(ships_after * frac))
+
+    # Greedy primary is target_a (highest greedy score).
+    fx_a_p, fy_a_p, _ = intercept(source, target_a, 0.03, first_send)
+    assert moves_greedy[0][1] == pytest.approx(
+        angle_to_target(source.x, source.y, fx_a_p, fy_a_p)
+    )
+
+    # Blended primary is target_b (lookahead dominates at blend ≈ 0.9).
+    assert len(moves_blend) == 2
+    fx_b_p, fy_b_p, _ = intercept(source, target_b, 0.03, first_send)
+    assert moves_blend[0][1] == pytest.approx(
+        angle_to_target(source.x, source.y, fx_b_p, fy_b_p)
+    )
+
+    # Drain still ranks by greedy c[0] — target_a (greedy-best) gets the drain fleet.
+    fx_a_d, fy_a_d, _ = intercept(source, target_a, 0.03, extra_send)
+    assert moves_blend[1][1] == pytest.approx(
+        angle_to_target(source.x, source.y, fx_a_d, fy_a_d)
+    )
+
+
 # --- garrison ramp ---
 
 
@@ -1034,6 +1139,23 @@ class TestInterceptComet:
         )
         assert abs(fx_no_comet - fx_with_comet) < 1e-9
         assert eta_no == eta_with
+
+    def test_linear_intercept_overshoot_uses_math_utils_distance(self, monkeypatch):
+        """_intercept_comet_linear overshoot check must use distance(), not inline math.sqrt."""
+        import src.strategy as mod
+
+        calls = []
+        real_distance = mod.distance
+        monkeypatch.setattr(
+            mod, "distance", lambda *a: (calls.append(a), real_distance(*a))[1]
+        )
+
+        result = _intercept_comet_linear(0.0, 50.0, 50.0, 50.0, 0.0, 0.0, 10)
+
+        assert result is not None
+        assert calls, (
+            "distance() was not called — _intercept_comet_linear still uses inline math.sqrt"
+        )
 
 
 # --- _blended_best ---
