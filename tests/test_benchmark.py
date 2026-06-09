@@ -1,4 +1,5 @@
 """Tests for trials/benchmark.py ORIGINAL_DEFAULTS integrity."""
+
 from src.config import PARAMS
 
 
@@ -11,13 +12,29 @@ class TestOriginalDefaults:
         KeyError every turn and the benchmark silently reports all-draws.
         """
         from trials.benchmark import ORIGINAL_DEFAULTS
+
         missing = set(PARAMS) - set(ORIGINAL_DEFAULTS)
         assert not missing, f"ORIGINAL_DEFAULTS missing keys: {sorted(missing)}"
 
     def test_preserves_hand_tuned_overrides(self):
         """The original hand-tuned values must survive the full-defaults merge."""
         from trials.benchmark import ORIGINAL_DEFAULTS
+
         assert ORIGINAL_DEFAULTS["fortress_min_ships"] == 40
         assert ORIGINAL_DEFAULTS["weak_ratio"] == 1.5
         assert ORIGINAL_DEFAULTS["stationary_value_bonus"] == 1
         assert ORIGINAL_DEFAULTS["min_garrison"] == 15
+
+
+class TestBenchmarkSeed:
+    def test_benchmark_seed_is_non_none_integer(self):
+        """BENCHMARK_SEED must be a non-None integer so the benchmark is reproducible.
+
+        Importing the constant (not just checking the call site) ensures the
+        determinism guarantee cannot silently regress if the constant is removed
+        or set to None.
+        """
+        from trials.benchmark import BENCHMARK_SEED
+
+        assert BENCHMARK_SEED is not None
+        assert isinstance(BENCHMARK_SEED, int)
