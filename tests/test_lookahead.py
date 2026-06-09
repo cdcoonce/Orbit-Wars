@@ -957,3 +957,28 @@ class TestScoreCandidateLookaheadHoist:
             "greedy_params must be built once per call (hoisted above the "
             f"roll-forward loop), but params was spread {params.spread_count} times"
         )
+
+
+# --- distance helper delegation ---
+
+
+def test_step_state_combat_arrival_uses_math_utils_distance(monkeypatch):
+    """step_state must use math_utils.distance for the fleet-to-planet arrival check."""
+    import src.lookahead as mod
+
+    assert hasattr(mod, "distance"), (
+        "lookahead.py must import 'distance' from .math_utils"
+    )
+
+    calls = []
+    real_distance = mod.distance
+    monkeypatch.setattr(
+        mod, "distance", lambda *a: (calls.append(a), real_distance(*a))[1]
+    )
+
+    planet = make_planet(id=0, owner=1, x=70.0, y=50.0, radius=5.0, ships=5)
+    fleet = make_fleet(id=0, owner=0, x=70.0, y=50.0, ships=10)
+    state = build_state([planet], [fleet], turn=0)
+    step_state(state, move=None, player=0, angular_velocity=0.03)
+
+    assert calls, "distance() was not called — step_state still uses inline math.sqrt"
