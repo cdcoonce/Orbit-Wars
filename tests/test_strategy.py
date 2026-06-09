@@ -1140,6 +1140,23 @@ class TestInterceptComet:
         assert abs(fx_no_comet - fx_with_comet) < 1e-9
         assert eta_no == eta_with
 
+    def test_linear_intercept_overshoot_uses_math_utils_distance(self, monkeypatch):
+        """_intercept_comet_linear overshoot check must use distance(), not inline math.sqrt."""
+        import src.strategy as mod
+
+        calls = []
+        real_distance = mod.distance
+        monkeypatch.setattr(
+            mod, "distance", lambda *a: (calls.append(a), real_distance(*a))[1]
+        )
+
+        result = _intercept_comet_linear(0.0, 50.0, 50.0, 50.0, 0.0, 0.0, 10)
+
+        assert result is not None
+        assert calls, (
+            "distance() was not called — _intercept_comet_linear still uses inline math.sqrt"
+        )
+
 
 # --- _blended_best ---
 

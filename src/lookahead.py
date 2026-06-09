@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-from .math_utils import fleet_speed, predict_planet_position
+from .math_utils import distance, fleet_speed, predict_planet_position
 
 
 @dataclass
@@ -194,7 +194,7 @@ def step_state(
     for fleet in state.fleets:
         landed = False
         for planet in state.planets:
-            dist = math.sqrt((fleet.x - planet.x) ** 2 + (fleet.y - planet.y) ** 2)
+            dist = distance(fleet.x, fleet.y, planet.x, planet.y)
             if dist <= planet.radius:
                 planet_arrivals[planet.id].append(fleet)
                 landed = True

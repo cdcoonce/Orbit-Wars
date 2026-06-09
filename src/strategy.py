@@ -516,7 +516,7 @@ def _intercept_comet_linear(
     # Check fleet endpoint for overshoot: fleet travels eta*speed units in a
     # straight line; if that overshoots past the aim point toward the board
     # edge the fleet exits the board.
-    d = math.sqrt((fx - sx) ** 2 + (fy - sy) ** 2)
+    d = distance(fx, fy, sx, sy)
     if d > 1e-9:
         scale = (eta * speed) / d
         ex = sx + scale * (fx - sx)
