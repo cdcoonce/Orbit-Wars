@@ -40,9 +40,9 @@ def predict_planet_position(
     A zero angular_velocity likewise means no movement (and avoids a
     divide-by-zero when computing the orbital period).
     """
-    if is_stationary(planet) or angular_velocity == 0:
-        return (planet.x, planet.y)
     radius = orbital_radius(planet)
+    if radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT or angular_velocity == 0:
+        return (planet.x, planet.y)
     period = round(2 * math.pi / angular_velocity)
     # A very large angular_velocity rounds the period down to 0; treat that as
     # no movement too (and avoids a divide-by-zero in turns % period below).

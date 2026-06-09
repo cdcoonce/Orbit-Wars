@@ -1,4 +1,5 @@
 import math
+from unittest.mock import patch
 
 import pytest
 
@@ -31,7 +32,9 @@ def test_board_bounds_match_engine_board_size():
 
 
 def make_planet(x: float, y: float, production: int = 1, owner: int = -1) -> Planet:
-    return Planet(id=0, owner=owner, x=x, y=y, radius=1.0, ships=10, production=production)
+    return Planet(
+        id=0, owner=owner, x=x, y=y, radius=1.0, ships=10, production=production
+    )
 
 
 def engine_max_speed() -> float:
@@ -57,6 +60,7 @@ def engine_fleet_speed(num_ships: int, max_speed: float) -> float:
 
 # --- distance ---
 
+
 def test_distance_same_point():
     assert distance(0, 0, 0, 0) == 0.0
 
@@ -66,6 +70,7 @@ def test_distance_known():
 
 
 # --- fleet_speed ---
+
 
 def test_fleet_speed_one_ship():
     assert fleet_speed(1) == pytest.approx(1.0)
@@ -101,6 +106,7 @@ def test_engine_max_speed_default_pinned():
 
 # --- engine constants (pin against spec drift) ---
 
+
 def test_engine_constants_pinned():
     assert CENTER == pytest.approx(50.0)
     assert SUN_RADIUS == pytest.approx(10.0)
@@ -109,12 +115,14 @@ def test_engine_constants_pinned():
 
 # --- orbital_radius ---
 
+
 def test_orbital_radius_known():
     # x=90, y=50 → 40 units from center (50, 50)
     assert orbital_radius(make_planet(x=90.0, y=50.0)) == pytest.approx(40.0)
 
 
 # --- is_stationary ---
+
 
 def test_is_stationary_true():
     # orbital_radius=40, 40 + SUN_RADIUS(10) = 50 >= ROTATION_RADIUS_LIMIT(50) → static
@@ -127,6 +135,7 @@ def test_is_stationary_false():
 
 
 # --- predict_planet_position ---
+
 
 def test_static_planet_unchanged():
     # A planet far from center should not move
@@ -173,6 +182,17 @@ def test_orbiting_planet_large_angular_velocity():
     assert y == pytest.approx(50.0)
 
 
+def test_orbital_radius_computed_once_for_orbiting_planet():
+    # Regression: the old code called orbital_radius twice for orbiting planets —
+    # once inside is_stationary and again explicitly. Verify it is called at most once.
+    planet = make_planet(x=60.0, y=50.0)  # orbiting, not stationary
+    with patch("src.math_utils.orbital_radius", wraps=orbital_radius) as mock_r:
+        predict_planet_position(planet, angular_velocity=0.05, turns=10)
+    assert mock_r.call_count == 1, (
+        f"orbital_radius called {mock_r.call_count} times, expected 1"
+    )
+
+
 # --- path_crosses_sun (zero-length segment) ---
 
 
@@ -193,10 +213,14 @@ def test_path_crosses_sun_coincident_point_outside_sun():
 
 def test_fleet_not_imported_into_math_utils():
     import src.math_utils as m
-    assert not hasattr(m, 'Fleet'), "Fleet is unused in math_utils and should not be imported"
+
+    assert not hasattr(m, "Fleet"), (
+        "Fleet is unused in math_utils and should not be imported"
+    )
 
 
 # --- angle_to_target ---
+
 
 def test_angle_right():
     # Target directly to the right → angle 0
@@ -209,11 +233,13 @@ def test_angle_down():
 
 
 def test_angle_left():
-    assert angle_to_target(0, 0, -1, 0) == pytest.approx(math.pi) or \
-           angle_to_target(0, 0, -1, 0) == pytest.approx(-math.pi)
+    assert angle_to_target(0, 0, -1, 0) == pytest.approx(math.pi) or angle_to_target(
+        0, 0, -1, 0
+    ) == pytest.approx(-math.pi)
 
 
 # --- turns_to_arrive ---
+
 
 def test_turns_to_arrive_same_position_returns_one():
     # max(1, ...) floor: zero distance must not return 0 turns.
