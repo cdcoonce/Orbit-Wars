@@ -231,6 +231,46 @@ def test_module_docstring_not_stale():
         )
 
 
+def test_multiline_stdlib_import_bundled_correctly(tmp_path):
+    """Bundler must strip multi-line parenthesized stdlib imports so the output
+    has no stray member lines or dangling parentheses (ast.parse-clean)."""
+    _isolated_repo(tmp_path)
+
+    # Write a synthetic src module that uses the multi-line stdlib import form.
+    (tmp_path / "src" / "_test_multiline.py").write_text(
+        "from collections import (\n"
+        "    namedtuple,\n"
+        "    OrderedDict,\n"
+        ")\n"
+        "\n"
+        "SomeRecord = namedtuple('SomeRecord', ['x', 'y'])\n"
+    )
+
+    # Inject the synthetic module into SRC_FILES in the copied build.py.
+    build_text = (tmp_path / "build.py").read_text()
+    build_text = build_text.replace(
+        'Path("src/agent.py"),',
+        'Path("src/agent.py"),\n    Path("src/_test_multiline.py"),',
+    )
+    (tmp_path / "build.py").write_text(build_text)
+
+    result = subprocess.run(
+        [sys.executable, "build.py"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"build.py failed:\n{result.stderr}"
+    submission = (tmp_path / "submission.py").read_text()
+    ast.parse(submission)
+    assert re.search(r"^\s*namedtuple,$", submission, re.MULTILINE) is None, (
+        "stray 'namedtuple,' line survived bundling"
+    )
+    assert re.search(r"^\s*OrderedDict,$", submission, re.MULTILINE) is None, (
+        "stray 'OrderedDict,' line survived bundling"
+    )
+
+
 def test_submission_agent_matches_src_agent(tmp_path):
     """submission.agent(obs) returns the same moves as src.agent.agent(obs) for a
     fixed turn-0 observation.

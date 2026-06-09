@@ -37,10 +37,14 @@ KAGGLE_IMPORT_RE = re.compile(
 )
 
 # Matches top-level `import X` and `from X import Y` lines (non-relative, non-kaggle).
+# Multi-line parenthesized form must be listed first so it takes priority over the
+# single-line fallback; otherwise `^from \w[^\n]*\n?` eats only the opening line and
+# leaves the member names and closing `)` as stray code.
 # Applied after KAGGLE_IMPORT_RE so `^from \w` cannot accidentally match kaggle lines.
 STDLIB_IMPORT_RE = re.compile(
+    r"^from \w[^\n]*import\s*\([^)]*\)\s*\n|"
     r"^import \w[^\n]*\n?|^from \w[^\n]*\n?",
-    re.MULTILINE,
+    re.MULTILINE | re.DOTALL,
 )
 
 KAGGLE_IMPORTS_BLOCK = (
@@ -52,6 +56,19 @@ KAGGLE_IMPORTS_BLOCK = (
     "    Planet,\n"
     ")\n"
 )
+
+
+def _normalize_stdlib_import(raw: str) -> str:
+    """Collapse 'from X import (\n  a,\n  b,\n)' to 'from X import a, b'."""
+    if "(" not in raw:
+        return raw.rstrip("\n")
+    head, body = raw.split("(", 1)
+    names = ", ".join(
+        p.strip().rstrip(",")
+        for p in body.replace(")", "").split(",")
+        if p.strip().rstrip(",")
+    )
+    return f"{head.rstrip()} {names}"
 
 
 def strip_imports(source: str) -> str:
@@ -72,7 +89,7 @@ def build() -> Path:
         # Strip relative and kaggle first so STDLIB_IMPORT_RE cannot see kaggle lines.
         partial = KAGGLE_IMPORT_RE.sub("", RELATIVE_IMPORT_RE.sub("", source))
         for match in STDLIB_IMPORT_RE.finditer(partial):
-            line = match.group().rstrip("\n")
+            line = _normalize_stdlib_import(match.group())
             if line not in seen:
                 seen.add(line)
                 stdlib_imports.append(line)
