@@ -88,7 +88,7 @@ def detect_threats(
     seen: set[tuple[int, int]] = set()
     # planet_id -> (summed_ships, earliest_eta). An explicit 2-tuple keeps each
     # slot self-documenting (no positional [0]/[1] mutation to accidentally swap).
-    agg: dict[int, tuple[int, int]] = {}
+    inbound_by_planet: dict[int, tuple[int, int]] = {}
     for fleet in fleets:
         if fleet.owner == player:
             continue
@@ -106,15 +106,18 @@ def detect_threats(
                 px, py = predict_planet_position(planet, angular_velocity, t)
                 if distance(fleet_x, fleet_y, px, py) < params["threat_radius"]:
                     seen.add((id(fleet), planet.id))
-                    if planet.id in agg:
-                        prev_ships, prev_eta = agg[planet.id]
+                    if planet.id in inbound_by_planet:
+                        prev_ships, prev_eta = inbound_by_planet[planet.id]
                         # sum ships across fleets; keep the earliest sighting as ETA
-                        agg[planet.id] = (prev_ships + fleet.ships, min(prev_eta, t))
+                        inbound_by_planet[planet.id] = (
+                            prev_ships + fleet.ships,
+                            min(prev_eta, t),
+                        )
                     else:
-                        agg[planet.id] = (fleet.ships, t)
+                        inbound_by_planet[planet.id] = (fleet.ships, t)
     return [
         Threat(planet_id=pid, incoming_ships=ships, eta=eta)
-        for pid, (ships, eta) in agg.items()
+        for pid, (ships, eta) in inbound_by_planet.items()
     ]
 
 

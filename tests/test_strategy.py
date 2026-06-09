@@ -255,6 +255,27 @@ def test_detect_threats_aggregates_fleets_with_colliding_ids():
     assert threats[0].incoming_ships == fleet_a.ships + fleet_b.ships  # 25, not 10
 
 
+def test_detect_threats_aggregation_dict_not_named_agg():
+    # Enforce the rename: the threat-aggregation dict inside detect_threats must not
+    # use the overloaded name `agg` (which elsewhere means aggression: float).
+    import inspect
+    import ast
+
+    source = inspect.getsource(detect_threats)
+    tree = ast.parse(source)
+    # Collect all local variable names assigned within detect_threats.
+    assigned_names = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    }
+    assert "agg" not in assigned_names, (
+        "detect_threats still uses 'agg' as a local variable name; "
+        "rename the aggregation dict to something self-documenting "
+        "(e.g. 'inbound_by_planet' or 'threat_agg')"
+    )
+
+
 def test_detect_threats_single_fleet_unchanged():
     # Regression: a single inbound fleet produces exactly one threat with the fleet's
     # ships and first-sighting eta — byte-for-byte identical to pre-aggregation behavior.
