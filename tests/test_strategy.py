@@ -1016,6 +1016,13 @@ def test_turn_ramp_midpoint_is_linear():
     assert _turn_ramp(50, 100, 4.0, 2.0) == 3.0
 
 
+def test_turn_ramp_zero_ramp_turns_returns_end():
+    from src.strategy import _turn_ramp
+
+    assert _turn_ramp(0, 0, 4.0, 2.0) == 2.0
+    assert _turn_ramp(50, 0, 4.0, 2.0) == 2.0
+
+
 # --- _effective_distance_power ---
 
 

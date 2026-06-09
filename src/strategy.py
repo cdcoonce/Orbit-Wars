@@ -26,6 +26,8 @@ Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
 def _turn_ramp(turn: int, ramp_turns: int, start: float, end: float) -> float:
     """Linearly interpolate from start to end over [0, ramp_turns], clamped at ramp_turns."""
+    if ramp_turns <= 0:
+        return end
     t = min(turn, ramp_turns) / ramp_turns
     return start + t * (end - start)
 
