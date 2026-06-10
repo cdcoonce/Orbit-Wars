@@ -288,6 +288,22 @@ def test_detect_threats_single_fleet_unchanged():
     assert threats[0].eta == 7
 
 
+def test_detect_threats_segment_catches_between_samples():
+    # A fast fleet (1000 ships → speed=6) passes between integer-sample positions.
+    # Planet at (95, 50): orbital_radius=45, 45+SUN_RADIUS(10)=55 >= ROTATION_RADIUS_LIMIT(50) → static.
+    # Fleet at (86, 57) heading right:
+    #   t=1 → (92, 57), dist=sqrt(9+49)=sqrt(58)≈7.62 > threat_radius (~7.36) — missed by point check
+    #   t=2 → (98, 57), dist=sqrt(58)≈7.62 > threat_radius              — missed by point check
+    #   closest approach at t=1.5: fleet at (95, 57), dist=7.0 < threat_radius — caught by segment check
+    planet = make_planet(id=1, owner=0, x=95.0, y=50.0)
+    fleet = make_fleet(owner=1, x=86.0, y=57.0, angle=0.0, ships=1000)
+    threats = detect_threats([planet], [fleet], player=0, angular_velocity=0.03)
+    assert any(t.planet_id == 1 for t in threats), (
+        "segment-based check must detect a fleet whose closest approach falls between "
+        "integer samples; point-based check misses it"
+    )
+
+
 def test_handle_threats_scales_against_combined_incoming():
     # Downstream: feeding two converging fleets through detect_threats yields a single
     # threat whose summed incoming_ships drives magnitude-aware reinforcement — handle_threats

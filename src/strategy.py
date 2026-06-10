@@ -74,6 +74,22 @@ def classify_enemy(
     return "HARDENED_ENEMY"
 
 
+def _min_dist_pt_to_segment(
+    px: float, py: float,
+    sx1: float, sy1: float, sx2: float, sy2: float,
+) -> float:
+    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
+    dx = sx2 - sx1
+    dy = sy2 - sy1
+    d_len_sq = dx * dx + dy * dy
+    if d_len_sq == 0:
+        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
+    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
+    cx = sx1 + t * dx
+    cy = sy1 + t * dy
+    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+
+
 def detect_threats(
     my_planets: list[Planet],
     fleets: list[Fleet],
@@ -95,9 +111,16 @@ def detect_threats(
         if fleet.owner == player:
             continue
         speed = fleet_speed(fleet.ships)
+        cos_a = math.cos(fleet.angle)
+        sin_a = math.sin(fleet.angle)
         for t in range(1, params["threat_eta_window"] + 1):
-            fleet_x = fleet.x + t * speed * math.cos(fleet.angle)
-            fleet_y = fleet.y + t * speed * math.sin(fleet.angle)
+            # Check the fleet's straight-line segment for interval [t-1, t] against
+            # each planet's position at the start of that interval.  This catches
+            # fleets whose closest approach falls between two integer samples.
+            fx0 = fleet.x + (t - 1) * speed * cos_a
+            fy0 = fleet.y + (t - 1) * speed * sin_a
+            fx1 = fleet.x + t * speed * cos_a
+            fy1 = fleet.y + t * speed * sin_a
             for planet in my_planets:
                 # seen guards a single fleet object from contributing its ships
                 # more than once to the same planet (it may stay in-radius across
@@ -105,8 +128,8 @@ def detect_threats(
                 # (lookahead sim-spawned sentinels) are not collapsed.
                 if (id(fleet), planet.id) in seen:
                     continue
-                px, py = predict_planet_position(planet, angular_velocity, t)
-                if distance(fleet_x, fleet_y, px, py) < params["threat_radius"]:
+                px, py = predict_planet_position(planet, angular_velocity, t - 1)
+                if _min_dist_pt_to_segment(px, py, fx0, fy0, fx1, fy1) < params["threat_radius"]:
                     seen.add((id(fleet), planet.id))
                     if planet.id in inbound_by_planet:
                         prev_ships, prev_eta = inbound_by_planet[planet.id]
