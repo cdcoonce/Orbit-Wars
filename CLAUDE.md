@@ -74,6 +74,7 @@ Whenever a tuned constant changes value (e.g. `PROMOTION_THRESHOLD` or `N_GAMES`
 1. **grep the entire repo** for the old value in every representation — both the percent form (e.g. `65%`) and the decimal form (e.g. `0.65`) — and update every live reference, including files under `.claude/docs/`.
 2. **Cite constants by name** in new or edited docs (e.g. "see `PROMOTION_THRESHOLD` in `trials/run_trials.py`") instead of hardcoding the number, so docs cannot silently drift when the value changes.
 3. **Exemption**: intentionally-dated snapshots in `archive/` or `superpowers/` preserve the historical figure on purpose and need not be updated.
+4. **When editing a doc section that enumerates constants from a single source file, re-verify ALL enumerated constants against that file in the same edit** — not just the one you came to change. Acceptance-criteria bullet lists and inline plan-doc numbers are in scope, not just headline prose values (both drifted in PR #72 even after the prose was fixed). For example, fixing `PROMOTION_THRESHOLD` in a section that also lists `N_GAMES` from `trials/run_trials.py` requires re-checking `N_GAMES` in the same edit; leaving adjacent constants unverified contradicts the cite-by-name rule above.
 
 ### Pending re-tune: multi-fleet defense aggregation
 
