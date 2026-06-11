@@ -154,13 +154,16 @@ def test_orbiting_planet_zero_turns():
 
 
 def test_orbiting_planet_full_revolution():
-    # After 2π / angular_velocity turns, planet should return to start
+    # After round(2π / angular_velocity) turns the planet returns approximately to
+    # start. The engine adds av*turns directly (no modulo), so there is a small
+    # drift of up to av radians due to integer rounding of the period — abs=0.2
+    # accommodates that drift for av=0.05 (max position error ≈ radius*av ≈ 0.17).
     planet = make_planet(x=60.0, y=50.0)
     av = 0.05
     full_rev = round(2 * math.pi / av)
     x, y = predict_planet_position(planet, angular_velocity=av, turns=full_rev)
-    assert x == pytest.approx(60.0, abs=0.1)
-    assert y == pytest.approx(50.0, abs=0.1)
+    assert x == pytest.approx(60.0, abs=0.2)
+    assert y == pytest.approx(50.0, abs=0.2)
 
 
 def test_orbiting_planet_zero_angular_velocity():
@@ -173,13 +176,40 @@ def test_orbiting_planet_zero_angular_velocity():
 
 
 def test_orbiting_planet_large_angular_velocity():
-    # For angular_velocity > 4*pi, round(2*pi / av) == 0, so turns % period
-    # would divide by zero. Treat the rounded-to-zero period as no movement —
-    # return current position instead of crashing.
+    # The old code returned current position for av > 4π because round(2π/av)==0
+    # triggered a division-by-zero guard on turns % period.  The engine formula
+    # has no such guard — large angular_velocity just produces a large angle
+    # advance and cos/sin periodicity handles it naturally.  Verify we match
+    # the engine: future_angle = initial_angle + av * turns.
     planet = make_planet(x=60.0, y=50.0)  # orbits, so it passes the stationary guard
-    x, y = predict_planet_position(planet, angular_velocity=13.0, turns=5)
-    assert x == pytest.approx(60.0)
-    assert y == pytest.approx(50.0)
+    av = 13.0
+    turns = 5
+    initial_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
+    radius = math.sqrt((planet.x - CENTER) ** 2 + (planet.y - CENTER) ** 2)
+    future_angle = initial_angle + av * turns
+    expected_x = CENTER + radius * math.cos(future_angle)
+    expected_y = CENTER + radius * math.sin(future_angle)
+    x, y = predict_planet_position(planet, angular_velocity=av, turns=turns)
+    assert x == pytest.approx(expected_x, abs=1e-9)
+    assert y == pytest.approx(expected_y, abs=1e-9)
+
+
+def test_predict_planet_position_long_horizon_matches_engine_formula():
+    # Regression: turns > one orbital period exposed the old modulo drift.
+    # Engine (orbit_wars.py:586): angle = initial_angle + angular_velocity * step
+    # For av=0.05 the rounded period is 126; turns=200 > 126 puts us in the
+    # second orbit, where turns%period diverges from angular_velocity*turns.
+    planet = make_planet(x=60.0, y=50.0)  # radius=10, initial_angle=0
+    av = 0.05
+    turns = 200  # > round(2*pi/0.05) = 126
+    initial_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
+    radius = math.sqrt((planet.x - CENTER) ** 2 + (planet.y - CENTER) ** 2)
+    future_angle = initial_angle + av * turns  # engine formula
+    expected_x = CENTER + radius * math.cos(future_angle)
+    expected_y = CENTER + radius * math.sin(future_angle)
+    x, y = predict_planet_position(planet, angular_velocity=av, turns=turns)
+    assert x == pytest.approx(expected_x, abs=1e-9)
+    assert y == pytest.approx(expected_y, abs=1e-9)
 
 
 def test_orbital_radius_computed_once_for_orbiting_planet():

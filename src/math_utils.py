@@ -37,20 +37,17 @@ def predict_planet_position(
     Orbiting planets rotate around the sun at (50, 50) with a constant
     angular_velocity (radians/turn). Static planets (orbital radius >=
     ROTATION_RADIUS_LIMIT) don't move — return current position unchanged.
-    A zero angular_velocity likewise means no movement (and avoids a
-    divide-by-zero when computing the orbital period).
+    A zero angular_velocity likewise means no movement.
+
+    Matches the engine formula (orbit_wars.py:586):
+        angle = initial_angle + angular_velocity * step
+    cos/sin periodicity handles large horizons naturally — no modulo needed.
     """
     radius = orbital_radius(planet)
     if radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT or angular_velocity == 0:
         return (planet.x, planet.y)
-    period = round(2 * math.pi / angular_velocity)
-    # A very large angular_velocity rounds the period down to 0; treat that as
-    # no movement too (and avoids a divide-by-zero in turns % period below).
-    if period < 1:
-        return (planet.x, planet.y)
-    normalized_turns = turns % period
     current_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
-    future_angle = current_angle + angular_velocity * normalized_turns
+    future_angle = current_angle + angular_velocity * turns
     return (
         CENTER + radius * math.cos(future_angle),
         CENTER + radius * math.sin(future_angle),
