@@ -223,6 +223,15 @@ def test_orbital_radius_computed_once_for_orbiting_planet():
     )
 
 
+def test_predict_planet_position_docstring_matches_sun_radius_guard():
+    # The static-planet guard is `radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT`,
+    # not `orbital_radius >= ROTATION_RADIUS_LIMIT`. The docstring must name
+    # SUN_RADIUS and cross-reference is_stationary so the two stay linked.
+    doc = predict_planet_position.__doc__ or ""
+    assert "SUN_RADIUS" in doc, "docstring must mention SUN_RADIUS in the static guard"
+    assert "is_stationary" in doc, "docstring must cross-reference is_stationary"
+
+
 # --- path_crosses_sun (zero-length segment) ---
 
 
