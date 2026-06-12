@@ -35,9 +35,10 @@ def predict_planet_position(
     Predict where a planet will be after `turns` turns.
 
     Orbiting planets rotate around the sun at (50, 50) with a constant
-    angular_velocity (radians/turn). Static planets (orbital radius >=
-    ROTATION_RADIUS_LIMIT) don't move — return current position unchanged.
-    A zero angular_velocity likewise means no movement.
+    angular_velocity (radians/turn). Static planets (orbital_radius + SUN_RADIUS >=
+    ROTATION_RADIUS_LIMIT, the same boundary as is_stationary) don't move —
+    return current position unchanged. A zero angular_velocity likewise means
+    no movement.
 
     Matches the engine formula (orbit_wars.py:586):
         angle = initial_angle + angular_velocity * step
