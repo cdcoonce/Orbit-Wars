@@ -959,6 +959,96 @@ class TestScoreCandidateLookaheadHoist:
         )
 
 
+# ---------------------------------------------------------------------------
+# Class: TestScoreCandidateLookaheadDirect
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCandidateLookaheadDirect:
+    """Direct unit tests for score_candidate_lookahead's return value."""
+
+    # Shared stub: plan_moves_fn that always returns no moves.
+    @staticmethod
+    def _noop_plan_moves(planets, fleets, player, angular_velocity, **kwargs):
+        return []
+
+    def _simple_planet(self):
+        """One owned planet: owner=0, ships=10, production=2."""
+        return make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10, production=2)
+
+    def test_returns_exact_score_at_lookahead_turns_1(self):
+        """With lookahead_turns=1 and no moves, the score equals score_state after
+        one step of production (ships 10→12): (2-0) + 0.01*(12-0) = 2.12."""
+        from src.lookahead import score_candidate_lookahead
+
+        planet = self._simple_planet()
+        result = score_candidate_lookahead(
+            initial_planets=[planet],
+            fleets=[],
+            turn=0,
+            candidate_move=None,
+            player=0,
+            angular_velocity=0.0,
+            opponent_fn=lambda s: [],
+            params={"lookahead_turns": 1, "lookahead_ship_weight": 0.01},
+            plan_moves_fn=self._noop_plan_moves,
+        )
+        assert result == pytest.approx(2.12)
+
+    def test_lookahead_turns_3_differs_from_turns_1_when_production_compounds(self):
+        """Increasing lookahead_turns from 1 to 3 advances the roll-forward loop
+        twice more, adding 2 production ticks: ships grow 12→14→16, so the score
+        changes from 2.12 to 2.16."""
+        from src.lookahead import score_candidate_lookahead
+
+        planet = self._simple_planet()
+
+        def make_score(turns):
+            return score_candidate_lookahead(
+                initial_planets=[planet],
+                fleets=[],
+                turn=0,
+                candidate_move=None,
+                player=0,
+                angular_velocity=0.0,
+                opponent_fn=lambda s: [],
+                params={"lookahead_turns": turns, "lookahead_ship_weight": 0.01},
+                plan_moves_fn=self._noop_plan_moves,
+            )
+
+        score1 = make_score(1)
+        score3 = make_score(3)
+        assert score1 != score3, (
+            f"score at turns=1 ({score1}) should differ from turns=3 ({score3})"
+        )
+        assert score3 == pytest.approx(2.16), f"expected 2.16 at turns=3, got {score3}"
+
+    def test_lookahead_ship_weight_affects_score(self):
+        """params['lookahead_ship_weight'] is passed to score_state; varying it
+        changes the returned score.  At turns=1, ships=12: weight 0.01→score 2.12,
+        weight 0.1→score 3.2."""
+        from src.lookahead import score_candidate_lookahead
+
+        planet = self._simple_planet()
+
+        def make_score(weight):
+            return score_candidate_lookahead(
+                initial_planets=[planet],
+                fleets=[],
+                turn=0,
+                candidate_move=None,
+                player=0,
+                angular_velocity=0.0,
+                opponent_fn=lambda s: [],
+                params={"lookahead_turns": 1, "lookahead_ship_weight": weight},
+                plan_moves_fn=self._noop_plan_moves,
+            )
+
+        assert make_score(0.01) == pytest.approx(2.12)
+        assert make_score(0.1) == pytest.approx(3.2)
+        assert make_score(0.01) != make_score(0.1)
+
+
 # --- distance helper delegation ---
 
 
