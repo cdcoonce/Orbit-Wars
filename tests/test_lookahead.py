@@ -314,6 +314,47 @@ class TestStepState:
         # No fleet should be added, no exception
         assert len(next_s.fleets) == 0
 
+    def test_own_move_insufficient_ships_no_fleet_no_deduction(self):
+        """Own move requesting more ships than available after production is silently skipped.
+
+        Source starts at 10 ships, production=3 → 13 after production.
+        Move requests 14 (> 13 post-production) → guard fires, no fleet spawned,
+        source ship total remains at its post-production value of 13.
+        """
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=10, production=3
+        )
+        state = build_state([planet], [], turn=0)
+        move = [0, 0.0, 14]  # request 14 ships; only 13 available after production
+        next_s = step_state(state, move=move, player=0, angular_velocity=0.03)
+
+        source = next(p for p in next_s.planets if p.id == 0)
+        assert len(next_s.fleets) == 0
+        assert source.ships == 13  # 10 + 3 production; no deduction because guard fired
+
+    def test_opponent_fn_insufficient_ships_no_fleet_no_deduction(self):
+        """opponent_fn move requesting more ships than available after production is silently skipped.
+
+        Opponent source starts at 10 ships, production=3 → 13 after production.
+        opponent_fn requests 14 (> 13 post-production) → guard fires, no opponent
+        fleet spawned, source ship total remains at its post-production value of 13.
+        """
+        opp_planet = make_planet(
+            id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=10, production=3
+        )
+        state = build_state([opp_planet], [], turn=0)
+
+        def opponent_fn(s):
+            return [[0, 0.0, 14]]  # request 14 ships; only 13 available after production
+
+        next_s = step_state(
+            state, move=None, player=0, angular_velocity=0.03, opponent_fn=opponent_fn
+        )
+
+        opp_source = next(p for p in next_s.planets if p.id == 0)
+        assert len(next_s.fleets) == 0
+        assert opp_source.ships == 13  # 10 + 3 production; no deduction because guard fired
+
     def test_opponent_fn_call_count_sentinel(self):
         """opponent_fn is called exactly once per step_state invocation."""
         state = self._simple_state()
