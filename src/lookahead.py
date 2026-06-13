@@ -215,6 +215,112 @@ def step_state(
     return state
 
 
+def step_state_multi(
+    state: GameState,
+    moves,
+    player: int,
+    angular_velocity: float,
+    opponent_fn=None,
+) -> GameState:
+    """Simulate ONE turn forward with a list of own-player moves.
+
+    Identical to step_state except the launch phase iterates *moves* (a list of
+    [planet_id, angle, ships]) rather than a single optional move.  An empty
+    list applies no own launches.  Steps 1, 2, 3b, 4, and 5 are byte-for-byte
+    equivalent to step_state.
+
+    Args:
+        state: Current game state (mutated in place; caller should not reuse).
+        moves: List of [planet_id, angle, ships] launch instructions. An empty
+               list produces no own launches. Moves whose source has insufficient
+               ships are silently skipped.
+        player: The acting player's index.
+        angular_velocity: Global orbital angular velocity (rad/turn).
+        opponent_fn: Optional callable (state) -> list[list]. Invoked exactly
+                     once; opponent moves are applied after own launches.
+
+    Returns:
+        The mutated GameState after one simulated turn.
+    """
+    # --- Step 1: Production ---
+    for planet in state.planets:
+        if planet.owner != -1:
+            planet.ships += planet.production
+
+    # --- Step 2: Rotate orbiting planets ---
+    for sim_planet in state.planets:
+        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
+        sim_planet.x = new_x
+        sim_planet.y = new_y
+
+    # --- Step 3: Launch one fleet per move (skips moves with insufficient ships) ---
+    for move in moves:
+        planet_id, angle, ships_to_send = move[0], move[1], move[2]
+        source = next((p for p in state.planets if p.id == planet_id), None)
+        if source is not None and source.ships >= ships_to_send:
+            source.ships -= ships_to_send
+            state.fleets.append(
+                SimFleet(
+                    owner=player,
+                    x=source.x + math.cos(angle) * (source.radius + 0.1),
+                    y=source.y + math.sin(angle) * (source.radius + 0.1),
+                    angle=angle,
+                    ships=ships_to_send,
+                )
+            )
+
+    # --- Step 3b: Opponent fleet launches ---
+    if opponent_fn is not None:
+        opp_moves = opponent_fn(state)
+        for opp_move in opp_moves:
+            planet_id, angle, ships = opp_move[0], opp_move[1], opp_move[2]
+            opp_source = next((p for p in state.planets if p.id == planet_id), None)
+            if opp_source is not None and opp_source.ships >= ships:
+                opp_source.ships -= ships
+                state.fleets.append(
+                    SimFleet(
+                        owner=1 - player,
+                        x=opp_source.x + math.cos(angle) * (opp_source.radius + 0.1),
+                        y=opp_source.y + math.sin(angle) * (opp_source.radius + 0.1),
+                        angle=angle,
+                        ships=ships,
+                    )
+                )
+
+    # --- Step 4: Move all fleets ---
+    for fleet in state.fleets:
+        speed = fleet_speed(fleet.ships)
+        fleet.x += speed * math.cos(fleet.angle)
+        fleet.y += speed * math.sin(fleet.angle)
+
+    # --- Step 5: Combat ---
+    # Single pass: assign each fleet to the first planet it lands on, or keep flying.
+    remaining_fleets = []
+    planet_arrivals: dict[int, list] = {p.id: [] for p in state.planets}
+    for fleet in state.fleets:
+        landed = False
+        for planet in state.planets:
+            dist = distance(fleet.x, fleet.y, planet.x, planet.y)
+            if dist <= planet.radius:
+                planet_arrivals[planet.id].append(fleet)
+                landed = True
+                break
+        if not landed:
+            remaining_fleets.append(fleet)
+
+    for planet in state.planets:
+        arrivals = planet_arrivals[planet.id]
+        if not arrivals:
+            continue
+        _resolve_combat(planet, arrivals)
+
+    # Keep only fleets that didn't land on any planet
+    state.fleets = remaining_fleets
+
+    state.turn += 1
+    return state
+
+
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
     """Score a GameState from `player`'s perspective."""
     my_prod = sum(p.production for p in state.planets if p.owner == player)
