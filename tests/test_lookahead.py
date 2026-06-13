@@ -13,6 +13,7 @@ from src.lookahead import (
     build_state,
     score_state,
     step_state,
+    step_state_multi,
 )
 
 
@@ -1047,6 +1048,71 @@ class TestScoreCandidateLookaheadDirect:
         assert make_score(0.01) == pytest.approx(2.12)
         assert make_score(0.1) == pytest.approx(3.2)
         assert make_score(0.01) != make_score(0.1)
+
+
+# ---------------------------------------------------------------------------
+# Class: TestStepStateMulti
+# ---------------------------------------------------------------------------
+
+
+class TestStepStateMulti:
+    def _two_planet_state(self):
+        """Two owned planets for player 0, no fleets."""
+        p0 = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=0)
+        p1 = make_planet(id=1, owner=0, x=30.0, y=50.0, radius=1.0, ships=15, production=0)
+        return build_state([p0, p1], [], turn=1)
+
+    def test_multi_move_ship_accounting_two_sources(self):
+        """Ships are deducted from each source independently."""
+        state = self._two_planet_state()
+        moves = [
+            [0, 0.0, 8],   # send 8 from planet 0
+            [1, math.pi, 5],  # send 5 from planet 1
+        ]
+        next_s = step_state_multi(state, moves=moves, player=0, angular_velocity=0.0)
+        p0 = next(p for p in next_s.planets if p.id == 0)
+        p1 = next(p for p in next_s.planets if p.id == 1)
+        assert p0.ships == 12, f"expected 20-8=12, got {p0.ships}"
+        assert p1.ships == 10, f"expected 15-5=10, got {p1.ships}"
+
+    def test_fleet_count_equals_number_of_valid_moves(self):
+        """Exactly one fleet per valid move; insufficient-ship move is skipped silently."""
+        state = self._two_planet_state()
+        moves = [
+            [0, 0.0, 8],   # valid: planet 0 has 20 ships
+            [1, math.pi, 99],  # invalid: planet 1 only has 15 ships
+        ]
+        next_s = step_state_multi(state, moves=moves, player=0, angular_velocity=0.0)
+        own_fleets = [f for f in next_s.fleets if f.owner == 0]
+        assert len(own_fleets) == 1
+        # Planet 1 ships must be untouched (no deduction for the skipped move)
+        p1 = next(p for p in next_s.planets if p.id == 1)
+        assert p1.ships == 15
+
+    def test_empty_moves_list_no_own_launches(self):
+        """Empty moves list: production and combat run, but no own fleet is spawned."""
+        p0 = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=10, production=3)
+        state = build_state([p0], [], turn=1)
+        next_s = step_state_multi(state, moves=[], player=0, angular_velocity=0.0)
+        # Production should have run
+        owned = next(p for p in next_s.planets if p.id == 0)
+        assert owned.ships == 13
+        # No own fleet launched
+        assert len(next_s.fleets) == 0
+
+    def test_opponent_fn_called_once(self):
+        """opponent_fn is invoked exactly once, identical to step_state behaviour."""
+        state = self._two_planet_state()
+        call_count = [0]
+
+        def counting_fn(s):
+            call_count[0] += 1
+            return []
+
+        step_state_multi(
+            state, moves=[], player=0, angular_velocity=0.0, opponent_fn=counting_fn
+        )
+        assert call_count[0] == 1
 
 
 # --- distance helper delegation ---
