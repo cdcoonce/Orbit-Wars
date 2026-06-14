@@ -961,6 +961,62 @@ def test_plan_moves_defending_source_does_not_also_expand():
     )
 
 
+def test_plan_expansion_late_game_agg_scales_sends_and_inflates_floor():
+    """With agg < 1 (late-game regime), plan_expansion applies agg in two directions:
+    (a) every send is multiplied by agg (scaled down), and
+    (b) the garrison floor is divided by agg (inflated up).
+
+    Two targets are required so the drain loop runs: after the primary send,
+    ships_remaining sits between the plain floor and the inflated floor, making
+    the clamping difference observable.  This test fails if the '/ agg' at
+    strategy.py is removed because the drain then uses the plain floor and leaves
+    fewer ships than the inflated floor."""
+    agg = 0.5
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "min_garrison_early": 10,
+        "garrison_ramp_turns": 1,
+    }
+    turn = 100  # past ramp → _effective_min_garrison returns min_garrison (10)
+    # Source ships chosen so ships_remaining after the primary send (9) equals 21,
+    # which sits between the plain floor (10) and the inflated floor (int(10/0.5)=20).
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=30, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    own_classes = {0: "FORTRESS"}
+
+    moves_agg = plan_expansion(
+        [source], [high, low], [], own_classes, angular_velocity=0.03,
+        agg=agg, params=params, turn=turn,
+    )
+    moves_full = plan_expansion(
+        [source], [high, low], [], own_classes, angular_velocity=0.03,
+        agg=1.0, params=params, turn=turn,
+    )
+
+    assert len(moves_agg) >= 1, "Expected at least one expansion move with agg=0.5"
+
+    # (a) Primary send is scaled down by agg.
+    fraction = params["frac_fortress_easy_neutral"]
+    expected_primary = max(1, int(source.ships * fraction * agg))
+    assert moves_agg[0][2] == expected_primary
+    assert moves_agg[0][2] < moves_full[0][2], (
+        "agg=0.5 primary send must be smaller than agg=1.0 primary send"
+    )
+
+    # (b) After all sends the source retains at least the inflated floor.
+    # inflated_floor = int(effective_min_garrison / agg) = int(10 / 0.5) = 20.
+    # Removing '/ agg' from strategy.py makes the drain use floor=10 instead,
+    # leaving ~15 ships (< 20), which causes this assertion to fail.
+    inflated_floor = int(params["min_garrison"] / agg)
+    total_sent = sum(m[2] for m in moves_agg)
+    assert source.ships - total_sent >= inflated_floor, (
+        f"source left with {source.ships - total_sent} ships, "
+        f"below the inflated floor {inflated_floor} (= min_garrison / agg)"
+    )
+
+
 # --- plan_expansion structural ---
 
 
