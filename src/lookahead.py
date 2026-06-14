@@ -345,16 +345,16 @@ def score_candidate_lookahead(
 
     Builds a state from the current board, applies our `candidate_move` plus the
     opponent's response (T+1), then rolls forward `lookahead_turns - 1` more turns
-    with both sides playing greedily, and returns `score_state` from `player`'s
-    view. `plan_moves_fn` is INJECTED rather than imported so this module never
-    depends on strategy.py — the greedy roll-forward calls back into the real
-    planner without creating a circular import. Behaviour-preserving extraction
+    with both sides applying their full planned move lists, and returns `score_state`
+    from `player`'s view. `plan_moves_fn` is INJECTED rather than imported so this
+    module never depends on strategy.py — the greedy roll-forward calls back into the
+    real planner without creating a circular import. Behaviour-preserving extraction
     of the block formerly inline in strategy.plan_expansion.
     """
     # T+1: apply our candidate move + opponent response.
     state = build_state(initial_planets, fleets, turn)
     state = step_state(state, candidate_move, player, angular_velocity, opponent_fn)
-    # T+2..N: both players play greedily (lookahead disabled) from the evolved state.
+    # T+2..N: both players apply their full planned move lists (lookahead disabled).
     n_extra = params.get("lookahead_turns", 1) - 1
     # Loop-invariant: greedy_params depends only on params, never on the evolving
     # state — build it once, mirroring the hoist in commit e9750e6 (#49).
@@ -369,9 +369,6 @@ def score_candidate_lookahead(
             params=greedy_params,
             initial_planets=initial_planets,
         )
-        our_move = (
-            our_greedy[0] if our_greedy else None
-        )  # one move per sim step (approximation)
         # Fresh opponent response from the evolved state (not the frozen initial state).
         opp_greedy = plan_moves_fn(
             state.planets,
@@ -383,5 +380,5 @@ def score_candidate_lookahead(
             initial_planets=initial_planets,
         )
         fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
-        state = step_state(state, our_move, player, angular_velocity, fresh_opp_fn)
+        state = step_state_multi(state, our_greedy, player, angular_velocity, fresh_opp_fn)
     return score_state(state, player, params.get("lookahead_ship_weight", 0.01))

@@ -1156,6 +1156,61 @@ class TestStepStateMulti:
         assert call_count[0] == 1
 
 
+# ---------------------------------------------------------------------------
+# Class: TestScoreCandidateLookaheadFullMoveList
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCandidateLookaheadFullMoveList:
+    """score_candidate_lookahead roll-forward applies the full own-move list each turn."""
+
+    def test_roll_forward_applies_full_move_list_via_step_state_multi(self, monkeypatch):
+        """The roll-forward loop must pass the entire our_greedy list to step_state_multi,
+        not just our_greedy[0]. With plan_moves_fn returning 2 own moves and
+        lookahead_turns=2 (n_extra=1), step_state_multi must be called once with a
+        list of length 2."""
+        import src.lookahead as mod
+        from src.lookahead import score_candidate_lookahead
+
+        captured_move_lists = []
+        real_ssm = mod.step_state_multi
+
+        def recording_ssm(state, moves, player, angular_velocity, opponent_fn=None):
+            captured_move_lists.append(list(moves))
+            return real_ssm(state, moves, player, angular_velocity, opponent_fn)
+
+        monkeypatch.setattr(mod, "step_state_multi", recording_ssm)
+
+        p0 = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=50, production=0)
+        p1 = make_planet(id=1, owner=0, x=30.0, y=50.0, radius=1.0, ships=50, production=0)
+
+        def two_move_plan(planets, fleets, player, angular_velocity, **kwargs):
+            if player == 0:
+                return [[0, 0.0, 10], [1, math.pi, 10]]
+            return []
+
+        score_candidate_lookahead(
+            initial_planets=[p0, p1],
+            fleets=[],
+            turn=0,
+            candidate_move=None,
+            player=0,
+            angular_velocity=0.0,
+            opponent_fn=lambda s: [],
+            params={"lookahead_turns": 2, "lookahead_ship_weight": 0.01},
+            plan_moves_fn=two_move_plan,
+        )
+
+        assert len(captured_move_lists) >= 1, (
+            "step_state_multi must be called during the roll-forward loop; "
+            "got 0 calls (the loop may still be using step_state with our_greedy[0])"
+        )
+        assert len(captured_move_lists[0]) == 2, (
+            f"step_state_multi must receive the full move list (2 moves), "
+            f"got {len(captured_move_lists[0])}"
+        )
+
+
 # --- distance helper delegation ---
 
 
