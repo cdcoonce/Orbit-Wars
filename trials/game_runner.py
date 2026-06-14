@@ -118,6 +118,18 @@ def run_game(
         return "draw"
 
 
+def tally_results(results: list[str]) -> dict[str, int]:
+    """Count wins, losses, and draws from a results list.
+
+    Returns ``{"challenger": w, "champion": l, "draw": d}`` — all three keys
+    are always present, even when a result type does not appear in the list.
+    """
+    base: dict[str, int] = {"challenger": 0, "champion": 0, "draw": 0}
+    for r in results:
+        base[r] += 1
+    return base
+
+
 def run_games(
     challenger_params: dict,
     champion_params: dict,
@@ -151,6 +163,6 @@ def run_games(
                 challenger_player=challenger_player, seed=seed + i // 2,
             )
         results.append(result)
-    wins = sum(1 for r in results if r == "challenger")
-    win_rate = wins / n_games
+    tally = tally_results(results)
+    win_rate = tally["challenger"] / n_games
     return win_rate, results

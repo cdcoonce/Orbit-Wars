@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import PARAMS
-from trials.game_runner import run_games
+from trials.game_runner import run_games, tally_results
 from trials.champion import CHAMPION_PARAMS
 
 # Start from the full current defaults so every key strategy.py indexes with
@@ -52,7 +52,5 @@ if __name__ == "__main__":
     win_rate, results = run_games(
         CHAMPION_PARAMS, ORIGINAL_DEFAULTS, n_games=20, seed=BENCHMARK_SEED
     )
-    w = results.count("challenger")
-    d = results.count("draw")
-    l = results.count("champion")
-    print(f"Champion vs original defaults: {win_rate:.0%}  ({w}W / {d}D / {l}L)")
+    tally = tally_results(results)
+    print(f"Champion vs original defaults: {win_rate:.0%}  ({tally['challenger']}W / {tally['draw']}D / {tally['champion']}L)")
