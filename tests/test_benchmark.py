@@ -1,6 +1,22 @@
 """Tests for trials/benchmark.py ORIGINAL_DEFAULTS integrity."""
 
 from src.config import PARAMS
+from trials.game_runner import tally_results
+
+
+class TestTallyResults:
+    def test_mixed_results_returns_correct_counts(self):
+        results = ["challenger", "champion", "draw", "challenger", "draw", "challenger"]
+        tally = tally_results(results)
+        assert tally["challenger"] == 3
+        assert tally["champion"] == 1
+        assert tally["draw"] == 2
+
+    def test_empty_list_returns_all_zeros(self):
+        tally = tally_results([])
+        assert tally["challenger"] == 0
+        assert tally["champion"] == 0
+        assert tally["draw"] == 0
 
 
 class TestOriginalDefaults:
