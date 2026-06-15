@@ -1036,6 +1036,37 @@ def test_plan_expansion_lookahead_guard_not_duplicated():
     )
 
 
+def test_plan_expansion_primary_fleet_reuses_intercept_geometry(monkeypatch):
+    """Primary fleet geometry is reused from the scoring-loop intercept result,
+    not recomputed — intercept() is called exactly once for the winning candidate."""
+    import src.strategy as strat
+
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
+    own_classes = {0: "FORTRESS"}
+
+    call_count = []
+    real_intercept = strat.intercept
+
+    def counting_intercept(src, tgt, av, ships, comet_ids=frozenset(), comet_velocities=None):
+        result = real_intercept(src, tgt, av, ships, comet_ids, comet_velocities)
+        call_count.append((src.id, tgt.id, ships))
+        return result
+
+    monkeypatch.setattr(strat, "intercept", counting_intercept)
+
+    moves = plan_expansion(
+        [source], [target], [], own_classes, angular_velocity=0.03
+    )
+
+    assert len(moves) == 1, "Expected one move to be generated"
+    # intercept must be called exactly once: the scoring-loop result is reused for the
+    # primary fleet launch rather than recomputed.
+    assert len(call_count) == 1, (
+        f"Expected intercept called once for winning candidate, got {len(call_count)}: {call_count}"
+    )
+
+
 # --- path_crosses_sun ---
 
 
@@ -1243,25 +1274,27 @@ class TestInterceptComet:
 class TestBlendedBest:
     """Direct unit tests for the lookahead/greedy blend-normalization selection.
 
-    candidates are (greedy_score, lookahead_score, target, fraction) tuples;
+    candidates are (greedy_score, lookahead_score, target, fraction, future_x, future_y) tuples;
     target is opaque to the helper, so plain strings stand in for planets.
+    The function returns (target, fraction, future_x, future_y) so the caller can reuse
+    the already-computed intercept geometry.
     """
 
     def test_single_candidate_returns_it(self):
         from src.strategy import _blended_best
 
-        candidates = [(3.0, 99.0, "only", 0.5)]
-        assert _blended_best(candidates, blend=0.7) == ("only", 0.5)
+        candidates = [(3.0, 99.0, "only", 0.5, 1.0, 2.0)]
+        assert _blended_best(candidates, blend=0.7) == ("only", 0.5, 1.0, 2.0)
 
     def test_blend_zero_picks_greedy_winner(self):
         from src.strategy import _blended_best
 
         # "lo" has the higher lookahead score but blend=0.0 must ignore it.
         candidates = [
-            (10.0, 0.0, "hi", 0.4),
-            (1.0, 100.0, "lo", 0.6),
+            (10.0, 0.0, "hi", 0.4, 1.0, 2.0),
+            (1.0, 100.0, "lo", 0.6, 3.0, 4.0),
         ]
-        assert _blended_best(candidates, blend=0.0) == ("hi", 0.4)
+        assert _blended_best(candidates, blend=0.0) == ("hi", 0.4, 1.0, 2.0)
 
     def test_all_equal_greedy_uses_lookahead_without_dividing_by_zero(self):
         from src.strategy import _blended_best
@@ -1269,10 +1302,10 @@ class TestBlendedBest:
         # hi_g == lo_g would be a ZeroDivisionError without the 1e-9 guard;
         # greedy terms collapse to ~0, so lookahead decides the winner.
         candidates = [
-            (5.0, 1.0, "weak_look", 0.3),
-            (5.0, 9.0, "strong_look", 0.7),
+            (5.0, 1.0, "weak_look", 0.3, 1.0, 2.0),
+            (5.0, 9.0, "strong_look", 0.7, 3.0, 4.0),
         ]
-        assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7)
+        assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7, 3.0, 4.0)
 
     def test_blended_winner_differs_from_greedy_winner(self):
         from src.strategy import _blended_best
@@ -1280,11 +1313,11 @@ class TestBlendedBest:
         # Greedy winner is "g" (greedy 10), but with blend weighted toward
         # lookahead, normalized scores favor "l" (lookahead 10).
         candidates = [
-            (10.0, 0.0, "g", 0.4),
-            (0.0, 10.0, "l", 0.6),
+            (10.0, 0.0, "g", 0.4, 1.0, 2.0),
+            (0.0, 10.0, "l", 0.6, 3.0, 4.0),
         ]
-        assert _blended_best(candidates, blend=0.0) == ("g", 0.4)
-        assert _blended_best(candidates, blend=0.8) == ("l", 0.6)
+        assert _blended_best(candidates, blend=0.0) == ("g", 0.4, 1.0, 2.0)
+        assert _blended_best(candidates, blend=0.8) == ("l", 0.6, 3.0, 4.0)
 
     def test_loop_variables_use_descriptive_names(self):
         import inspect
