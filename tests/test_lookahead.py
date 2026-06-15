@@ -512,6 +512,25 @@ class TestResolveCombat:
         assert planet.owner == -1
         assert planet.ships == 0
 
+    def test_multi_party_attacker_wins_total_others_aggregates_all_losers(self):
+        """Multi-party surviving > 0, non-incumbent winner: total_others must sum
+        BOTH the incumbent garrison AND the rival attacker — not just one of them.
+
+        owner=0 holds 3 ships; owner=1 sends 10; owner=2 sends 5.
+        winner=1 (10), total_others = 3 + 5 = 8, surviving = 2 > 0.
+        Planet goes to owner=1 with surviving - 1 = 1 ship (foothold cost).
+        A 1v1 reading (total_others = 3 only) would yield surviving = 7 → 6 ships,
+        proving the aggregation across all losers is exercised by the chosen numbers.
+        """
+        planet = self._planet(owner=0, ships=3)
+        arrivals = [
+            self._fleet(owner=1, ships=10),
+            self._fleet(owner=2, ships=5),
+        ]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == 1
+        assert planet.ships == 1  # surviving = 10 - (3 + 5) = 2, minus 1 foothold cost
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreState
