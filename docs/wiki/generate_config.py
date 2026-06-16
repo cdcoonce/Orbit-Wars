@@ -30,8 +30,6 @@ IMPACT: dict[str, str] = {
     "fortress_min_ships": "Raise → fewer FORTRESS planets, more ships available for attack",
     "fortress_min_production": "Raise → fewer FORTRESS planets",
     "factory_min_production": "Raise → fewer FACTORY planets, more OUTPOST",
-    "high_value_production": "Raise → fewer HIGH tier planets",
-    "medium_value_production": "Raise → fewer MEDIUM tier planets",
     "stationary_value_bonus": "Raise → more attractive to attack stationary planets",
     "weak_ratio": "Raise → fewer EASY_NEUTRAL / SOFT_ENEMY targets (more conservative)",
     "contested_ratio": "Raise → fewer CONTESTED targets (more conservative)",
@@ -47,6 +45,7 @@ IMPACT: dict[str, str] = {
     "threat_radius": "Raise → detect threats from farther away",
     "threat_eta_window": "Raise → react earlier to incoming fleets",
     "defense_reinforce_fraction": "Raise → send more reinforcements when threatened",
+    "defense_incoming_multiplier": "Raise → treats incoming fleets as more threatening (multiplies combined incoming ship count against defense threshold)",
     "eta_buffer": "Raise → more conservative ETA margin for defense",
     "min_garrison": "Raise → keep more ships at home before attacking",
     "aggression_max": "Raise → more ships sent earlier in game",
@@ -71,11 +70,7 @@ IMPACT: dict[str, str] = {
 GROUPS: list[tuple[str, list[str]]] = [
     (
         "Planet Classification",
-        ["fortress_min_ships", "fortress_min_production", "factory_min_production"],
-    ),
-    (
-        "Value Tiers",
-        ["high_value_production", "medium_value_production", "stationary_value_bonus"],
+        ["fortress_min_ships", "fortress_min_production", "factory_min_production", "stationary_value_bonus"],
     ),
     (
         "Target Classification",
@@ -101,6 +96,7 @@ GROUPS: list[tuple[str, list[str]]] = [
             "threat_radius",
             "threat_eta_window",
             "defense_reinforce_fraction",
+            "defense_incoming_multiplier",
             "eta_buffer",
             "min_garrison",
         ],
@@ -161,6 +157,21 @@ def validate_keys() -> None:
             f"Keys in PARAMS missing from GROUPS (would be silently omitted): "
             f"{sorted(missing_from_groups)}\n"
             "Add them to the appropriate group in generate_config.py."
+        )
+
+    # Reverse: keys in GROUPS or IMPACT that no longer exist in PARAMS (stale entries)
+    stale_groups = groups_keys - params_keys
+    if stale_groups:
+        raise ValueError(
+            f"Keys in GROUPS absent from PARAMS (stale): {sorted(stale_groups)}\n"
+            "Remove them from GROUPS in generate_config.py."
+        )
+    impact_keys = set(IMPACT.keys())
+    stale_impact = impact_keys - params_keys - FIXED_KEYS
+    if stale_impact:
+        raise ValueError(
+            f"Keys in IMPACT absent from PARAMS (stale): {sorted(stale_impact)}\n"
+            "Remove them from IMPACT in generate_config.py."
         )
 
 
