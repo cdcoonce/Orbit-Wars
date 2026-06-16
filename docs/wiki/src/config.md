@@ -50,91 +50,85 @@ The script validates that the key sets of `PARAMS` and `PARAM_SPACE` match (excl
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `fortress_min_ships` | `23` | 20 – 60 (int) | Raise → fewer FORTRESS planets, more ships available for attack |
+| `fortress_min_ships` | `31` | 20 – 60 (int) | Raise → fewer FORTRESS planets, more ships available for attack |
 | `fortress_min_production` | `2` | 2 – 5 (int) | Raise → fewer FORTRESS planets |
-| `factory_min_production` | `4` | 2 – 5 (int) | Raise → fewer FACTORY planets, more OUTPOST |
-
-### Value Tiers
-
-| Param | Default | Optuna range | Behavioral impact |
-|---|---|---|---|
-| `high_value_production` | `5` | 3 – 6 (int) | Raise → fewer HIGH tier planets |
-| `medium_value_production` | `4` | 1 – 4 (int) | Raise → fewer MEDIUM tier planets |
-| `stationary_value_bonus` | `4` | 0 – 8 (int) | Raise → more attractive to attack stationary planets |
+| `factory_min_production` | `5` | 2 – 5 (int) | Raise → fewer FACTORY planets, more OUTPOST |
+| `stationary_value_bonus` | `0` | 0 – 8 (int) | Raise → more attractive to attack stationary planets |
 
 ### Target Classification
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `weak_ratio` | `2.43003` | 1.1 – 2.5 (float) | Raise → fewer EASY_NEUTRAL / SOFT_ENEMY targets (more conservative) |
-| `contested_ratio` | `0.892436` | 0.8 – 1.5 (float) | Raise → fewer CONTESTED targets (more conservative) |
+| `weak_ratio` | `1.99471` | 1.1 – 2.5 (float) | Raise → fewer EASY_NEUTRAL / SOFT_ENEMY targets (more conservative) |
+| `contested_ratio` | `1.31169` | 0.8 – 1.5 (float) | Raise → fewer CONTESTED targets (more conservative) |
 
 ### Send Fractions
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `frac_fortress_easy_neutral` | `0.449357` | 0.4 – 0.9 (float) | Raise → send more ships from FORTRESS to EASY_NEUTRAL |
-| `frac_fortress_hard_neutral` | `0.50665` | 0.5 – 0.95 (float) | Raise → send more ships from FORTRESS to HARD_NEUTRAL |
-| `frac_fortress_soft_enemy` | `0.873833` | 0.4 – 0.9 (float) | Raise → send more ships from FORTRESS to SOFT_ENEMY |
-| `frac_fortress_contested_enemy` | `0.52808` | 0.5 – 0.95 (float) | Raise → send more ships from FORTRESS to CONTESTED_ENEMY |
-| `frac_fortress_hardened_enemy` | `0.85` | 0.5 – 0.95 (float) | Raise → send more ships from FORTRESS to HARDENED_ENEMY |
-| `frac_factory_easy_neutral` | `0.32536` | 0.3 – 0.8 (float) | Raise → send more ships from FACTORY to EASY_NEUTRAL |
-| `frac_factory_soft_enemy` | `0.662866` | 0.3 – 0.8 (float) | Raise → send more ships from FACTORY to SOFT_ENEMY |
-| `frac_outpost_easy_neutral` | `0.55908` | 0.2 – 0.7 (float) | Raise → send more ships from OUTPOST to EASY_NEUTRAL |
-| `frac_outpost_soft_enemy` | `0.674644` | 0.2 – 0.7 (float) | Raise → send more ships from OUTPOST to SOFT_ENEMY |
+| `frac_fortress_easy_neutral` | `0.63738` | 0.4 – 0.9 (float) | Raise → send more ships from FORTRESS to EASY_NEUTRAL |
+| `frac_fortress_hard_neutral` | `0.828096` | 0.5 – 0.95 (float) | Raise → send more ships from FORTRESS to HARD_NEUTRAL |
+| `frac_fortress_soft_enemy` | `0.769387` | 0.4 – 0.9 (float) | Raise → send more ships from FORTRESS to SOFT_ENEMY |
+| `frac_fortress_contested_enemy` | `0.851357` | 0.5 – 0.95 (float) | Raise → send more ships from FORTRESS to CONTESTED_ENEMY |
+| `frac_fortress_hardened_enemy` | `0.620535` | 0.5 – 0.95 (float) | Raise → send more ships from FORTRESS to HARDENED_ENEMY |
+| `frac_factory_easy_neutral` | `0.791888` | 0.3 – 0.8 (float) | Raise → send more ships from FACTORY to EASY_NEUTRAL |
+| `frac_factory_soft_enemy` | `0.571637` | 0.3 – 0.8 (float) | Raise → send more ships from FACTORY to SOFT_ENEMY |
+| `frac_outpost_easy_neutral` | `0.609169` | 0.2 – 0.7 (float) | Raise → send more ships from OUTPOST to EASY_NEUTRAL |
+| `frac_outpost_soft_enemy` | `0.504009` | 0.2 – 0.7 (float) | Raise → send more ships from OUTPOST to SOFT_ENEMY |
 
 ### Defense
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `threat_radius` | `7.58474` | 3 – 8 (float) | Raise → detect threats from farther away |
-| `threat_eta_window` | `22` | 10 – 50 (int) | Raise → react earlier to incoming fleets |
-| `defense_reinforce_fraction` | `0.304684` | 0.3 – 0.7 (float) | Raise → send more reinforcements when threatened |
-| `eta_buffer` | `9` | 2 – 10 (int) | Raise → more conservative ETA margin for defense |
-| `min_garrison` | `24` | 5 – 30 (int) | Raise → keep more ships at home before attacking |
+| `threat_radius` | `7.36137` | 3 – 8 (float) | Raise → detect threats from farther away |
+| `threat_eta_window` | `15` | 10 – 50 (int) | Raise → react earlier to incoming fleets |
+| `defense_reinforce_fraction` | `0.34769` | 0.3 – 0.7 (float) | Raise → send more reinforcements when threatened |
+| `defense_incoming_multiplier` | `0.617654` | 0 – 2 (float) | Raise → treats incoming fleets as more threatening (multiplies combined incoming ship count against defense threshold) |
+| `eta_buffer` | `8` | 2 – 10 (int) | Raise → more conservative ETA margin for defense |
+| `min_garrison` | `26` | 5 – 30 (int) | Raise → keep more ships at home before attacking |
 
 ### Aggression
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `aggression_max` | `0.967912` | 0.7 – 1 (float) | Raise → more ships sent earlier in game |
-| `aggression_min` | `0.467406` | 0.3 – 0.8 (float) | Raise → more ships sent later in game |
+| `aggression_max` | `0.979783` | 0.7 – 1 (float) | Raise → more ships sent earlier in game |
+| `aggression_min` | `0.488198` | 0.3 – 0.8 (float) | Raise → more ships sent later in game |
 | `game_length` | `500` | fixed | Fixed: 500 — reflects Kaggle competition rule, not tunable |
 
 ### Garrison Ramp
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `min_garrison_early` | `3` | 1 – 15 (int) | Raise → more conservative in early game |
-| `garrison_ramp_turns` | `27` | 10 – 100 (int) | Raise → take longer to reach full garrison threshold |
+| `min_garrison_early` | `13` | 1 – 15 (int) | Raise → more conservative in early game |
+| `garrison_ramp_turns` | `32` | 10 – 100 (int) | Raise → take longer to reach full garrison threshold |
 
 ### Distance Power
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `distance_power_early` | `4.2343` | 2 – 5 (float) | Raise → penalise distant targets more in early game |
-| `distance_power_late` | `1.94595` | 0.5 – 3 (float) | Raise → penalise distant targets more in late game |
-| `distance_ramp_turns` | `80` | 10 – 150 (int) | Raise → take longer to ramp from early to late distance exponent |
+| `distance_power_early` | `3.48273` | 2 – 5 (float) | Raise → penalise distant targets more in early game |
+| `distance_power_late` | `0.505193` | 0.5 – 3 (float) | Raise → penalise distant targets more in late game |
+| `distance_ramp_turns` | `25` | 10 – 150 (int) | Raise → take longer to ramp from early to late distance exponent |
 
 ### Comets
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `comet_value_multiplier` | `1.75354` | 0 – 3 (float) | Raise → treat comets as more attractive targets |
+| `comet_value_multiplier` | `0.718793` | 0 – 3 (float) | Raise → treat comets as more attractive targets |
 
 ### Endgame
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `endgame_threshold_turn` | `447` | 380 – 490 (int) | Raise → switch to defensive mode later |
-| `endgame_lead_margin` | `1.56832` | 1.05 – 2 (float) | Raise → require larger lead before going defensive |
+| `endgame_threshold_turn` | `445` | 380 – 490 (int) | Raise → switch to defensive mode later |
+| `endgame_lead_margin` | `1.60983` | 1.05 – 2 (float) | Raise → require larger lead before going defensive |
 
 ### Lookahead
 
 | Param | Default | Optuna range | Behavioral impact |
 |---|---|---|---|
-| `lookahead_turns` | `2` | 1 – 5 (int) | Raise → simulate further ahead (slower) |
-| `lookahead_blend` | `0.970012` | 0 – 1 (float) | Raise → trust simulator more vs greedy heuristic |
-| `lookahead_ship_weight` | `0.0804694` | 0.001 – 0.1 (float) | Raise → value ship counts more vs production in scoring |
+| `lookahead_turns` | `5` | 1 – 5 (int) | Raise → simulate further ahead (slower) |
+| `lookahead_blend` | `0.903215` | 0 – 1 (float) | Raise → trust simulator more vs greedy heuristic |
+| `lookahead_ship_weight` | `0.0724013` | 0.001 – 0.1 (float) | Raise → value ship counts more vs production in scoring |
 
 <!-- AUTO-GENERATED-END -->
