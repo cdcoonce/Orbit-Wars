@@ -288,6 +288,22 @@ def test_detect_threats_single_fleet_unchanged():
     assert threats[0].eta == 7
 
 
+def test_detect_threats_segment_catches_between_samples():
+    # A fast fleet (1000 ships → speed=6) passes between integer-sample positions.
+    # Planet at (95, 50): orbital_radius=45, 45+SUN_RADIUS(10)=55 >= ROTATION_RADIUS_LIMIT(50) → static.
+    # Fleet at (86, 57) heading right:
+    #   t=1 → (92, 57), dist=sqrt(9+49)=sqrt(58)≈7.62 > threat_radius (~7.36) — missed by point check
+    #   t=2 → (98, 57), dist=sqrt(58)≈7.62 > threat_radius              — missed by point check
+    #   closest approach at t=1.5: fleet at (95, 57), dist=7.0 < threat_radius — caught by segment check
+    planet = make_planet(id=1, owner=0, x=95.0, y=50.0)
+    fleet = make_fleet(owner=1, x=86.0, y=57.0, angle=0.0, ships=1000)
+    threats = detect_threats([planet], [fleet], player=0, angular_velocity=0.03)
+    assert any(t.planet_id == 1 for t in threats), (
+        "segment-based check must detect a fleet whose closest approach falls between "
+        "integer samples; point-based check misses it"
+    )
+
+
 def test_handle_threats_scales_against_combined_incoming():
     # Downstream: feeding two converging fleets through detect_threats yields a single
     # threat whose summed incoming_ships drives magnitude-aware reinforcement — handle_threats
@@ -945,6 +961,62 @@ def test_plan_moves_defending_source_does_not_also_expand():
     )
 
 
+def test_plan_expansion_late_game_agg_scales_sends_and_inflates_floor():
+    """With agg < 1 (late-game regime), plan_expansion applies agg in two directions:
+    (a) every send is multiplied by agg (scaled down), and
+    (b) the garrison floor is divided by agg (inflated up).
+
+    Two targets are required so the drain loop runs: after the primary send,
+    ships_remaining sits between the plain floor and the inflated floor, making
+    the clamping difference observable.  This test fails if the '/ agg' at
+    strategy.py is removed because the drain then uses the plain floor and leaves
+    fewer ships than the inflated floor."""
+    agg = 0.5
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "min_garrison_early": 10,
+        "garrison_ramp_turns": 1,
+    }
+    turn = 100  # past ramp → _effective_min_garrison returns min_garrison (10)
+    # Source ships chosen so ships_remaining after the primary send (9) equals 21,
+    # which sits between the plain floor (10) and the inflated floor (int(10/0.5)=20).
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=30, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    own_classes = {0: "FORTRESS"}
+
+    moves_agg = plan_expansion(
+        [source], [high, low], [], own_classes, angular_velocity=0.03,
+        agg=agg, params=params, turn=turn,
+    )
+    moves_full = plan_expansion(
+        [source], [high, low], [], own_classes, angular_velocity=0.03,
+        agg=1.0, params=params, turn=turn,
+    )
+
+    assert len(moves_agg) >= 1, "Expected at least one expansion move with agg=0.5"
+
+    # (a) Primary send is scaled down by agg.
+    fraction = params["frac_fortress_easy_neutral"]
+    expected_primary = max(1, int(source.ships * fraction * agg))
+    assert moves_agg[0][2] == expected_primary
+    assert moves_agg[0][2] < moves_full[0][2], (
+        "agg=0.5 primary send must be smaller than agg=1.0 primary send"
+    )
+
+    # (b) After all sends the source retains at least the inflated floor.
+    # inflated_floor = int(effective_min_garrison / agg) = int(10 / 0.5) = 20.
+    # Removing '/ agg' from strategy.py makes the drain use floor=10 instead,
+    # leaving ~15 ships (< 20), which causes this assertion to fail.
+    inflated_floor = int(params["min_garrison"] / agg)
+    total_sent = sum(m[2] for m in moves_agg)
+    assert source.ships - total_sent >= inflated_floor, (
+        f"source left with {source.ships - total_sent} ships, "
+        f"below the inflated floor {inflated_floor} (= min_garrison / agg)"
+    )
+
+
 # --- plan_expansion structural ---
 
 
@@ -961,6 +1033,37 @@ def test_plan_expansion_lookahead_guard_not_duplicated():
     assert count <= 1, (
         f"The guard '{guard}' appears {count} times in plan_expansion — "
         "hoist it into a single `use_lookahead` flag instead."
+    )
+
+
+def test_plan_expansion_primary_fleet_reuses_intercept_geometry(monkeypatch):
+    """Primary fleet geometry is reused from the scoring-loop intercept result,
+    not recomputed — intercept() is called exactly once for the winning candidate."""
+    import src.strategy as strat
+
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    target = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
+    own_classes = {0: "FORTRESS"}
+
+    call_count = []
+    real_intercept = strat.intercept
+
+    def counting_intercept(src, tgt, av, ships, comet_ids=frozenset(), comet_velocities=None):
+        result = real_intercept(src, tgt, av, ships, comet_ids, comet_velocities)
+        call_count.append((src.id, tgt.id, ships))
+        return result
+
+    monkeypatch.setattr(strat, "intercept", counting_intercept)
+
+    moves = plan_expansion(
+        [source], [target], [], own_classes, angular_velocity=0.03
+    )
+
+    assert len(moves) == 1, "Expected one move to be generated"
+    # intercept must be called exactly once: the scoring-loop result is reused for the
+    # primary fleet launch rather than recomputed.
+    assert len(call_count) == 1, (
+        f"Expected intercept called once for winning candidate, got {len(call_count)}: {call_count}"
     )
 
 
@@ -1014,6 +1117,13 @@ def test_turn_ramp_midpoint_is_linear():
     from src.strategy import _turn_ramp
 
     assert _turn_ramp(50, 100, 4.0, 2.0) == 3.0
+
+
+def test_turn_ramp_zero_ramp_turns_returns_end():
+    from src.strategy import _turn_ramp
+
+    assert _turn_ramp(0, 0, 4.0, 2.0) == 2.0
+    assert _turn_ramp(50, 0, 4.0, 2.0) == 2.0
 
 
 # --- _effective_distance_power ---
@@ -1164,25 +1274,27 @@ class TestInterceptComet:
 class TestBlendedBest:
     """Direct unit tests for the lookahead/greedy blend-normalization selection.
 
-    candidates are (greedy_score, lookahead_score, target, fraction) tuples;
+    candidates are (greedy_score, lookahead_score, target, fraction, future_x, future_y) tuples;
     target is opaque to the helper, so plain strings stand in for planets.
+    The function returns (target, fraction, future_x, future_y) so the caller can reuse
+    the already-computed intercept geometry.
     """
 
     def test_single_candidate_returns_it(self):
         from src.strategy import _blended_best
 
-        candidates = [(3.0, 99.0, "only", 0.5)]
-        assert _blended_best(candidates, blend=0.7) == ("only", 0.5)
+        candidates = [(3.0, 99.0, "only", 0.5, 1.0, 2.0)]
+        assert _blended_best(candidates, blend=0.7) == ("only", 0.5, 1.0, 2.0)
 
     def test_blend_zero_picks_greedy_winner(self):
         from src.strategy import _blended_best
 
         # "lo" has the higher lookahead score but blend=0.0 must ignore it.
         candidates = [
-            (10.0, 0.0, "hi", 0.4),
-            (1.0, 100.0, "lo", 0.6),
+            (10.0, 0.0, "hi", 0.4, 1.0, 2.0),
+            (1.0, 100.0, "lo", 0.6, 3.0, 4.0),
         ]
-        assert _blended_best(candidates, blend=0.0) == ("hi", 0.4)
+        assert _blended_best(candidates, blend=0.0) == ("hi", 0.4, 1.0, 2.0)
 
     def test_all_equal_greedy_uses_lookahead_without_dividing_by_zero(self):
         from src.strategy import _blended_best
@@ -1190,10 +1302,10 @@ class TestBlendedBest:
         # hi_g == lo_g would be a ZeroDivisionError without the 1e-9 guard;
         # greedy terms collapse to ~0, so lookahead decides the winner.
         candidates = [
-            (5.0, 1.0, "weak_look", 0.3),
-            (5.0, 9.0, "strong_look", 0.7),
+            (5.0, 1.0, "weak_look", 0.3, 1.0, 2.0),
+            (5.0, 9.0, "strong_look", 0.7, 3.0, 4.0),
         ]
-        assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7)
+        assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7, 3.0, 4.0)
 
     def test_blended_winner_differs_from_greedy_winner(self):
         from src.strategy import _blended_best
@@ -1201,11 +1313,11 @@ class TestBlendedBest:
         # Greedy winner is "g" (greedy 10), but with blend weighted toward
         # lookahead, normalized scores favor "l" (lookahead 10).
         candidates = [
-            (10.0, 0.0, "g", 0.4),
-            (0.0, 10.0, "l", 0.6),
+            (10.0, 0.0, "g", 0.4, 1.0, 2.0),
+            (0.0, 10.0, "l", 0.6, 3.0, 4.0),
         ]
-        assert _blended_best(candidates, blend=0.0) == ("g", 0.4)
-        assert _blended_best(candidates, blend=0.8) == ("l", 0.6)
+        assert _blended_best(candidates, blend=0.0) == ("g", 0.4, 1.0, 2.0)
+        assert _blended_best(candidates, blend=0.8) == ("l", 0.6, 3.0, 4.0)
 
     def test_loop_variables_use_descriptive_names(self):
         import inspect

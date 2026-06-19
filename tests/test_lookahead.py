@@ -13,6 +13,7 @@ from src.lookahead import (
     build_state,
     score_state,
     step_state,
+    step_state_multi,
 )
 
 
@@ -313,6 +314,47 @@ class TestStepState:
         # No fleet should be added, no exception
         assert len(next_s.fleets) == 0
 
+    def test_own_move_insufficient_ships_no_fleet_no_deduction(self):
+        """Own move requesting more ships than available after production is silently skipped.
+
+        Source starts at 10 ships, production=3 → 13 after production.
+        Move requests 14 (> 13 post-production) → guard fires, no fleet spawned,
+        source ship total remains at its post-production value of 13.
+        """
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=10, production=3
+        )
+        state = build_state([planet], [], turn=0)
+        move = [0, 0.0, 14]  # request 14 ships; only 13 available after production
+        next_s = step_state(state, move=move, player=0, angular_velocity=0.03)
+
+        source = next(p for p in next_s.planets if p.id == 0)
+        assert len(next_s.fleets) == 0
+        assert source.ships == 13  # 10 + 3 production; no deduction because guard fired
+
+    def test_opponent_fn_insufficient_ships_no_fleet_no_deduction(self):
+        """opponent_fn move requesting more ships than available after production is silently skipped.
+
+        Opponent source starts at 10 ships, production=3 → 13 after production.
+        opponent_fn requests 14 (> 13 post-production) → guard fires, no opponent
+        fleet spawned, source ship total remains at its post-production value of 13.
+        """
+        opp_planet = make_planet(
+            id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=10, production=3
+        )
+        state = build_state([opp_planet], [], turn=0)
+
+        def opponent_fn(s):
+            return [[0, 0.0, 14]]  # request 14 ships; only 13 available after production
+
+        next_s = step_state(
+            state, move=None, player=0, angular_velocity=0.03, opponent_fn=opponent_fn
+        )
+
+        opp_source = next(p for p in next_s.planets if p.id == 0)
+        assert len(next_s.fleets) == 0
+        assert opp_source.ships == 13  # 10 + 3 production; no deduction because guard fired
+
     def test_opponent_fn_call_count_sentinel(self):
         """opponent_fn is called exactly once per step_state invocation."""
         state = self._simple_state()
@@ -469,6 +511,25 @@ class TestResolveCombat:
         # Incumbent (10) loses to combined 6+6=12 → neutral with 0 ships
         assert planet.owner == -1
         assert planet.ships == 0
+
+    def test_multi_party_attacker_wins_total_others_aggregates_all_losers(self):
+        """Multi-party surviving > 0, non-incumbent winner: total_others must sum
+        BOTH the incumbent garrison AND the rival attacker — not just one of them.
+
+        owner=0 holds 3 ships; owner=1 sends 10; owner=2 sends 5.
+        winner=1 (10), total_others = 3 + 5 = 8, surviving = 2 > 0.
+        Planet goes to owner=1 with surviving - 1 = 1 ship (foothold cost).
+        A 1v1 reading (total_others = 3 only) would yield surviving = 7 → 6 ships,
+        proving the aggregation across all losers is exercised by the chosen numbers.
+        """
+        planet = self._planet(owner=0, ships=3)
+        arrivals = [
+            self._fleet(owner=1, ships=10),
+            self._fleet(owner=2, ships=5),
+        ]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == 1
+        assert planet.ships == 1  # surviving = 10 - (3 + 5) = 2, minus 1 foothold cost
 
 
 # ---------------------------------------------------------------------------
@@ -956,6 +1017,216 @@ class TestScoreCandidateLookaheadHoist:
         assert params.spread_count == 1, (
             "greedy_params must be built once per call (hoisted above the "
             f"roll-forward loop), but params was spread {params.spread_count} times"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Class: TestScoreCandidateLookaheadDirect
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCandidateLookaheadDirect:
+    """Direct unit tests for score_candidate_lookahead's return value."""
+
+    # Shared stub: plan_moves_fn that always returns no moves.
+    @staticmethod
+    def _noop_plan_moves(planets, fleets, player, angular_velocity, **kwargs):
+        return []
+
+    def _simple_planet(self):
+        """One owned planet: owner=0, ships=10, production=2."""
+        return make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10, production=2)
+
+    def test_returns_exact_score_at_lookahead_turns_1(self):
+        """With lookahead_turns=1 and no moves, the score equals score_state after
+        one step of production (ships 10→12): (2-0) + 0.01*(12-0) = 2.12."""
+        from src.lookahead import score_candidate_lookahead
+
+        planet = self._simple_planet()
+        result = score_candidate_lookahead(
+            initial_planets=[planet],
+            fleets=[],
+            turn=0,
+            candidate_move=None,
+            player=0,
+            angular_velocity=0.0,
+            opponent_fn=lambda s: [],
+            params={"lookahead_turns": 1, "lookahead_ship_weight": 0.01},
+            plan_moves_fn=self._noop_plan_moves,
+        )
+        assert result == pytest.approx(2.12)
+
+    def test_lookahead_turns_3_differs_from_turns_1_when_production_compounds(self):
+        """Increasing lookahead_turns from 1 to 3 advances the roll-forward loop
+        twice more, adding 2 production ticks: ships grow 12→14→16, so the score
+        changes from 2.12 to 2.16."""
+        from src.lookahead import score_candidate_lookahead
+
+        planet = self._simple_planet()
+
+        def make_score(turns):
+            return score_candidate_lookahead(
+                initial_planets=[planet],
+                fleets=[],
+                turn=0,
+                candidate_move=None,
+                player=0,
+                angular_velocity=0.0,
+                opponent_fn=lambda s: [],
+                params={"lookahead_turns": turns, "lookahead_ship_weight": 0.01},
+                plan_moves_fn=self._noop_plan_moves,
+            )
+
+        score1 = make_score(1)
+        score3 = make_score(3)
+        assert score1 != score3, (
+            f"score at turns=1 ({score1}) should differ from turns=3 ({score3})"
+        )
+        assert score3 == pytest.approx(2.16), f"expected 2.16 at turns=3, got {score3}"
+
+    def test_lookahead_ship_weight_affects_score(self):
+        """params['lookahead_ship_weight'] is passed to score_state; varying it
+        changes the returned score.  At turns=1, ships=12: weight 0.01→score 2.12,
+        weight 0.1→score 3.2."""
+        from src.lookahead import score_candidate_lookahead
+
+        planet = self._simple_planet()
+
+        def make_score(weight):
+            return score_candidate_lookahead(
+                initial_planets=[planet],
+                fleets=[],
+                turn=0,
+                candidate_move=None,
+                player=0,
+                angular_velocity=0.0,
+                opponent_fn=lambda s: [],
+                params={"lookahead_turns": 1, "lookahead_ship_weight": weight},
+                plan_moves_fn=self._noop_plan_moves,
+            )
+
+        assert make_score(0.01) == pytest.approx(2.12)
+        assert make_score(0.1) == pytest.approx(3.2)
+        assert make_score(0.01) != make_score(0.1)
+
+
+# ---------------------------------------------------------------------------
+# Class: TestStepStateMulti
+# ---------------------------------------------------------------------------
+
+
+class TestStepStateMulti:
+    def _two_planet_state(self):
+        """Two owned planets for player 0, no fleets."""
+        p0 = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=20, production=0)
+        p1 = make_planet(id=1, owner=0, x=30.0, y=50.0, radius=1.0, ships=15, production=0)
+        return build_state([p0, p1], [], turn=1)
+
+    def test_multi_move_ship_accounting_two_sources(self):
+        """Ships are deducted from each source independently."""
+        state = self._two_planet_state()
+        moves = [
+            [0, 0.0, 8],   # send 8 from planet 0
+            [1, math.pi, 5],  # send 5 from planet 1
+        ]
+        next_s = step_state_multi(state, moves=moves, player=0, angular_velocity=0.0)
+        p0 = next(p for p in next_s.planets if p.id == 0)
+        p1 = next(p for p in next_s.planets if p.id == 1)
+        assert p0.ships == 12, f"expected 20-8=12, got {p0.ships}"
+        assert p1.ships == 10, f"expected 15-5=10, got {p1.ships}"
+
+    def test_fleet_count_equals_number_of_valid_moves(self):
+        """Exactly one fleet per valid move; insufficient-ship move is skipped silently."""
+        state = self._two_planet_state()
+        moves = [
+            [0, 0.0, 8],   # valid: planet 0 has 20 ships
+            [1, math.pi, 99],  # invalid: planet 1 only has 15 ships
+        ]
+        next_s = step_state_multi(state, moves=moves, player=0, angular_velocity=0.0)
+        own_fleets = [f for f in next_s.fleets if f.owner == 0]
+        assert len(own_fleets) == 1
+        # Planet 1 ships must be untouched (no deduction for the skipped move)
+        p1 = next(p for p in next_s.planets if p.id == 1)
+        assert p1.ships == 15
+
+    def test_empty_moves_list_no_own_launches(self):
+        """Empty moves list: production and combat run, but no own fleet is spawned."""
+        p0 = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=10, production=3)
+        state = build_state([p0], [], turn=1)
+        next_s = step_state_multi(state, moves=[], player=0, angular_velocity=0.0)
+        # Production should have run
+        owned = next(p for p in next_s.planets if p.id == 0)
+        assert owned.ships == 13
+        # No own fleet launched
+        assert len(next_s.fleets) == 0
+
+    def test_opponent_fn_called_once(self):
+        """opponent_fn is invoked exactly once, identical to step_state behaviour."""
+        state = self._two_planet_state()
+        call_count = [0]
+
+        def counting_fn(s):
+            call_count[0] += 1
+            return []
+
+        step_state_multi(
+            state, moves=[], player=0, angular_velocity=0.0, opponent_fn=counting_fn
+        )
+        assert call_count[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# Class: TestScoreCandidateLookaheadFullMoveList
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCandidateLookaheadFullMoveList:
+    """score_candidate_lookahead roll-forward applies the full own-move list each turn."""
+
+    def test_roll_forward_applies_full_move_list_via_step_state_multi(self, monkeypatch):
+        """The roll-forward loop must pass the entire our_greedy list to step_state_multi,
+        not just our_greedy[0]. With plan_moves_fn returning 2 own moves and
+        lookahead_turns=2 (n_extra=1), step_state_multi must be called once with a
+        list of length 2."""
+        import src.lookahead as mod
+        from src.lookahead import score_candidate_lookahead
+
+        captured_move_lists = []
+        real_ssm = mod.step_state_multi
+
+        def recording_ssm(state, moves, player, angular_velocity, opponent_fn=None):
+            captured_move_lists.append(list(moves))
+            return real_ssm(state, moves, player, angular_velocity, opponent_fn)
+
+        monkeypatch.setattr(mod, "step_state_multi", recording_ssm)
+
+        p0 = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=50, production=0)
+        p1 = make_planet(id=1, owner=0, x=30.0, y=50.0, radius=1.0, ships=50, production=0)
+
+        def two_move_plan(planets, fleets, player, angular_velocity, **kwargs):
+            if player == 0:
+                return [[0, 0.0, 10], [1, math.pi, 10]]
+            return []
+
+        score_candidate_lookahead(
+            initial_planets=[p0, p1],
+            fleets=[],
+            turn=0,
+            candidate_move=None,
+            player=0,
+            angular_velocity=0.0,
+            opponent_fn=lambda s: [],
+            params={"lookahead_turns": 2, "lookahead_ship_weight": 0.01},
+            plan_moves_fn=two_move_plan,
+        )
+
+        assert len(captured_move_lists) >= 1, (
+            "step_state_multi must be called during the roll-forward loop; "
+            "got 0 calls (the loop may still be using step_state with our_greedy[0])"
+        )
+        assert len(captured_move_lists[0]) == 2, (
+            f"step_state_multi must receive the full move list (2 moves), "
+            f"got {len(captured_move_lists[0])}"
         )
 
 

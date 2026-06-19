@@ -1,4 +1,5 @@
 import math
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -9,10 +10,12 @@ from src.math_utils import (
     angle_to_target,
     distance,
     fleet_speed,
+    is_enemy,
     is_stationary,
     orbital_radius,
     path_crosses_sun,
     predict_planet_position,
+    sum_owned,
     turns_to_arrive,
 )
 from kaggle_environments import make
@@ -154,13 +157,16 @@ def test_orbiting_planet_zero_turns():
 
 
 def test_orbiting_planet_full_revolution():
-    # After 2π / angular_velocity turns, planet should return to start
+    # After round(2π / angular_velocity) turns the planet returns approximately to
+    # start. The engine adds av*turns directly (no modulo), so there is a small
+    # drift of up to av radians due to integer rounding of the period — abs=0.2
+    # accommodates that drift for av=0.05 (max position error ≈ radius*av ≈ 0.17).
     planet = make_planet(x=60.0, y=50.0)
     av = 0.05
     full_rev = round(2 * math.pi / av)
     x, y = predict_planet_position(planet, angular_velocity=av, turns=full_rev)
-    assert x == pytest.approx(60.0, abs=0.1)
-    assert y == pytest.approx(50.0, abs=0.1)
+    assert x == pytest.approx(60.0, abs=0.2)
+    assert y == pytest.approx(50.0, abs=0.2)
 
 
 def test_orbiting_planet_zero_angular_velocity():
@@ -173,13 +179,40 @@ def test_orbiting_planet_zero_angular_velocity():
 
 
 def test_orbiting_planet_large_angular_velocity():
-    # For angular_velocity > 4*pi, round(2*pi / av) == 0, so turns % period
-    # would divide by zero. Treat the rounded-to-zero period as no movement —
-    # return current position instead of crashing.
+    # The old code returned current position for av > 4π because round(2π/av)==0
+    # triggered a division-by-zero guard on turns % period.  The engine formula
+    # has no such guard — large angular_velocity just produces a large angle
+    # advance and cos/sin periodicity handles it naturally.  Verify we match
+    # the engine: future_angle = initial_angle + av * turns.
     planet = make_planet(x=60.0, y=50.0)  # orbits, so it passes the stationary guard
-    x, y = predict_planet_position(planet, angular_velocity=13.0, turns=5)
-    assert x == pytest.approx(60.0)
-    assert y == pytest.approx(50.0)
+    av = 13.0
+    turns = 5
+    initial_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
+    radius = math.sqrt((planet.x - CENTER) ** 2 + (planet.y - CENTER) ** 2)
+    future_angle = initial_angle + av * turns
+    expected_x = CENTER + radius * math.cos(future_angle)
+    expected_y = CENTER + radius * math.sin(future_angle)
+    x, y = predict_planet_position(planet, angular_velocity=av, turns=turns)
+    assert x == pytest.approx(expected_x, abs=1e-9)
+    assert y == pytest.approx(expected_y, abs=1e-9)
+
+
+def test_predict_planet_position_long_horizon_matches_engine_formula():
+    # Regression: turns > one orbital period exposed the old modulo drift.
+    # Engine (orbit_wars.py:586): angle = initial_angle + angular_velocity * step
+    # For av=0.05 the rounded period is 126; turns=200 > 126 puts us in the
+    # second orbit, where turns%period diverges from angular_velocity*turns.
+    planet = make_planet(x=60.0, y=50.0)  # radius=10, initial_angle=0
+    av = 0.05
+    turns = 200  # > round(2*pi/0.05) = 126
+    initial_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
+    radius = math.sqrt((planet.x - CENTER) ** 2 + (planet.y - CENTER) ** 2)
+    future_angle = initial_angle + av * turns  # engine formula
+    expected_x = CENTER + radius * math.cos(future_angle)
+    expected_y = CENTER + radius * math.sin(future_angle)
+    x, y = predict_planet_position(planet, angular_velocity=av, turns=turns)
+    assert x == pytest.approx(expected_x, abs=1e-9)
+    assert y == pytest.approx(expected_y, abs=1e-9)
 
 
 def test_orbital_radius_computed_once_for_orbiting_planet():
@@ -191,6 +224,15 @@ def test_orbital_radius_computed_once_for_orbiting_planet():
     assert mock_r.call_count == 1, (
         f"orbital_radius called {mock_r.call_count} times, expected 1"
     )
+
+
+def test_predict_planet_position_docstring_matches_sun_radius_guard():
+    # The static-planet guard is `radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT`,
+    # not `orbital_radius >= ROTATION_RADIUS_LIMIT`. The docstring must name
+    # SUN_RADIUS and cross-reference is_stationary so the two stay linked.
+    doc = predict_planet_position.__doc__ or ""
+    assert "SUN_RADIUS" in doc, "docstring must mention SUN_RADIUS in the static guard"
+    assert "is_stationary" in doc, "docstring must cross-reference is_stationary"
 
 
 # --- path_crosses_sun (zero-length segment) ---
@@ -261,3 +303,52 @@ def test_turns_to_arrive_larger_fleet_no_slower_than_single_ship():
     single_ship_turns = turns_to_arrive(0.0, 0.0, 30.0, 0.0, 1)
     for n in [10, 100, 1000]:
         assert turns_to_arrive(0.0, 0.0, 30.0, 0.0, n) <= single_ship_turns
+
+
+# --- is_enemy ---
+
+
+def _unit(owner: int, ships: int = 0, production: int = 0) -> SimpleNamespace:
+    return SimpleNamespace(owner=owner, ships=ships, production=production)
+
+
+def test_is_enemy_other_player():
+    assert is_enemy(2, 0) is True
+
+
+def test_is_enemy_player_not_enemy():
+    assert is_enemy(0, 0) is False
+
+
+def test_is_enemy_neutral_not_enemy():
+    assert is_enemy(-1, 0) is False
+
+
+# --- sum_owned ---
+
+
+def test_sum_owned_player_ships():
+    units = [_unit(0, ships=5), _unit(1, ships=3), _unit(-1, ships=10)]
+    assert sum_owned(units, player=0) == 5
+
+
+def test_sum_owned_enemy_ships_excludes_neutral_and_player():
+    # player=0, neutral=-1 must both be excluded; only owner=1 and owner=2 count
+    units = [_unit(0, ships=5), _unit(1, ships=3), _unit(2, ships=7), _unit(-1, ships=10)]
+    assert sum_owned(units, player=0, enemy=True) == 10
+
+
+def test_sum_owned_neutral_only_is_zero():
+    units = [_unit(-1, ships=5), _unit(-1, ships=3)]
+    assert sum_owned(units, player=0, enemy=True) == 0
+
+
+def test_sum_owned_empty_collection_is_zero():
+    assert sum_owned([], player=0) == 0
+    assert sum_owned([], player=0, enemy=True) == 0
+
+
+def test_sum_owned_production_attribute():
+    units = [_unit(0, production=4), _unit(1, production=2), _unit(-1, production=9)]
+    assert sum_owned(units, player=0, attr="production") == 4
+    assert sum_owned(units, player=0, attr="production", enemy=True) == 2

@@ -18,6 +18,29 @@ REPO_ROOT = Path(__file__).parent.parent
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 TUNING_PIPELINE = REPO_ROOT / "docs" / "wiki" / "Tuning-Pipeline.md"
 
+# Vendored/generated/protected trees — never police these for doc drift.
+# .claude/: harness auto-denies edits, cannot be kept current from CI.
+# .afk/: transient worktree copies of in-flight branches, not canonical docs.
+_EXCLUDED_PARTS = {".venv", "node_modules", ".claude", ".afk"}
+
+# Intentionally-dated snapshots that record historical figures on purpose.
+# archive/ and superpowers/ preserve original design values (e.g. N_GAMES=10,
+# PROMOTION_THRESHOLD=0.55) as historical records — they are exempt from
+# match-the-code checks.
+_HISTORICAL_PARTS = {"archive", "superpowers"}
+
+
+def _living_doc_files():
+    """Every tracked Markdown doc, skipping vendored/protected trees and dated snapshots."""
+    skip = _EXCLUDED_PARTS | _HISTORICAL_PARTS
+    return [p for p in REPO_ROOT.rglob("*.md") if skip.isdisjoint(p.parts)]
+
+
+# Matches N_GAMES followed by an optional closing backtick (Markdown table quoting),
+# then = or | (table delimiter), then a bare integer.
+# Catches inline assignment form (N_GAMES=40) and wiki table form (| `N_GAMES` | 40 |).
+_N_GAMES_VALUE_RE = re.compile(r"N_GAMES`?\s*[=|]\s*(\d+)")
+
 
 class TestConventionRuleInClaudeMd:
     """CLAUDE.md must contain the full-repo-grep convention rule."""
@@ -85,3 +108,80 @@ class TestNGamesWikiConsistency:
                 assert str(half) in line, (
                     f"stale per-side game count in alternation description: {line!r}"
                 )
+
+
+class TestFullConstantVerificationConvention:
+    """CLAUDE.md must document the re-verify-all-constants rule (issue #150).
+
+    PR #72 left two adjacent stale values: N_GAMES was still documented as 20
+    while PROMOTION_THRESHOLD prose was updated, and an acceptance-criteria bullet
+    list still hard-coded PROMOTION_THRESHOLD=0.55 after the headline was fixed.
+    The existing tuned-constant rule only triggers on *changing* a value; this new
+    rule covers editing a doc section that *enumerates* multiple constants and
+    silently leaving the ones you weren't focused on stale.
+    """
+
+    def test_convention_requires_reverification_of_all_constants(self):
+        """CLAUDE.md must instruct maintainers to re-verify ALL enumerated constants."""
+        text = CLAUDE_MD.read_text()
+        has_reverify = "re-verify" in text.lower() or "re-check" in text.lower()
+        assert has_reverify, (
+            "CLAUDE.md must instruct maintainers to re-verify ALL constants enumerated "
+            "in a doc section, not just the one being changed — see issue #150."
+        )
+
+    def test_convention_names_acceptance_criteria_in_scope(self):
+        """The rule must explicitly name acceptance-criteria bullet lists as in-scope."""
+        text = CLAUDE_MD.read_text()
+        assert "acceptance" in text.lower() and "criteria" in text.lower(), (
+            "CLAUDE.md must name acceptance-criteria bullet lists as in-scope for the "
+            "full-constant-verification rule — they drifted in PR #72 even after the "
+            "headline prose was fixed."
+        )
+
+    def test_convention_names_inline_plan_doc_numbers_in_scope(self):
+        """The rule must explicitly name inline plan-doc numbers as in-scope."""
+        text = CLAUDE_MD.read_text()
+        assert "inline" in text.lower(), (
+            "CLAUDE.md must name inline plan-doc numbers as in-scope for the "
+            "full-constant-verification rule — plan-doc numbers drifted in PR #72."
+        )
+
+
+class TestNGamesLivingDocConsistency:
+    """No living doc should cite N_GAMES with a stale value (issue #150).
+
+    Mirrors TestThresholdDecimalMatchesCode from test_docs_promotion_threshold.py
+    for the N_GAMES constant. Dated snapshots under archive/ and superpowers/ are
+    exempt — they preserve historical figures intentionally.
+    """
+
+    def test_n_games_regex_matches_backtick_table_form(self):
+        """_N_GAMES_VALUE_RE must match the backtick-quoted Markdown table form.
+
+        The wiki uses ``| `N_GAMES` | 40 |`` (backtick-quoted identifier), so the
+        regex must allow an optional closing backtick after the constant name.
+        """
+        line = "| `N_GAMES`             | 40    | Games per trial (challenger vs champion) |"
+        matches = _N_GAMES_VALUE_RE.findall(line)
+        assert matches == ["40"], (
+            f"regex failed to match backtick table form; got {matches!r}. "
+            "The wiki uses `N_GAMES` with backtick-quotes: the pattern needs "
+            "to allow an optional backtick after 'N_GAMES'."
+        )
+
+    def test_no_living_doc_cites_stale_n_games_value(self):
+        """Any living doc that cites N_GAMES with an explicit integer must use the code value."""
+        expected = str(N_GAMES)
+        bad = []
+        for md in _living_doc_files():
+            for m in _N_GAMES_VALUE_RE.finditer(md.read_text()):
+                val = m.group(1)
+                if val != expected:
+                    bad.append(
+                        f"{md.relative_to(REPO_ROOT)}: N_GAMES={val} (want {expected})"
+                    )
+        # CI limitation: .claude/docs/project.md cannot be governed here because the
+        # harness auto-denies edits to .claude/. If that file carries a stale N_GAMES
+        # value, a maintainer with .claude/ write access must fix it by hand.
+        assert not bad, f"stale N_GAMES value in living docs: {bad}"

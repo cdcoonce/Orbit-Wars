@@ -26,6 +26,8 @@ Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
 def _turn_ramp(turn: int, ramp_turns: int, start: float, end: float) -> float:
     """Linearly interpolate from start to end over [0, ramp_turns], clamped at ramp_turns."""
+    if ramp_turns <= 0:
+        return end
     t = min(turn, ramp_turns) / ramp_turns
     return start + t * (end - start)
 
@@ -72,6 +74,22 @@ def classify_enemy(
     return "HARDENED_ENEMY"
 
 
+def _min_dist_pt_to_segment(
+    px: float, py: float,
+    sx1: float, sy1: float, sx2: float, sy2: float,
+) -> float:
+    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
+    dx = sx2 - sx1
+    dy = sy2 - sy1
+    d_len_sq = dx * dx + dy * dy
+    if d_len_sq == 0:
+        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
+    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
+    cx = sx1 + t * dx
+    cy = sy1 + t * dy
+    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+
+
 def detect_threats(
     my_planets: list[Planet],
     fleets: list[Fleet],
@@ -93,9 +111,16 @@ def detect_threats(
         if fleet.owner == player:
             continue
         speed = fleet_speed(fleet.ships)
+        cos_a = math.cos(fleet.angle)
+        sin_a = math.sin(fleet.angle)
         for t in range(1, params["threat_eta_window"] + 1):
-            fleet_x = fleet.x + t * speed * math.cos(fleet.angle)
-            fleet_y = fleet.y + t * speed * math.sin(fleet.angle)
+            # Check the fleet's straight-line segment for interval [t-1, t] against
+            # each planet's position at the start of that interval.  This catches
+            # fleets whose closest approach falls between two integer samples.
+            fx0 = fleet.x + (t - 1) * speed * cos_a
+            fy0 = fleet.y + (t - 1) * speed * sin_a
+            fx1 = fleet.x + t * speed * cos_a
+            fy1 = fleet.y + t * speed * sin_a
             for planet in my_planets:
                 # seen guards a single fleet object from contributing its ships
                 # more than once to the same planet (it may stay in-radius across
@@ -103,8 +128,8 @@ def detect_threats(
                 # (lookahead sim-spawned sentinels) are not collapsed.
                 if (id(fleet), planet.id) in seen:
                     continue
-                px, py = predict_planet_position(planet, angular_velocity, t)
-                if distance(fleet_x, fleet_y, px, py) < params["threat_radius"]:
+                px, py = predict_planet_position(planet, angular_velocity, t - 1)
+                if _min_dist_pt_to_segment(px, py, fx0, fy0, fx1, fy1) < params["threat_radius"]:
                     seen.add((id(fleet), planet.id))
                     if planet.id in inbound_by_planet:
                         prev_ships, prev_eta = inbound_by_planet[planet.id]
@@ -189,30 +214,32 @@ def _effective_distance_power(turn: int, params: dict) -> float:
 
 
 def _blended_best(candidates: list, blend: float):
-    """Select the winning (target, fraction) from scored expansion candidates.
+    """Select the winning (target, fraction, future_x, future_y) from scored expansion candidates.
 
-    ``candidates`` is a list of ``(greedy_score, lookahead_score, target, fraction)``.
+    ``candidates`` is a list of ``(greedy_score, lookahead_score, target, fraction, future_x, future_y)``.
     A single candidate or ``blend == 0.0`` takes the greedy fast-path (highest
     greedy score wins). Otherwise greedy and lookahead scores are each min-max
     normalized to ``[0, 1]`` — the ``+1e-9`` guards against a zero range when all
     candidates share a score — and combined as ``(1 - blend) * ng + blend * nl``.
+    Returns ``(target, fraction, future_x, future_y)`` so the caller can reuse
+    the already-computed intercept geometry without a redundant ``intercept()`` call.
     """
     if len(candidates) == 1 or blend == 0.0:
         best = max(candidates, key=lambda c: c[0])
-        return best[2], best[3]
+        return best[2], best[3], best[4], best[5]
 
     lo_g = min(c[0] for c in candidates)
     hi_g = max(c[0] for c in candidates)
     lo_l = min(c[1] for c in candidates)
     hi_l = max(c[1] for c in candidates)
     scored = []
-    for greedy, look, tgt, frac in candidates:
+    for greedy, look, tgt, frac, fx, fy in candidates:
         ng = (greedy - lo_g) / (hi_g - lo_g + 1e-9)
         nl = (look - lo_l) / (hi_l - lo_l + 1e-9)
         final = (1 - blend) * ng + blend * nl
-        scored.append((final, tgt, frac))
+        scored.append((final, tgt, frac, fx, fy))
     best_scored = max(scored, key=lambda x: x[0])
-    return best_scored[1], best_scored[2]
+    return best_scored[1], best_scored[2], best_scored[3], best_scored[4]
 
 
 def plan_expansion(
@@ -343,31 +370,21 @@ def plan_expansion(
             else:
                 lookahead_score = greedy_score  # fallback keeps blend=0 equivalent
 
-            candidates.append((greedy_score, lookahead_score, target, fraction))
+            candidates.append((greedy_score, lookahead_score, target, fraction, future_x, future_y))
 
         if not candidates:
             continue
 
-        best_target, best_fraction = _blended_best(candidates, blend)
+        best_target, best_fraction, best_fx, best_fy = _blended_best(candidates, blend)
 
-        # Primary fleet
+        # Primary fleet — geometry reused from the scoring-loop intercept (best_fx, best_fy),
+        # so no redundant intercept() call here.
         ships_remaining = source.ships
         first_send = max(1, int(ships_remaining * best_fraction * agg))
-        final_result = intercept(
-            source,
-            best_target,
-            angular_velocity,
-            first_send,
-            comet_ids,
-            comet_velocities,
-        )
-        if final_result[0] is None:
-            continue  # comet became un-intercept-able between scoring and final selection
-        future_x, future_y, _ = final_result
         moves.append(
             [
                 source.id,
-                angle_to_target(source.x, source.y, future_x, future_y),
+                angle_to_target(source.x, source.y, best_fx, best_fy),
                 first_send,
             ]
         )
@@ -377,7 +394,7 @@ def plan_expansion(
         if ships_remaining > min_garrison:
             already_sent = {best_target.id}
             # Drain ranks by raw greedy c[0], not blended: lookahead is expensive and leftover-fleet stakes are low.
-            for _, _, extra_target, extra_fraction in sorted(
+            for _, _, extra_target, extra_fraction, _, _ in sorted(
                 candidates, key=lambda c: c[0], reverse=True
             ):
                 if ships_remaining <= min_garrison:

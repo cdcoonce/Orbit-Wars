@@ -215,6 +215,112 @@ def step_state(
     return state
 
 
+def step_state_multi(
+    state: GameState,
+    moves,
+    player: int,
+    angular_velocity: float,
+    opponent_fn=None,
+) -> GameState:
+    """Simulate ONE turn forward with a list of own-player moves.
+
+    Identical to step_state except the launch phase iterates *moves* (a list of
+    [planet_id, angle, ships]) rather than a single optional move.  An empty
+    list applies no own launches.  Steps 1, 2, 3b, 4, and 5 are byte-for-byte
+    equivalent to step_state.
+
+    Args:
+        state: Current game state (mutated in place; caller should not reuse).
+        moves: List of [planet_id, angle, ships] launch instructions. An empty
+               list produces no own launches. Moves whose source has insufficient
+               ships are silently skipped.
+        player: The acting player's index.
+        angular_velocity: Global orbital angular velocity (rad/turn).
+        opponent_fn: Optional callable (state) -> list[list]. Invoked exactly
+                     once; opponent moves are applied after own launches.
+
+    Returns:
+        The mutated GameState after one simulated turn.
+    """
+    # --- Step 1: Production ---
+    for planet in state.planets:
+        if planet.owner != -1:
+            planet.ships += planet.production
+
+    # --- Step 2: Rotate orbiting planets ---
+    for sim_planet in state.planets:
+        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
+        sim_planet.x = new_x
+        sim_planet.y = new_y
+
+    # --- Step 3: Launch one fleet per move (skips moves with insufficient ships) ---
+    for move in moves:
+        planet_id, angle, ships_to_send = move[0], move[1], move[2]
+        source = next((p for p in state.planets if p.id == planet_id), None)
+        if source is not None and source.ships >= ships_to_send:
+            source.ships -= ships_to_send
+            state.fleets.append(
+                SimFleet(
+                    owner=player,
+                    x=source.x + math.cos(angle) * (source.radius + 0.1),
+                    y=source.y + math.sin(angle) * (source.radius + 0.1),
+                    angle=angle,
+                    ships=ships_to_send,
+                )
+            )
+
+    # --- Step 3b: Opponent fleet launches ---
+    if opponent_fn is not None:
+        opp_moves = opponent_fn(state)
+        for opp_move in opp_moves:
+            planet_id, angle, ships = opp_move[0], opp_move[1], opp_move[2]
+            opp_source = next((p for p in state.planets if p.id == planet_id), None)
+            if opp_source is not None and opp_source.ships >= ships:
+                opp_source.ships -= ships
+                state.fleets.append(
+                    SimFleet(
+                        owner=1 - player,
+                        x=opp_source.x + math.cos(angle) * (opp_source.radius + 0.1),
+                        y=opp_source.y + math.sin(angle) * (opp_source.radius + 0.1),
+                        angle=angle,
+                        ships=ships,
+                    )
+                )
+
+    # --- Step 4: Move all fleets ---
+    for fleet in state.fleets:
+        speed = fleet_speed(fleet.ships)
+        fleet.x += speed * math.cos(fleet.angle)
+        fleet.y += speed * math.sin(fleet.angle)
+
+    # --- Step 5: Combat ---
+    # Single pass: assign each fleet to the first planet it lands on, or keep flying.
+    remaining_fleets = []
+    planet_arrivals: dict[int, list] = {p.id: [] for p in state.planets}
+    for fleet in state.fleets:
+        landed = False
+        for planet in state.planets:
+            dist = distance(fleet.x, fleet.y, planet.x, planet.y)
+            if dist <= planet.radius:
+                planet_arrivals[planet.id].append(fleet)
+                landed = True
+                break
+        if not landed:
+            remaining_fleets.append(fleet)
+
+    for planet in state.planets:
+        arrivals = planet_arrivals[planet.id]
+        if not arrivals:
+            continue
+        _resolve_combat(planet, arrivals)
+
+    # Keep only fleets that didn't land on any planet
+    state.fleets = remaining_fleets
+
+    state.turn += 1
+    return state
+
+
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
     """Score a GameState from `player`'s perspective."""
     my_prod = sum(p.production for p in state.planets if p.owner == player)
@@ -239,16 +345,16 @@ def score_candidate_lookahead(
 
     Builds a state from the current board, applies our `candidate_move` plus the
     opponent's response (T+1), then rolls forward `lookahead_turns - 1` more turns
-    with both sides playing greedily, and returns `score_state` from `player`'s
-    view. `plan_moves_fn` is INJECTED rather than imported so this module never
-    depends on strategy.py — the greedy roll-forward calls back into the real
-    planner without creating a circular import. Behaviour-preserving extraction
+    with both sides applying their full planned move lists, and returns `score_state`
+    from `player`'s view. `plan_moves_fn` is INJECTED rather than imported so this
+    module never depends on strategy.py — the greedy roll-forward calls back into the
+    real planner without creating a circular import. Behaviour-preserving extraction
     of the block formerly inline in strategy.plan_expansion.
     """
     # T+1: apply our candidate move + opponent response.
     state = build_state(initial_planets, fleets, turn)
     state = step_state(state, candidate_move, player, angular_velocity, opponent_fn)
-    # T+2..N: both players play greedily (lookahead disabled) from the evolved state.
+    # T+2..N: both players apply their full planned move lists (lookahead disabled).
     n_extra = params.get("lookahead_turns", 1) - 1
     # Loop-invariant: greedy_params depends only on params, never on the evolving
     # state — build it once, mirroring the hoist in commit e9750e6 (#49).
@@ -263,9 +369,6 @@ def score_candidate_lookahead(
             params=greedy_params,
             initial_planets=initial_planets,
         )
-        our_move = (
-            our_greedy[0] if our_greedy else None
-        )  # one move per sim step (approximation)
         # Fresh opponent response from the evolved state (not the frozen initial state).
         opp_greedy = plan_moves_fn(
             state.planets,
@@ -277,5 +380,5 @@ def score_candidate_lookahead(
             initial_planets=initial_planets,
         )
         fresh_opp_fn = lambda s, m=opp_greedy: m  # noqa: E731
-        state = step_state(state, our_move, player, angular_velocity, fresh_opp_fn)
+        state = step_state_multi(state, our_greedy, player, angular_velocity, fresh_opp_fn)
     return score_state(state, player, params.get("lookahead_ship_weight", 0.01))
