@@ -3,6 +3,7 @@ import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
 from src.strategy import PARAMS, Threat, is_stationary  # noqa: F401
+from src.strategy import ETA_CONVERGENCE_ITERS
 from src.strategy import aggression
 from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
@@ -1355,3 +1356,23 @@ def test_aggression_beyond_game_length_clamps_to_min():
 def test_aggression_midpoint_interpolates_linearly():
     # t = 50/100 = 0.5; value = 0.9 + 0.5*(0.3 - 0.9) = 0.6
     assert aggression(50, _AGG_PARAMS) == pytest.approx(0.6)
+
+
+# --- ETA_CONVERGENCE_ITERS shared constant ---
+
+
+def test_eta_convergence_iters_used_in_both_intercept_loops():
+    import inspect
+
+    # Both ETA fixed-point loops must reference the shared constant, not bare literals.
+    for fn in (intercept, _intercept_comet_linear):
+        src = inspect.getsource(fn)
+        assert "range(8)" not in src, (
+            f"{fn.__name__} still uses bare range(8); replace with range(ETA_CONVERGENCE_ITERS)"
+        )
+        assert "range(10)" not in src, (
+            f"{fn.__name__} still uses bare range(10); replace with range(ETA_CONVERGENCE_ITERS)"
+        )
+        assert "ETA_CONVERGENCE_ITERS" in src, (
+            f"{fn.__name__} does not reference ETA_CONVERGENCE_ITERS"
+        )

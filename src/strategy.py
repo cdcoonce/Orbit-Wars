@@ -23,6 +23,10 @@ from .lookahead import build_state, score_candidate_lookahead
 
 Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
+# Safety cap for ETA fixed-point loops: the orbit/intercept system may not analytically
+# converge, so we bound the iteration count rather than looping forever.
+ETA_CONVERGENCE_ITERS = 10
+
 
 def _turn_ramp(turn: int, ramp_turns: int, start: float, end: float) -> float:
     """Linearly interpolate from start to end over [0, ramp_turns], clamped at ramp_turns."""
@@ -520,7 +524,7 @@ def _intercept_comet_linear(
     speed = fleet_speed(ships)
     eta = turns_to_arrive(sx, sy, tx, ty, ships)
     fx, fy = tx, ty
-    for _ in range(10):
+    for _ in range(ETA_CONVERGENCE_ITERS):
         fx = tx + vx * eta
         fy = ty + vy * eta
         if not (BOARD_MIN <= fx <= BOARD_MAX and BOARD_MIN <= fy <= BOARD_MAX):
@@ -575,7 +579,7 @@ def intercept(
     # Regular orbiting planet: iterate until ETA converges
     eta = turns_to_arrive(source.x, source.y, target.x, target.y, ships_to_send)
     future_x, future_y = target.x, target.y
-    for _ in range(8):
+    for _ in range(ETA_CONVERGENCE_ITERS):
         future_x, future_y = predict_planet_position(target, angular_velocity, eta)
         new_eta = turns_to_arrive(source.x, source.y, future_x, future_y, ships_to_send)
         if new_eta == eta:
