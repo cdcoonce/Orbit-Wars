@@ -15,6 +15,8 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
 BOARD_MIN = 0.0
 BOARD_MAX = 100.0
 
+_LOG_1000 = math.log(1000.0)
+
 
 def orbital_radius(planet: Planet) -> float:
     """Distance from the planet to the sun at the center (50, 50)."""
@@ -79,7 +81,7 @@ def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
     """
     if num_ships <= 1:
         return 1.0
-    speed = 1.0 + (max_speed - 1.0) * (math.log(num_ships) / math.log(1000)) ** 1.5
+    speed = 1.0 + (max_speed - 1.0) * (math.log(num_ships) / _LOG_1000) ** 1.5
     return min(speed, max_speed)
 
 

@@ -69,6 +69,16 @@ def test_distance_known():
     assert distance(0, 0, 3, 4) == pytest.approx(5.0)
 
 
+# --- _LOG_1000 module constant ---
+
+
+def test_log_1000_constant_exists_and_is_correct():
+    import src.math_utils as m
+
+    assert hasattr(m, "_LOG_1000"), "_LOG_1000 must be defined at module level"
+    assert m._LOG_1000 == pytest.approx(math.log(1000.0))
+
+
 # --- fleet_speed ---
 
 
