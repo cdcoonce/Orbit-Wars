@@ -1,5 +1,4 @@
 import math
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -10,12 +9,10 @@ from src.math_utils import (
     angle_to_target,
     distance,
     fleet_speed,
-    is_enemy,
     is_stationary,
     orbital_radius,
     path_crosses_sun,
     predict_planet_position,
-    sum_owned,
     turns_to_arrive,
 )
 from kaggle_environments import make
@@ -305,50 +302,11 @@ def test_turns_to_arrive_larger_fleet_no_slower_than_single_ship():
         assert turns_to_arrive(0.0, 0.0, 30.0, 0.0, n) <= single_ship_turns
 
 
-# --- is_enemy ---
+# --- removal regression ---
 
 
-def _unit(owner: int, ships: int = 0, production: int = 0) -> SimpleNamespace:
-    return SimpleNamespace(owner=owner, ships=ships, production=production)
+def test_sum_owned_and_is_enemy_removed():
+    import src.math_utils as m
 
-
-def test_is_enemy_other_player():
-    assert is_enemy(2, 0) is True
-
-
-def test_is_enemy_player_not_enemy():
-    assert is_enemy(0, 0) is False
-
-
-def test_is_enemy_neutral_not_enemy():
-    assert is_enemy(-1, 0) is False
-
-
-# --- sum_owned ---
-
-
-def test_sum_owned_player_ships():
-    units = [_unit(0, ships=5), _unit(1, ships=3), _unit(-1, ships=10)]
-    assert sum_owned(units, player=0) == 5
-
-
-def test_sum_owned_enemy_ships_excludes_neutral_and_player():
-    # player=0, neutral=-1 must both be excluded; only owner=1 and owner=2 count
-    units = [_unit(0, ships=5), _unit(1, ships=3), _unit(2, ships=7), _unit(-1, ships=10)]
-    assert sum_owned(units, player=0, enemy=True) == 10
-
-
-def test_sum_owned_neutral_only_is_zero():
-    units = [_unit(-1, ships=5), _unit(-1, ships=3)]
-    assert sum_owned(units, player=0, enemy=True) == 0
-
-
-def test_sum_owned_empty_collection_is_zero():
-    assert sum_owned([], player=0) == 0
-    assert sum_owned([], player=0, enemy=True) == 0
-
-
-def test_sum_owned_production_attribute():
-    units = [_unit(0, production=4), _unit(1, production=2), _unit(-1, production=9)]
-    assert sum_owned(units, player=0, attr="production") == 4
-    assert sum_owned(units, player=0, attr="production", enemy=True) == 2
+    assert not hasattr(m, "sum_owned"), "sum_owned is dead code and must be removed"
+    assert not hasattr(m, "is_enemy"), "is_enemy is dead code and must be removed"
