@@ -111,6 +111,16 @@ def objective(trial: optuna.Trial) -> float:
 
     if win_rate >= PROMOTION_THRESHOLD:
         with _lock:
+            # Guard against the stale-snapshot race: worker B may have promoted a
+            # stronger champion (v2) while this trial was playing its games against
+            # the old champion (v1). Re-check that the live champion is still the
+            # one we benchmarked against before committing. If it has changed, skip
+            # this promotion — the win_rate is stale and cannot justify overwriting
+            # a champion the challenger never faced.
+            # Trade-off: some valid promotions are dropped under heavy concurrency,
+            # but the champion can never regress to a weaker, unvalidated challenger.
+            if _current_champion != current_champ:
+                return win_rate
             write_champion(challenger_params)
             _current_champion.clear()
             _current_champion.update(challenger_params)
