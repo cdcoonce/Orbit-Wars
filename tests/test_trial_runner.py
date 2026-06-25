@@ -294,3 +294,55 @@ class TestLoadGuardedStudy:
 
         assert list(tmp_path.glob("study.db.stale*"))
         assert len(study.trials) == 0
+
+
+# ---------------------------------------------------------------------------
+# objective — stale-snapshot promotion guard
+# ---------------------------------------------------------------------------
+
+class TestObjectiveStaleChampionGuard:
+    def test_stale_snapshot_does_not_overwrite_newer_champion(self):
+        """Stale-snapshot race: promotion skipped when _current_champion changed mid-trial.
+
+        Race reproduced: worker A snapshots v1, then worker B promotes v2 during
+        run_games; worker A must NOT overwrite v2 even though its win_rate was
+        measured against the now-stale v1.
+        """
+        from trials import run_trials
+
+        v1 = {**PARAMS, "fortress_min_ships": 10}
+        v2 = {**PARAMS, "fortress_min_ships": 20}
+
+        original = dict(run_trials._current_champion)
+        with run_trials._lock:
+            run_trials._current_champion.clear()
+            run_trials._current_champion.update(v1)
+
+        try:
+            def mock_run_games(challenger_params, champ_params, n_games, seed):
+                # Simulate concurrent worker B promoting v2 while A is playing.
+                with run_trials._lock:
+                    run_trials._current_champion.clear()
+                    run_trials._current_champion.update(v2)
+                return (run_trials.PROMOTION_THRESHOLD, [])
+
+            mock_trial = MagicMock()
+            mock_trial.number = 99
+            mock_trial.suggest_int.side_effect = (
+                lambda k, lo, hi: int(PARAMS.get(k, lo))
+            )
+            mock_trial.suggest_float.side_effect = (
+                lambda k, lo, hi: float(PARAMS.get(k, lo))
+            )
+
+            with patch("trials.run_trials.run_games", mock_run_games):
+                with patch("trials.run_trials.write_champion") as mock_write:
+                    run_trials.objective(mock_trial)
+
+            # Stale challenger must not overwrite the stronger champion v2.
+            mock_write.assert_not_called()
+            assert run_trials._current_champion == v2
+        finally:
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(original)
