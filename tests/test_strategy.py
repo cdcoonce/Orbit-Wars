@@ -1358,6 +1358,32 @@ def test_aggression_midpoint_interpolates_linearly():
     assert aggression(50, _AGG_PARAMS) == pytest.approx(0.6)
 
 
+# --- plan_expansion candidates comment ---
+
+
+def test_plan_expansion_candidates_comment_lists_six_fields():
+    import inspect
+
+    from src.strategy import plan_expansion
+
+    src_lines = inspect.getsource(plan_expansion).splitlines()
+    # Locate the specific inline comment on the candidates accumulator.
+    comment_line = next(
+        (line for line in src_lines if "candidates = []" in line and "list of" in line),
+        None,
+    )
+    assert comment_line is not None, (
+        "candidates = [] comment line not found in plan_expansion"
+    )
+    # The comment must list all six tuple fields so readers aren't misled
+    # about the shape passed to _blended_best.
+    for field in ("greedy_score", "lookahead_score", "target", "fraction", "future_x", "future_y"):
+        assert field in comment_line, (
+            f"plan_expansion candidates comment is missing '{field}'; "
+            "update the comment to match the 6-tuple actually appended"
+        )
+
+
 # --- ETA_CONVERGENCE_ITERS shared constant ---
 
 
