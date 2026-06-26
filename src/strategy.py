@@ -303,7 +303,7 @@ def plan_expansion(
         # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
         probe_ships = source.ships
 
-        candidates = []  # list of (greedy_score, lookahead_score, target, fraction)
+        candidates = []  # list of (greedy_score, lookahead_score, target, fraction, future_x, future_y)
 
         for target in targets:
             if target.owner == -1:
