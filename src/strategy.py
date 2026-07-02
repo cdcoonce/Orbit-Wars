@@ -42,8 +42,8 @@ def aggression(turn: int, params: dict = PARAMS) -> float:
     )
 
 
-def classify_own(planet: Planet, threats: list, params: dict = PARAMS) -> str:
-    if any(t.planet_id == planet.id for t in threats):
+def classify_own(planet: Planet, threatened_ids: set, params: dict = PARAMS) -> str:
+    if planet.id in threatened_ids:
         return "THREATENED"
     if (
         planet.ships >= params["fortress_min_ships"]
@@ -455,7 +455,8 @@ def plan_moves(
 
     agg = aggression(turn, params)
     threats = detect_threats(owned, fleets, player, angular_velocity, params)
-    own_classes = {p.id: classify_own(p, threats, params) for p in owned}
+    threatened_ids = {t.planet_id for t in threats}
+    own_classes = {p.id: classify_own(p, threatened_ids, params) for p in owned}
 
     defense_moves = handle_threats(
         threats, owned, own_classes, angular_velocity, params
