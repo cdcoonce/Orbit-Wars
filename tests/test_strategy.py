@@ -113,8 +113,7 @@ def test_intercept_stationary_target_returns_current_position():
 
 def test_classify_own_threatened():
     planet = make_planet(id=1, ships=50, production=5)
-    threats = [Threat(planet_id=1, incoming_ships=30, eta=10)]
-    assert classify_own(planet, threats) == "THREATENED"
+    assert classify_own(planet, {1}) == "THREATENED"
 
 
 def test_classify_own_threatened_overrides_fortress():
@@ -123,8 +122,7 @@ def test_classify_own_threatened_overrides_fortress():
         ships=PARAMS["fortress_min_ships"],
         production=PARAMS["fortress_min_production"],
     )
-    threats = [Threat(planet_id=1, incoming_ships=30, eta=10)]
-    assert classify_own(planet, threats) == "THREATENED"
+    assert classify_own(planet, {1}) == "THREATENED"
 
 
 def test_classify_own_fortress():
@@ -132,17 +130,17 @@ def test_classify_own_fortress():
         ships=PARAMS["fortress_min_ships"],
         production=PARAMS["fortress_min_production"],
     )
-    assert classify_own(planet, []) == "FORTRESS"
+    assert classify_own(planet, set()) == "FORTRESS"
 
 
 def test_classify_own_factory():
     planet = make_planet(ships=10, production=PARAMS["factory_min_production"])
-    assert classify_own(planet, []) == "FACTORY"
+    assert classify_own(planet, set()) == "FACTORY"
 
 
 def test_classify_own_outpost():
     planet = make_planet(ships=10, production=1)
-    assert classify_own(planet, []) == "OUTPOST"
+    assert classify_own(planet, set()) == "OUTPOST"
 
 
 def test_classify_neutral_easy():
