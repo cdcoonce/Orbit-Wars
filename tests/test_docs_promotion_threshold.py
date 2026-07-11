@@ -23,7 +23,13 @@ CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 # epic branch checkouts). Those are transient copies of *branches*, not this
 # repo's canonical docs, so they must not be policed here — otherwise a stale
 # doc on an in-flight afk branch fails main's suite.
-_EXCLUDED_PARTS = {".venv", "node_modules", ".claude", ".afk"}
+#
+# `docs/dev-cycle/` holds afk's append-only operational records (telemetry,
+# quarantine log). Rows there quote historical values verbatim by design — a
+# parked-question row citing an old constant is a faithful record, not a stale
+# doc — and an append-only log can only ever accumulate "violations". Not
+# living reference; never policed.
+_EXCLUDED_PARTS = {".venv", "node_modules", ".claude", ".afk", "dev-cycle"}
 
 
 def _doc_files():
