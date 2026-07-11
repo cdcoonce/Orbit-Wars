@@ -3,6 +3,7 @@ import pytest  # noqa: F401
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet  # noqa: F401
 
 from src.strategy import PARAMS, Threat, is_stationary  # noqa: F401
+from src.strategy import ETA_CONVERGENCE_ITERS
 from src.strategy import aggression
 from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
@@ -112,8 +113,7 @@ def test_intercept_stationary_target_returns_current_position():
 
 def test_classify_own_threatened():
     planet = make_planet(id=1, ships=50, production=5)
-    threats = [Threat(planet_id=1, incoming_ships=30, eta=10)]
-    assert classify_own(planet, threats) == "THREATENED"
+    assert classify_own(planet, {1}) == "THREATENED"
 
 
 def test_classify_own_threatened_overrides_fortress():
@@ -122,8 +122,7 @@ def test_classify_own_threatened_overrides_fortress():
         ships=PARAMS["fortress_min_ships"],
         production=PARAMS["fortress_min_production"],
     )
-    threats = [Threat(planet_id=1, incoming_ships=30, eta=10)]
-    assert classify_own(planet, threats) == "THREATENED"
+    assert classify_own(planet, {1}) == "THREATENED"
 
 
 def test_classify_own_fortress():
@@ -131,17 +130,17 @@ def test_classify_own_fortress():
         ships=PARAMS["fortress_min_ships"],
         production=PARAMS["fortress_min_production"],
     )
-    assert classify_own(planet, []) == "FORTRESS"
+    assert classify_own(planet, set()) == "FORTRESS"
 
 
 def test_classify_own_factory():
     planet = make_planet(ships=10, production=PARAMS["factory_min_production"])
-    assert classify_own(planet, []) == "FACTORY"
+    assert classify_own(planet, set()) == "FACTORY"
 
 
 def test_classify_own_outpost():
     planet = make_planet(ships=10, production=1)
-    assert classify_own(planet, []) == "OUTPOST"
+    assert classify_own(planet, set()) == "OUTPOST"
 
 
 def test_classify_neutral_easy():
@@ -1355,3 +1354,49 @@ def test_aggression_beyond_game_length_clamps_to_min():
 def test_aggression_midpoint_interpolates_linearly():
     # t = 50/100 = 0.5; value = 0.9 + 0.5*(0.3 - 0.9) = 0.6
     assert aggression(50, _AGG_PARAMS) == pytest.approx(0.6)
+
+
+# --- plan_expansion candidates comment ---
+
+
+def test_plan_expansion_candidates_comment_lists_six_fields():
+    import inspect
+
+    from src.strategy import plan_expansion
+
+    src_lines = inspect.getsource(plan_expansion).splitlines()
+    # Locate the specific inline comment on the candidates accumulator.
+    comment_line = next(
+        (line for line in src_lines if "candidates = []" in line and "list of" in line),
+        None,
+    )
+    assert comment_line is not None, (
+        "candidates = [] comment line not found in plan_expansion"
+    )
+    # The comment must list all six tuple fields so readers aren't misled
+    # about the shape passed to _blended_best.
+    for field in ("greedy_score", "lookahead_score", "target", "fraction", "future_x", "future_y"):
+        assert field in comment_line, (
+            f"plan_expansion candidates comment is missing '{field}'; "
+            "update the comment to match the 6-tuple actually appended"
+        )
+
+
+# --- ETA_CONVERGENCE_ITERS shared constant ---
+
+
+def test_eta_convergence_iters_used_in_both_intercept_loops():
+    import inspect
+
+    # Both ETA fixed-point loops must reference the shared constant, not bare literals.
+    for fn in (intercept, _intercept_comet_linear):
+        src = inspect.getsource(fn)
+        assert "range(8)" not in src, (
+            f"{fn.__name__} still uses bare range(8); replace with range(ETA_CONVERGENCE_ITERS)"
+        )
+        assert "range(10)" not in src, (
+            f"{fn.__name__} still uses bare range(10); replace with range(ETA_CONVERGENCE_ITERS)"
+        )
+        assert "ETA_CONVERGENCE_ITERS" in src, (
+            f"{fn.__name__} does not reference ETA_CONVERGENCE_ITERS"
+        )

@@ -23,6 +23,10 @@ from .lookahead import build_state, score_candidate_lookahead
 
 Threat = namedtuple("Threat", ["planet_id", "incoming_ships", "eta"])
 
+# Safety cap for ETA fixed-point loops: the orbit/intercept system may not analytically
+# converge, so we bound the iteration count rather than looping forever.
+ETA_CONVERGENCE_ITERS = 10
+
 
 def _turn_ramp(turn: int, ramp_turns: int, start: float, end: float) -> float:
     """Linearly interpolate from start to end over [0, ramp_turns], clamped at ramp_turns."""
@@ -38,8 +42,8 @@ def aggression(turn: int, params: dict = PARAMS) -> float:
     )
 
 
-def classify_own(planet: Planet, threats: list, params: dict = PARAMS) -> str:
-    if any(t.planet_id == planet.id for t in threats):
+def classify_own(planet: Planet, threatened_ids: set, params: dict = PARAMS) -> str:
+    if planet.id in threatened_ids:
         return "THREATENED"
     if (
         planet.ships >= params["fortress_min_ships"]
@@ -299,7 +303,7 @@ def plan_expansion(
         # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
         probe_ships = source.ships
 
-        candidates = []  # list of (greedy_score, lookahead_score, target, fraction)
+        candidates = []  # list of (greedy_score, lookahead_score, target, fraction, future_x, future_y)
 
         for target in targets:
             if target.owner == -1:
@@ -451,7 +455,8 @@ def plan_moves(
 
     agg = aggression(turn, params)
     threats = detect_threats(owned, fleets, player, angular_velocity, params)
-    own_classes = {p.id: classify_own(p, threats, params) for p in owned}
+    threatened_ids = {t.planet_id for t in threats}
+    own_classes = {p.id: classify_own(p, threatened_ids, params) for p in owned}
 
     defense_moves = handle_threats(
         threats, owned, own_classes, angular_velocity, params
@@ -520,7 +525,7 @@ def _intercept_comet_linear(
     speed = fleet_speed(ships)
     eta = turns_to_arrive(sx, sy, tx, ty, ships)
     fx, fy = tx, ty
-    for _ in range(10):
+    for _ in range(ETA_CONVERGENCE_ITERS):
         fx = tx + vx * eta
         fy = ty + vy * eta
         if not (BOARD_MIN <= fx <= BOARD_MAX and BOARD_MIN <= fy <= BOARD_MAX):
@@ -575,7 +580,7 @@ def intercept(
     # Regular orbiting planet: iterate until ETA converges
     eta = turns_to_arrive(source.x, source.y, target.x, target.y, ships_to_send)
     future_x, future_y = target.x, target.y
-    for _ in range(8):
+    for _ in range(ETA_CONVERGENCE_ITERS):
         future_x, future_y = predict_planet_position(target, angular_velocity, eta)
         new_eta = turns_to_arrive(source.x, source.y, future_x, future_y, ships_to_send)
         if new_eta == eta:
