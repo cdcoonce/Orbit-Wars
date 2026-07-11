@@ -271,6 +271,22 @@ def test_multiline_stdlib_import_bundled_correctly(tmp_path):
     )
 
 
+def test_committed_submission_matches_fresh_build(built_submission):
+    """The committed submission.py must be byte-for-byte identical to a fresh build.
+
+    Catches the case where a developer edits src/ but forgets to run
+    `python build.py` — the stale bundle would silently ship to Kaggle.
+    """
+    committed = REPO_ROOT / "submission.py"
+    assert committed.exists(), (
+        "submission.py is not committed — run `python build.py` and commit the result"
+    )
+    assert built_submission == committed.read_text(), (
+        "submission.py is out of sync with src/ — "
+        "run `python build.py` and commit the result"
+    )
+
+
 def test_submission_agent_matches_src_agent(tmp_path):
     """submission.agent(obs) returns the same moves as src.agent.agent(obs) for a
     fixed turn-0 observation.
