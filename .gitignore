@@ -3,6 +3,5 @@ __pycache__/
 *.pyo
 .DS_Store
 .env
-submission.py
 trials/study.db
 trials/study.db.stale*
