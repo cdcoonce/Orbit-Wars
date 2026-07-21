@@ -30,6 +30,15 @@ cheap = "sonnet"
 frontier = "opus"
 default_tier = "cheap"
 
+# Cross-provider reviewer (afk#761/#788, live 2026-07-19). The reviewer runs on
+# OpenAI Codex while the executor stays on Claude — a genuinely independent check
+# (same-model review shares blind spots). Needs `codex login` on the fleet host.
+# `model` unset => codex's own default; the driver never passes a Claude alias to
+# codex (afk#889). This is the first Codex-reviewer pilot; validated live on a real
+# orbit-wars diff before enrollment.
+[roles.reviewer]
+runtime = "codex"
+
 # Scheduled --cycle producers. With auto_promote=true + F2 above, a pass produces
 # → auto-promotes (≤2) → drains onto afk/staging → opens the staging→main MR.
 # A human still merges staging→main (the merge gate holds).
