@@ -106,12 +106,18 @@ def run_game(
     challenger on each side) and concurrent trials stay deterministic. A game
     exceeding ``timeout`` (or erroring) is scored a 'draw'.
     """
-    future = _get_pool().submit(
-        _play_game, challenger_params, champion_params, challenger_player, seed,
-    )
+    global _pool
     try:
+        future = _get_pool().submit(
+            _play_game, challenger_params, champion_params, challenger_player, seed,
+        )
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
+        return "draw"
+    except concurrent.futures.process.BrokenProcessPool:
+        logger.exception("Worker pool broke; resetting pool and scoring as draw")
+        with _pool_lock:
+            _pool = None
         return "draw"
     except Exception:
         logger.exception("Worker raised an unexpected exception; scoring as draw")
