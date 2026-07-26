@@ -59,6 +59,34 @@ When a single `<=` (or `>=`) guard on a boundary value is decomposed into multip
    `tests/test_lookahead.py` — owner=0 holds 10 ships, owners 1 and 2 each send 6
    (combined 12 > 10, `surviving = −2`) — the planet must go neutral.
 
+## Python Conventions
+
+### Named-field records, not positionally-indexed lists
+
+A value holding a **fixed set of distinct named fields** must be represented as a
+tuple (rebuilt via named unpacking) or a small named structure (`NamedTuple` /
+`dataclass`) — never a mutable `list` mutated via positional indices like
+`agg[0]`/`agg[1]`.
+
+- **Anti-pattern**: `agg = [0, math.inf]; agg[0] += ships; agg[1] = min(agg[1], eta)`.
+  The positional `[0]`/`[1]` access is implicit — a reader can't tell what slot 0
+  means without tracing every write site — and it is edit-fragile: inserting or
+  reordering a field silently swaps the meaning of every existing index.
+- **Fix**: model the record as an explicit tuple with named unpacking, e.g.
+  `prev_ships, prev_eta = inbound_by_planet[planet.id]` then rebuild
+  `inbound_by_planet[planet.id] = (prev_ships + ships, min(prev_eta, eta))`. Named
+  unpacking is self-documenting: the field names are visible at every read and
+  write site.
+
+  _Motivating failure:_ PR #85's `detect_threats` accumulator stored a fixed
+  two-field record (summed ships, earliest ETA) as `agg: list[int]` mutated via
+  `agg[0]`/`agg[1]`. The fix replaced it with an explicit `(ships, eta)` 2-tuple.
+
+- **Scope**: this rule targets fixed-arity records of _distinct_ fields (a
+  ships-count paired with an ETA, a min/max pair, etc.), not genuine homogeneous
+  collections — a `list[Fleet]` or `list[int]` of same-meaning elements is still
+  the right type and is unaffected by this rule.
+
 ## Tuning Workflow
 
 1. Run `uv run python trials/run_trials.py` — promotes challengers to `trials/champion.py` when their win rate meets `PROMOTION_THRESHOLD` in `trials/run_trials.py` (currently ≥65%)
