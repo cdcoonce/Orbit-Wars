@@ -406,11 +406,10 @@ def plan_expansion(
                 if extra_target.id in already_sent:
                     continue
                 extra_send = max(1, int(ships_remaining * extra_fraction * agg))
-                # Don't drop below min_garrison
+                # Don't drop below min_garrison. The loop guard above ensures
+                # ships_remaining > min_garrison here, so the clamped value is >= 1.
                 if ships_remaining - extra_send < min_garrison:
                     extra_send = ships_remaining - min_garrison
-                if extra_send <= 0:
-                    break
                 extra_result = intercept(
                     source,
                     extra_target,
