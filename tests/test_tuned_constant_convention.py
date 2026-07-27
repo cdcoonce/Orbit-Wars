@@ -148,6 +148,54 @@ class TestFullConstantVerificationConvention:
         )
 
 
+class TestDocConstantPinningConvention:
+    """CLAUDE.md must generalize doc-constant pinning to a convention, not a
+    bespoke test per constant (issue #103).
+
+    PR #72 surfaced the same doc-drift failure mode twice in one PR:
+    PROMOTION_THRESHOLD (stale 55%/0.55) and N_GAMES (docs/wiki/Tuning-Pipeline.md
+    said 20 while trials/run_trials.py set 40, despite the wiki claiming the
+    constants "All live in `trials/run_trials.py`"). Each was fixed with a
+    separate hand-written pinning test. This rule requires future documented
+    constants to be either name-cited or covered by a test by default, favoring
+    one parametrized guard over N per-constant tests.
+    """
+
+    def test_convention_requires_name_cite_or_pinning_test(self):
+        """The rule must require a name-cite or an importing pinning test."""
+        text = CLAUDE_MD.read_text()
+        assert "name-cited" in text.lower() or "cite" in text.lower(), (
+            "CLAUDE.md must require documented constants to be name-cited"
+        )
+        assert "importing test" in text.lower(), (
+            "CLAUDE.md must require an importing test as the alternative to a name-cite"
+        )
+
+    def test_convention_cites_n_games_20_vs_40_drift(self):
+        """The rule must cite the PR #72 N_GAMES 20-vs-40 drift by number."""
+        text = CLAUDE_MD.read_text()
+        assert "20" in text and "40" in text, (
+            "CLAUDE.md must cite the N_GAMES 20-vs-40 drift from PR #72"
+        )
+
+    def test_convention_cites_all_live_in_wiki_comment(self):
+        """The rule must quote the wiki's 'All live in trials/run_trials.py' claim."""
+        text = CLAUDE_MD.read_text()
+        assert "All live in" in text, (
+            "CLAUDE.md must cite the wiki's 'All live in trials/run_trials.py' comment"
+        )
+
+    def test_convention_prefers_parametrized_over_per_constant(self):
+        """The rule must prefer one parametrized guard over per-constant tests."""
+        text = CLAUDE_MD.read_text().lower()
+        assert "parametrized" in text, (
+            "CLAUDE.md must prefer a parametrized test over per-constant tests"
+        )
+        assert "per-constant" in text or "per constant" in text, (
+            "CLAUDE.md must name the per-constant-test alternative it's discouraging"
+        )
+
+
 class TestNGamesLivingDocConsistency:
     """No living doc should cite N_GAMES with a stale value (issue #150).
 
