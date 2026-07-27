@@ -303,6 +303,44 @@ def test_detect_threats_segment_catches_between_samples():
     )
 
 
+def test_detect_threats_hoists_planet_position_prediction(monkeypatch):
+    # predict_planet_position depends only on (planet, t), not on the enemy fleet,
+    # so it must be computed once per (planet, t) and reused across every fleet —
+    # not recomputed for each fleet. With F=3 fleets, W=threat_eta_window, P=2
+    # planets, call count must be W*P, not F*W*P.
+    import src.strategy as strategy
+
+    planet_a = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    planet_b = make_planet(id=2, owner=0, x=-90.0, y=50.0)
+    # All fleets head away (angle=pi) from both planets so no match ever occurs,
+    # guaranteeing the full t-range is walked for every planet with no early exit.
+    fleet_a = make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=math.pi, ships=10)
+    fleet_b = make_fleet(id=1, owner=1, x=72.0, y=50.0, angle=math.pi, ships=12)
+    fleet_c = make_fleet(id=2, owner=1, x=74.0, y=50.0, angle=math.pi, ships=14)
+
+    calls = []
+    original = strategy.predict_planet_position
+
+    def spy(planet, av, t):
+        calls.append((planet.id, t))
+        return original(planet, av, t)
+
+    monkeypatch.setattr(strategy, "predict_planet_position", spy)
+
+    strategy.detect_threats(
+        [planet_a, planet_b],
+        [fleet_a, fleet_b, fleet_c],
+        player=0,
+        angular_velocity=0.03,
+    )
+
+    window = PARAMS["threat_eta_window"]
+    assert len(calls) == window * 2, (
+        f"expected {window * 2} predict_planet_position calls (W*P, independent "
+        f"of fleet count), got {len(calls)}"
+    )
+
+
 def test_handle_threats_scales_against_combined_incoming():
     # Downstream: feeding two converging fleets through detect_threats yields a single
     # threat whose summed incoming_ships drives magnitude-aware reinforcement — handle_threats
