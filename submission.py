@@ -758,6 +758,14 @@ def detect_threats(
     # planet_id -> (summed_ships, earliest_eta). An explicit 2-tuple keeps each
     # slot self-documenting (no positional [0]/[1] mutation to accidentally swap).
     inbound_by_planet: dict[int, tuple[int, int]] = {}
+    # (planet.id, t) -> (px, py). predict_planet_position depends only on
+    # (planet, t), not on the enemy fleet, so precompute it once per planet/t
+    # here rather than recomputing it for every enemy fleet in the loop below.
+    planet_positions: dict[tuple[int, int], tuple[float, float]] = {
+        (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
+        for t in range(1, params["threat_eta_window"] + 1)
+        for planet in my_planets
+    }
     for fleet in fleets:
         if fleet.owner == player:
             continue
@@ -779,7 +787,7 @@ def detect_threats(
                 # (lookahead sim-spawned sentinels) are not collapsed.
                 if (id(fleet), planet.id) in seen:
                     continue
-                px, py = predict_planet_position(planet, angular_velocity, t - 1)
+                px, py = planet_positions[(planet.id, t)]
                 if _min_dist_pt_to_segment(px, py, fx0, fy0, fx1, fy1) < params["threat_radius"]:
                     seen.add((id(fleet), planet.id))
                     if planet.id in inbound_by_planet:
