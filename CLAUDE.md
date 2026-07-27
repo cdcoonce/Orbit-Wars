@@ -119,7 +119,7 @@ To re-tune:
 
 ## Doc-Invariant Test Conventions
 
-Tests that assert "no doc references the old value X" must follow three rules (see issue #97 for the PR #72 failure modes that motivated this):
+Tests that assert "no doc references the old value X" must follow four rules (see issue #97 for the PR #72 failure modes that motivated this):
 
 1. **Match all value representations.** Check every encoding of the guarded value
    — percent form (e.g. `65%`), decimal form (e.g. `0.65`), and any other
@@ -139,3 +139,23 @@ Tests that assert "no doc references the old value X" must follow three rules (s
    in the test explaining the limitation and what manual action is required. Do not
    silently exclude ungovernable trees; document the gap so maintainers know to fix
    those files by hand.
+
+4. **Any documented constant value must be name-cited or pinned by an importing test.**
+   A doc that quotes the literal value of a constant exported from
+   `trials/run_trials.py` or `src/config.py` `PARAMS` — rather than citing the
+   constant by name — must be covered by a doc-invariant test that imports the
+   constant from its source module and asserts the documented value matches.
+   Prefer a single parametrized test that iterates the known source-of-truth
+   constants over N hand-written per-constant tests, so a newly-documented
+   constant is guarded by default instead of requiring someone to remember to
+   author another bespoke test.
+
+   _Motivating failure:_ PR #72 surfaced this same failure mode twice in one PR.
+   `docs/wiki/Tuning-Pipeline.md` said `N_GAMES` was `20` while
+   `trials/run_trials.py` set it to `40`, even though the wiki's own Constants
+   table comment claimed the constants "All live in `trials/run_trials.py`" —
+   that comment promised centralization but nothing actually verified the
+   documented number against the code. `test_docs_promotion_threshold.py` and
+   `test_tuned_constant_convention.py` fixed the `PROMOTION_THRESHOLD` and
+   `N_GAMES` drift by hand, one bespoke test per constant; this rule generalizes
+   so the next drifted constant doesn't need its own hand-written guard.
