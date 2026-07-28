@@ -107,3 +107,15 @@ def turns_to_arrive(
     d = distance(from_x, from_y, target_x, target_y)
     speed = fleet_speed(num_ships)
     return max(1, math.ceil(d / speed))
+
+
+def is_enemy(owner: int, player: int) -> bool:
+    """True for any non-neutral, non-player owner (neutral == -1)."""
+    return owner not in (-1, player)
+
+
+def sum_owned(units, player: int, attr: str = "ships", enemy: bool = False) -> int:
+    """Sum `attr` over units owned by `player`, or by any enemy when enemy=True."""
+    if enemy:
+        return sum(getattr(u, attr) for u in units if is_enemy(u.owner, player))
+    return sum(getattr(u, attr) for u in units if u.owner == player)

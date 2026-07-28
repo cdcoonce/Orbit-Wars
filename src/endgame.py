@@ -1,7 +1,10 @@
+from .math_utils import sum_owned
+
+
 def total_ships(planets: list, fleets: list, player: int) -> int:
     """Count combined ships for player across all planets and in-transit fleets."""
-    planet_ships = sum(p.ships for p in planets if p.owner == player)
-    fleet_ships = sum(f.ships for f in fleets if f.owner == player)
+    planet_ships = sum_owned(planets, player)
+    fleet_ships = sum_owned(fleets, player)
     return planet_ships + fleet_ships
 
 
@@ -22,13 +25,10 @@ def should_play_defensive(
     if turn < threshold_turn:
         return False
 
-    # Sum every enemy's ships — across all non-player, non-neutral owners — over
-    # both planets and in-transit fleets (same planets+fleets shape as
-    # total_ships above; the owner filter matches score_state in lookahead.py).
-    enemy_ships = sum(
-        p.ships for p in planets if p.owner not in (-1, player)
-    ) + sum(
-        f.ships for f in fleets if f.owner not in (-1, player)
+    # Sum every enemy's ships via the shared sum_owned helper (src/math_utils.py),
+    # across both planets and in-transit fleets.
+    enemy_ships = sum_owned(planets, player, enemy=True) + sum_owned(
+        fleets, player, enemy=True
     )
 
     if enemy_ships == 0:

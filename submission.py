@@ -113,6 +113,18 @@ def turns_to_arrive(
     speed = fleet_speed(num_ships)
     return max(1, math.ceil(d / speed))
 
+
+def is_enemy(owner: int, player: int) -> bool:
+    """True for any non-neutral, non-player owner (neutral == -1)."""
+    return owner not in (-1, player)
+
+
+def sum_owned(units, player: int, attr: str = "ships", enemy: bool = False) -> int:
+    """Sum `attr` over units owned by `player`, or by any enemy when enemy=True."""
+    if enemy:
+        return sum(getattr(u, attr) for u in units if is_enemy(u.owner, player))
+    return sum(getattr(u, attr) for u in units if u.owner == player)
+
 # --- src/config.py ---
 PARAMS = {
     # Own planet classification
@@ -630,8 +642,8 @@ def effective_production(planet: Planet, comet_ids: set, multiplier: float) -> f
 # --- src/endgame.py ---
 def total_ships(planets: list, fleets: list, player: int) -> int:
     """Count combined ships for player across all planets and in-transit fleets."""
-    planet_ships = sum(p.ships for p in planets if p.owner == player)
-    fleet_ships = sum(f.ships for f in fleets if f.owner == player)
+    planet_ships = sum_owned(planets, player)
+    fleet_ships = sum_owned(fleets, player)
     return planet_ships + fleet_ships
 
 
@@ -652,13 +664,10 @@ def should_play_defensive(
     if turn < threshold_turn:
         return False
 
-    # Sum every enemy's ships — across all non-player, non-neutral owners — over
-    # both planets and in-transit fleets (same planets+fleets shape as
-    # total_ships above; the owner filter matches score_state in lookahead.py).
-    enemy_ships = sum(
-        p.ships for p in planets if p.owner not in (-1, player)
-    ) + sum(
-        f.ships for f in fleets if f.owner not in (-1, player)
+    # Sum every enemy's ships via the shared sum_owned helper (src/math_utils.py),
+    # across both planets and in-transit fleets.
+    enemy_ships = sum_owned(planets, player, enemy=True) + sum_owned(
+        fleets, player, enemy=True
     )
 
     if enemy_ships == 0:
