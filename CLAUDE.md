@@ -104,6 +104,27 @@ Whenever a tuned constant changes value (e.g. `PROMOTION_THRESHOLD` or `N_GAMES`
 3. **Exemption**: intentionally-dated snapshots in `archive/` or `superpowers/` preserve the historical figure on purpose and need not be updated.
 4. **When editing a doc section that enumerates constants from a single source file, re-verify ALL enumerated constants against that file in the same edit** — not just the one you came to change. Acceptance-criteria bullet lists and inline plan-doc numbers are in scope, not just headline prose values (both drifted in PR #72 even after the prose was fixed). For example, fixing `PROMOTION_THRESHOLD` in a section that also lists `N_GAMES` from `trials/run_trials.py` requires re-checking `N_GAMES` in the same edit; leaving adjacent constants unverified contradicts the cite-by-name rule above.
 
+### Semantics-change re-tune rule
+
+Any PR that changes simulator/scoring/threat-detection semantics in a way that
+alters what a tuned `PARAMS` entry (`src/config.py`) affects MUST take three
+actions:
+
+1. **Add an inline coupling note** at the constant's definition in `src/config.py`
+   explaining what changed and why the constant's meaning shifted.
+2. **Document the re-tune workflow**, including `rm trials/study.db` to clear
+   stale Bayesian priors before re-running `uv run python trials/run_trials.py`.
+3. **Explicitly flag the affected params as not-for-promotion** until re-tuned —
+   a challenger built on stale semantics must not be promoted, even if it clears
+   `PROMOTION_THRESHOLD`.
+
+_Motivating example:_ PR #85 changed `detect_threats` to aggregate converging
+enemy fleets per planet before defense scaling, which changed
+`defense_incoming_multiplier` (`src/config.py`) from multiplying a single
+fleet's incoming ships to multiplying the _combined_ incoming ships across all
+attackers. See "Pending re-tune: multi-fleet defense aggregation" below for the
+concrete instance of this rule currently in effect.
+
 ### Pending re-tune: multi-fleet defense aggregation
 
 Inbound fleets are now aggregated per planet before defense scaling, so
