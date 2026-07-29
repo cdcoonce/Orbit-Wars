@@ -25,18 +25,65 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 60
 
+# Cap on consecutive BrokenProcessPool rebuilds. Counted per *broken executor*,
+# not per exception: one hard worker death makes every in-flight run_game call
+# raise BrokenProcessPool, and those duplicate reports must not consume the
+# budget. A crash that recurs this many times across freshly-built pools is
+# treated as deterministically fatal (e.g. a param value that reliably segfaults
+# the engine) rather than a one-off OOM/SIGKILL, so we stop spinning up
+# replacement pools and just keep scoring draws until a human notices the log.
+MAX_CONSECUTIVE_POOL_REBUILDS = 3
+
 # Lazily-created shared worker pool (see module docstring). Guarded so the
 # Optuna threads that call run_game concurrently all share one pool.
 _pool: concurrent.futures.ProcessPoolExecutor | None = None
 _pool_lock = threading.Lock()
+_consecutive_pool_rebuilds = 0
+_pool_rebuilds_exhausted = False
 
 
-def _get_pool() -> concurrent.futures.ProcessPoolExecutor:
+def _get_pool() -> concurrent.futures.ProcessPoolExecutor | None:
+    """Return the shared pool, building a fresh one if a previous one broke.
+
+    Returns None once the rebuild budget is exhausted, so callers score draws
+    instead of resubmitting to a dead executor.
+    """
     global _pool
     with _pool_lock:
+        if _pool_rebuilds_exhausted:
+            return None
         if _pool is None:
             _pool = concurrent.futures.ProcessPoolExecutor()
         return _pool
+
+
+def _discard_broken_pool(broken: concurrent.futures.ProcessPoolExecutor) -> None:
+    """Drop ``broken`` so the next :func:`_get_pool` call builds a fresh executor.
+
+    Only the caller that reports the executor currently installed counts against
+    the rebuild budget; sibling threads reporting the same dead pool are ignored,
+    so they neither exhaust the budget nor discard its replacement.
+    """
+    global _pool, _consecutive_pool_rebuilds, _pool_rebuilds_exhausted
+    with _pool_lock:
+        if _pool is not broken:
+            return
+        _pool = None
+        _consecutive_pool_rebuilds += 1
+        if _consecutive_pool_rebuilds > MAX_CONSECUTIVE_POOL_REBUILDS:
+            _pool_rebuilds_exhausted = True
+            logger.error(
+                "Worker pool broke %d times in a row (limit %d); giving up on "
+                "rebuilding to avoid spinning forever on a deterministically-"
+                "fatal worker — every remaining game scores as a draw",
+                _consecutive_pool_rebuilds, MAX_CONSECUTIVE_POOL_REBUILDS,
+            )
+        else:
+            logger.warning(
+                "Worker pool broke; rebuilding pool (attempt %d/%d) and "
+                "scoring this game as a draw",
+                _consecutive_pool_rebuilds, MAX_CONSECUTIVE_POOL_REBUILDS,
+            )
 
 
 def make_agent(params: dict):
@@ -106,18 +153,22 @@ def run_game(
     challenger on each side) and concurrent trials stay deterministic. A game
     exceeding ``timeout`` (or erroring) is scored a 'draw'.
     """
-    global _pool
+    global _consecutive_pool_rebuilds
+    pool = _get_pool()
+    if pool is None:
+        return "draw"
     try:
-        future = _get_pool().submit(
+        future = pool.submit(
             _play_game, challenger_params, champion_params, challenger_player, seed,
         )
-        return future.result(timeout=timeout)
+        result = future.result(timeout=timeout)
+        with _pool_lock:
+            _consecutive_pool_rebuilds = 0
+        return result
     except concurrent.futures.TimeoutError:
         return "draw"
     except concurrent.futures.process.BrokenProcessPool:
-        logger.exception("Worker pool broke; resetting pool and scoring as draw")
-        with _pool_lock:
-            _pool = None
+        _discard_broken_pool(pool)
         return "draw"
     except Exception:
         logger.exception("Worker raised an unexpected exception; scoring as draw")

@@ -1,5 +1,6 @@
 """Tests for trials/game_runner.py and trials/run_trials.py."""
 import concurrent.futures
+import logging
 import math
 import os
 from unittest.mock import MagicMock, patch
@@ -137,6 +138,121 @@ class TestRunGameTimeout:
             result = run_game(PARAMS, PARAMS)
 
         assert result == "draw"
+
+
+# ---------------------------------------------------------------------------
+# run_game — self-healing pool after BrokenProcessPool
+# ---------------------------------------------------------------------------
+
+class TestRunGameBrokenPoolSelfHeals:
+    def test_poisoned_pool_is_replaced_and_next_call_gets_real_result(self, caplog):
+        """A poisoned (broken) pool must be discarded so the next run_game call is
+        served by a *different* executor object that can actually play a game."""
+        import trials.game_runner as game_runner
+
+        poisoned_pool = MagicMock()
+        poisoned_pool.submit.side_effect = concurrent.futures.process.BrokenProcessPool(
+            "worker process died",
+        )
+
+        fresh_future = MagicMock()
+        fresh_future.result.return_value = "champion"
+        fresh_pool = MagicMock()
+        fresh_pool.submit.return_value = fresh_future
+
+        game_runner._pool = poisoned_pool
+        game_runner._consecutive_pool_rebuilds = 0
+        game_runner._pool_rebuilds_exhausted = False
+        try:
+            with patch(
+                "trials.game_runner.concurrent.futures.ProcessPoolExecutor",
+                return_value=fresh_pool,
+            ), caplog.at_level(logging.WARNING, logger="trials.game_runner"):
+                first_result = game_runner.run_game(PARAMS, PARAMS)
+                assert first_result == "draw"
+                assert game_runner._pool is not poisoned_pool
+
+                second_result = game_runner.run_game(PARAMS, PARAMS)
+                assert second_result == "champion"
+                assert game_runner._pool is fresh_pool
+        finally:
+            game_runner._pool = None
+            game_runner._consecutive_pool_rebuilds = 0
+            game_runner._pool_rebuilds_exhausted = False
+
+        # The rebuild is announced on its own log path, not the generic
+        # "Worker raised an unexpected exception" fallback.
+        assert "rebuild" in caplog.text.lower()
+        assert "unexpected exception" not in caplog.text.lower()
+
+    def test_repeated_unrecoverable_breaks_stop_rebuilding(self):
+        """A deterministically-fatal worker must not cause the pool to be rebuilt
+        forever — rebuild attempts are capped."""
+        import trials.game_runner as game_runner
+
+        always_broken_pool = MagicMock()
+        always_broken_pool.submit.side_effect = concurrent.futures.process.BrokenProcessPool(
+            "dead",
+        )
+
+        construct_calls = []
+
+        def fake_ctor(*args, **kwargs):
+            construct_calls.append((args, kwargs))
+            return always_broken_pool
+
+        game_runner._pool = always_broken_pool
+        game_runner._consecutive_pool_rebuilds = 0
+        game_runner._pool_rebuilds_exhausted = False
+        try:
+            with patch(
+                "trials.game_runner.concurrent.futures.ProcessPoolExecutor",
+                side_effect=fake_ctor,
+            ):
+                for _ in range(game_runner.MAX_CONSECUTIVE_POOL_REBUILDS + 5):
+                    result = game_runner.run_game(PARAMS, PARAMS)
+                    assert result == "draw"
+                # The dead executor is never left installed, even once rebuilds stop.
+                assert game_runner._pool is not always_broken_pool
+        finally:
+            game_runner._pool = None
+            game_runner._consecutive_pool_rebuilds = 0
+            game_runner._pool_rebuilds_exhausted = False
+
+        assert len(construct_calls) <= game_runner.MAX_CONSECUTIVE_POOL_REBUILDS
+
+    def test_concurrent_reports_of_one_broken_pool_count_as_one_rebuild(self):
+        """Optuna's threads all see BrokenProcessPool from the *same* dead executor.
+
+        Those duplicate reports must not each consume rebuild budget (which would
+        strand the dead pool in place) nor discard the replacement pool.
+        """
+        import trials.game_runner as game_runner
+
+        broken_pool = MagicMock()
+        replacement_pool = MagicMock()
+
+        game_runner._pool = broken_pool
+        game_runner._consecutive_pool_rebuilds = 0
+        game_runner._pool_rebuilds_exhausted = False
+        try:
+            game_runner._discard_broken_pool(broken_pool)
+            assert game_runner._pool is None
+            assert game_runner._consecutive_pool_rebuilds == 1
+
+            # A sibling thread reports the same dead executor after another
+            # thread has already installed a replacement.
+            game_runner._pool = replacement_pool
+            for _ in range(game_runner.MAX_CONSECUTIVE_POOL_REBUILDS + 5):
+                game_runner._discard_broken_pool(broken_pool)
+
+            assert game_runner._pool is replacement_pool
+            assert game_runner._consecutive_pool_rebuilds == 1
+            assert game_runner._pool_rebuilds_exhausted is False
+        finally:
+            game_runner._pool = None
+            game_runner._consecutive_pool_rebuilds = 0
+            game_runner._pool_rebuilds_exhausted = False
 
 
 # ---------------------------------------------------------------------------
