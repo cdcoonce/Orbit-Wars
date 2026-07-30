@@ -87,9 +87,28 @@ tuple (rebuilt via named unpacking) or a small named structure (`NamedTuple` /
   collections — a `list[Fleet]` or `list[int]` of same-meaning elements is still
   the right type and is unaffected by this rule.
 
+## Cite Code-Derived Values by Name
+
+Living docs — everything outside the dated `archive/` and `superpowers/` snapshots — must
+cite a code-derived value by its symbol name and source file (e.g. "see `PROMOTION_THRESHOLD`
+in `trials/run_trials.py`") rather than transcribing the number. When a number genuinely must
+appear (e.g. a worked example), annotate it with the source symbol so a drift scan can find it.
+
+**Value classes in scope**: `PARAMS` defaults (`src/config.py`), tuning constants
+(`trials/run_trials.py`), test counts, and formula constants.
+
+**Every representation is in scope**: prose, bullet lists, tables, and acceptance-criteria
+checklists are all equally in scope — not just headline prose. PR #72 fixed its prose but left
+an acceptance-criteria bullet hardcoding the stale `PROMOTION_THRESHOLD` win-rate figure
+alongside the already-corrected prose above it.
+
+**Exemption**: intentionally-dated snapshots in `archive/` and `superpowers/` preserve
+historical figures on purpose, as a record of what was true at the time, and are exempt from
+this rule.
+
 ## Tuning Workflow
 
-1. Run `uv run python trials/run_trials.py` — promotes challengers to `trials/champion.py` when their win rate meets `PROMOTION_THRESHOLD` in `trials/run_trials.py` (currently ≥65%)
+1. Run `uv run python trials/run_trials.py` — promotes challengers to `trials/champion.py` when their win rate meets `PROMOTION_THRESHOLD` in `trials/run_trials.py`
 2. Copy winning params into `src/config.py` PARAMS
 3. Run `python build.py` then submit
 
@@ -100,7 +119,7 @@ After any significant simulator change: **delete `trials/study.db` first** to cl
 Whenever a tuned constant changes value (e.g. `PROMOTION_THRESHOLD` or `N_GAMES`):
 
 1. **grep the entire repo** for the old value in every representation — both the percent form (e.g. `65%`) and the decimal form (e.g. `0.65`) — and update every live reference, including files under `.claude/docs/`.
-2. **Cite constants by name** in new or edited docs (e.g. "see `PROMOTION_THRESHOLD` in `trials/run_trials.py`") instead of hardcoding the number, so docs cannot silently drift when the value changes.
+2. **Cite constants by name** — see [Cite Code-Derived Values by Name](#cite-code-derived-values-by-name) above; this rule is a specific instance of that broader convention.
 3. **Exemption**: intentionally-dated snapshots in `archive/` or `superpowers/` preserve the historical figure on purpose and need not be updated.
 4. **When editing a doc section that enumerates constants from a single source file, re-verify ALL enumerated constants against that file in the same edit** — not just the one you came to change. Acceptance-criteria bullet lists and inline plan-doc numbers are in scope, not just headline prose values (both drifted in PR #72 even after the prose was fixed). For example, fixing `PROMOTION_THRESHOLD` in a section that also lists `N_GAMES` from `trials/run_trials.py` requires re-checking `N_GAMES` in the same edit; leaving adjacent constants unverified contradicts the cite-by-name rule above.
 
