@@ -254,6 +254,35 @@ def _blended_best(candidates: list, blend: float):
     return best_scored[1], best_scored[2], best_scored[3], best_scored[4]
 
 
+def _try_send(
+    source: Planet,
+    target: Planet,
+    ships: int,
+    angular_velocity: float,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
+    *,
+    validate: bool = False,
+) -> list | None:
+    """Build a ``[source.id, angle, ships]`` move, or ``None`` if un-sendable.
+
+    Runs ``intercept`` to find the aim point and returns ``None`` when it can't
+    find one. When ``validate=True``, also rejects when ``can_capture`` fails or
+    the path crosses the sun.
+    """
+    future_x, future_y, eta = intercept(
+        source, target, angular_velocity, ships, comet_ids, comet_velocities
+    )
+    if future_x is None:
+        return None
+    if validate:
+        if not can_capture(ships, target, eta):
+            return None
+        if path_crosses_sun(source.x, source.y, future_x, future_y):
+            return None
+    return [source.id, angle_to_target(source.x, source.y, future_x, future_y), ships]
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -387,19 +416,23 @@ def plan_expansion(
         if not candidates:
             continue
 
-        best_target, best_fraction, best_fx, best_fy = _blended_best(candidates, blend)
+        best_target, best_fraction, _, _ = _blended_best(candidates, blend)
 
-        # Primary fleet — geometry reused from the scoring-loop intercept (best_fx, best_fy),
-        # so no redundant intercept() call here.
+        # Primary fleet — the candidate was already validated during scoring, so
+        # only the intercept is re-checked here (validate=False).
         ships_remaining = source.ships
         first_send = max(1, int(ships_remaining * best_fraction * agg))
-        moves.append(
-            [
-                source.id,
-                angle_to_target(source.x, source.y, best_fx, best_fy),
-                first_send,
-            ]
+        move = _try_send(
+            source,
+            best_target,
+            first_send,
+            angular_velocity,
+            comet_ids,
+            comet_velocities,
         )
+        if move is None:
+            continue
+        moves.append(move)
         ships_remaining -= first_send
 
         # Multi-target: drain excess ships to lower-scored candidates
@@ -418,24 +451,18 @@ def plan_expansion(
                 # ships_remaining > min_garrison here, so the clamped value is >= 1.
                 if ships_remaining - extra_send < min_garrison:
                     extra_send = ships_remaining - min_garrison
-                extra_result = intercept(
+                extra_move = _try_send(
                     source,
                     extra_target,
-                    angular_velocity,
                     extra_send,
+                    angular_velocity,
                     comet_ids,
                     comet_velocities,
+                    validate=True,
                 )
-                if extra_result[0] is None:
+                if extra_move is None:
                     continue
-                ex, ey, ex_eta = extra_result
-                if not can_capture(extra_send, extra_target, ex_eta):
-                    continue
-                if path_crosses_sun(source.x, source.y, ex, ey):
-                    continue
-                moves.append(
-                    [source.id, angle_to_target(source.x, source.y, ex, ey), extra_send]
-                )
+                moves.append(extra_move)
                 ships_remaining -= extra_send
                 already_sent.add(extra_target.id)
 

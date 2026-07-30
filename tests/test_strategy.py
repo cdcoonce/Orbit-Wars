@@ -8,6 +8,7 @@ from src.strategy import aggression
 from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
+from src.strategy import _try_send
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
@@ -106,6 +107,45 @@ def test_intercept_stationary_target_returns_current_position():
 
     assert future_x == target.x
     assert future_y == target.y
+
+
+# --- _try_send ---
+
+
+def test_try_send_valid_send_returns_move():
+    source = make_planet(id=0, x=50.0, y=10.0)
+    target = make_planet(id=1, owner=-1, x=70.0, y=50.0, ships=5)
+    move = _try_send(source, target, 20, angular_velocity=0.03)
+    assert move is not None
+    future_x, future_y, _eta = intercept(source, target, 0.03, 20)
+    expected_angle = angle_to_target(source.x, source.y, future_x, future_y)
+    assert move == [source.id, expected_angle, 20]
+
+
+def test_try_send_none_when_uninterceptable():
+    # Comet target with no velocity data yet — intercept() returns (None, None, None).
+    source = make_planet(id=0, x=10.0, y=50.0)
+    comet = make_planet(id=5, owner=-1, x=60.0, y=50.0, ships=0)
+    move = _try_send(
+        source, comet, 20, angular_velocity=0.03, comet_ids={5}, comet_velocities={}
+    )
+    assert move is None
+
+
+def test_try_send_validate_none_on_can_capture_failure():
+    source = make_planet(id=0, x=50.0, y=10.0)
+    enemy = make_planet(id=1, owner=1, x=70.0, y=50.0, ships=100, production=5)
+    move = _try_send(source, enemy, 1, angular_velocity=0.03, validate=True)
+    assert move is None
+
+
+def test_try_send_validate_none_on_sun_crossing_path():
+    # x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50) → static,
+    # so intercept aims at the current position — a straight line through the sun's center.
+    source = make_planet(id=0, x=10.0, y=50.0)
+    target = make_planet(id=1, owner=-1, x=90.0, y=50.0, ships=0)
+    move = _try_send(source, target, 10, angular_velocity=0.03, validate=True)
+    assert move is None
 
 
 # --- classify_own ---
