@@ -1420,6 +1420,63 @@ def test_plan_expansion_candidates_comment_lists_six_fields():
         )
 
 
+# --- _build_opponent_fn ---
+
+
+def test_build_opponent_fn_none_when_blend_zero():
+    from src.strategy import _build_opponent_fn
+
+    planets = [make_planet(id=0, owner=0, ships=20)]
+    fleets = []
+    result = _build_opponent_fn(
+        planets, fleets, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.0
+    )
+    assert result is None
+
+
+def test_build_opponent_fn_none_when_inputs_missing():
+    from src.strategy import _build_opponent_fn
+
+    result = _build_opponent_fn(
+        None, None, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.9
+    )
+    assert result is None
+
+
+def test_build_opponent_fn_returns_frozen_plan_moves_result():
+    from src.strategy import _build_opponent_fn, build_state, plan_moves
+
+    planets = [
+        make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20),
+        make_planet(id=1, owner=1, x=30.0, y=50.0, ships=20),
+        make_planet(id=2, owner=-1, x=50.0, y=90.0, ships=5),
+    ]
+    fleets = []
+    turn = 0
+    player = 0
+    angular_velocity = 0.03
+
+    opponent_fn = _build_opponent_fn(
+        planets, fleets, turn, player, angular_velocity, PARAMS, blend=0.9
+    )
+    assert opponent_fn is not None
+
+    opp_player = 1 - player
+    greedy_params_opp = {**PARAMS, "lookahead_blend": 0.0}
+    base = build_state(planets, fleets, turn)
+    expected_moves = plan_moves(
+        base.planets,
+        base.fleets,
+        opp_player,
+        angular_velocity,
+        turn=turn,
+        params=greedy_params_opp,
+        initial_planets=planets,
+    )
+
+    assert opponent_fn(state=None) == expected_moves
+
+
 # --- ETA_CONVERGENCE_ITERS shared constant ---
 
 

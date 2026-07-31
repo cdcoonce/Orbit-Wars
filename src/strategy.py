@@ -254,6 +254,37 @@ def _blended_best(candidates: list, blend: float):
     return best_scored[1], best_scored[2], best_scored[3], best_scored[4]
 
 
+def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, params, blend):
+    """Return a frozen opponent_fn (state -> precomputed moves) for lookahead, or None
+    when blend==0 or inputs are missing. Forces blend=0 in the opponent plan to terminate recursion.
+
+    Precompute the opponent's frozen response ONCE per plan_expansion call. Every
+    input (initial_planets, fleets, turn, player, angular_velocity, params) is
+    loop-invariant, so the result is identical for every source planet — hoisted
+    out of the `for source in owned:` loop in plan_expansion to avoid recomputing a
+    full opponent plan_moves per owned planet every turn (the lookahead path runs
+    with lookahead_blend≈0.97 in real games and across self-play). Forces blend=0 to
+    prevent recursive lookahead (recursion termination).
+    """
+    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
+    if not use_lookahead:
+        return None
+
+    opp_player = 1 - player
+    greedy_params_opp = {**params, "lookahead_blend": 0.0}
+    opp_base = build_state(initial_planets, fleets, turn)
+    opp_moves = plan_moves(
+        opp_base.planets,
+        opp_base.fleets,
+        opp_player,
+        angular_velocity,
+        turn=turn,
+        params=greedy_params_opp,
+        initial_planets=initial_planets,
+    )
+    return lambda state, m=opp_moves: m  # noqa: E731
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -275,30 +306,9 @@ def plan_expansion(
     dist_power = _effective_distance_power(turn, params)
     blend = params.get("lookahead_blend", 0.0)
     use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
-
-    # Precompute the opponent's frozen response ONCE per plan_expansion call. Every
-    # input (initial_planets, fleets, turn, player, angular_velocity, params) is
-    # loop-invariant, so the result is identical for every source planet — hoisted
-    # out of the `for source in owned:` loop below to avoid recomputing a full
-    # opponent plan_moves per owned planet every turn (the lookahead path runs with
-    # lookahead_blend≈0.97 in real games and across self-play). Forces blend=0 to
-    # prevent recursive lookahead (recursion termination).
-    if use_lookahead:
-        opp_player = 1 - player
-        greedy_params_opp = {**params, "lookahead_blend": 0.0}
-        _opp_base = build_state(initial_planets, fleets, turn)
-        _opp_moves = plan_moves(
-            _opp_base.planets,
-            _opp_base.fleets,
-            opp_player,
-            angular_velocity,
-            turn=turn,
-            params=greedy_params_opp,
-            initial_planets=initial_planets,
-        )
-        opponent_fn = lambda state, m=_opp_moves: m  # noqa: E731
-    else:
-        opponent_fn = None
+    opponent_fn = _build_opponent_fn(
+        initial_planets, fleets, turn, player, angular_velocity, params, blend
+    )
 
     for source in owned:
         src_class = own_classes.get(source.id, "OUTPOST")
