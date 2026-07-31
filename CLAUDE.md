@@ -157,6 +157,23 @@ To re-tune:
 3. Copy the winning params into `src/config.py` PARAMS
 4. `python build.py` then submit
 
+### Pending re-tune: lookahead launch-before-rotation ordering
+
+`step_state` and `step_state_multi` (`src/lookahead.py`) now launch fleets
+before production and planet rotation, matching the engine's step order
+(`orbit_wars.py` interpreter: Fleet Launch precedes Production and Planet
+Movement & Sweep). Previously the simulator rotated the source planet first, so
+every simulated launch angle was applied from a position the engine would never
+use. This changes the trajectories the lookahead scores, which changes what the
+`lookahead_turns`, `lookahead_blend`, and `lookahead_ship_weight` params
+(`src/config.py`) were tuned against. Those params **must NOT be promoted until
+re-tuned**. To re-tune:
+
+1. `rm trials/study.db` — clear stale Bayesian priors
+2. `uv run python trials/run_trials.py` — run fresh Optuna self-play tuning
+3. Copy the winning params into `src/config.py` PARAMS
+4. `python build.py` then submit
+
 ## Doc-Invariant Test Conventions
 
 Tests that assert "no doc references the old value X" must follow four rules (see issue #97 for the PR #72 failure modes that motivated this):

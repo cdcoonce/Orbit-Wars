@@ -46,6 +46,14 @@ PARAMS = {
     "endgame_threshold_turn": 445,
     "endgame_lead_margin": 1.6098319822666625,
     # Lookahead
+    # NOTE: step_state/step_state_multi (src/lookahead.py) now launch fleets
+    # before production and planet rotation, matching the engine's step order —
+    # simulated launch angles previously applied from a post-rotation position
+    # the engine never used. This changes the trajectories the lookahead scores.
+    # These three params were tuned against the old ordering — do NOT promote
+    # until re-tuned. See CLAUDE.md "Pending re-tune: lookahead launch-before-
+    # rotation ordering" (rm trials/study.db → run_trials.py → copy winners here
+    # → build.py).
     "lookahead_turns": 5,
     "lookahead_blend": 0.9032151725931578,
     "lookahead_ship_weight": 0.07240125896738046,

@@ -162,6 +162,14 @@ PARAMS = {
     "endgame_threshold_turn": 445,
     "endgame_lead_margin": 1.6098319822666625,
     # Lookahead
+    # NOTE: step_state/step_state_multi (src/lookahead.py) now launch fleets
+    # before production and planet rotation, matching the engine's step order —
+    # simulated launch angles previously applied from a post-rotation position
+    # the engine never used. This changes the trajectories the lookahead scores.
+    # These three params were tuned against the old ordering — do NOT promote
+    # until re-tuned. See CLAUDE.md "Pending re-tune: lookahead launch-before-
+    # rotation ordering" (rm trials/study.db → run_trials.py → copy winners here
+    # → build.py).
     "lookahead_turns": 5,
     "lookahead_blend": 0.9032151725931578,
     "lookahead_ship_weight": 0.07240125896738046,
@@ -349,18 +357,11 @@ def step_state(
     Returns:
         The mutated GameState after one simulated turn.
     """
-    # --- Step 1: Production ---
-    for planet in state.planets:
-        if planet.owner != -1:
-            planet.ships += planet.production
-
-    # --- Step 2: Rotate orbiting planets ---
-    for sim_planet in state.planets:
-        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
-        sim_planet.x = new_x
-        sim_planet.y = new_y
-
-    # --- Step 3: Launch fleet from move ---
+    # --- Step 1: Launch fleet from move ---
+    # Matches the engine's step order (orbit_wars.py interpreter): Fleet Launch
+    # happens before Production and Planet Movement & Sweep, so the launch angle
+    # is applied from the source planet's PRE-rotation position — exactly the
+    # coordinates plan_expansion used to compute the angle in the first place.
     if move is not None:
         planet_id, angle, ships_to_send = move[0], move[1], move[2]
         source = next((p for p in state.planets if p.id == planet_id), None)
@@ -375,7 +376,7 @@ def step_state(
             )
             state.fleets.append(new_fleet)
 
-    # --- Step 3b: Opponent fleet launches ---
+    # --- Step 1b: Opponent fleet launches ---
     if opponent_fn is not None:
         opp_moves = opponent_fn(state)
         for opp_move in opp_moves:
@@ -392,6 +393,17 @@ def step_state(
                         ships=ships,
                     )
                 )
+
+    # --- Step 2: Production ---
+    for planet in state.planets:
+        if planet.owner != -1:
+            planet.ships += planet.production
+
+    # --- Step 3: Rotate orbiting planets ---
+    for sim_planet in state.planets:
+        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
+        sim_planet.x = new_x
+        sim_planet.y = new_y
 
     # --- Step 4: Move all fleets ---
     for fleet in state.fleets:
@@ -438,7 +450,7 @@ def step_state_multi(
 
     Identical to step_state except the launch phase iterates *moves* (a list of
     [planet_id, angle, ships]) rather than a single optional move.  An empty
-    list applies no own launches.  Steps 1, 2, 3b, 4, and 5 are byte-for-byte
+    list applies no own launches.  Steps 1b, 2, 3, 4, and 5 are byte-for-byte
     equivalent to step_state.
 
     Args:
@@ -454,18 +466,11 @@ def step_state_multi(
     Returns:
         The mutated GameState after one simulated turn.
     """
-    # --- Step 1: Production ---
-    for planet in state.planets:
-        if planet.owner != -1:
-            planet.ships += planet.production
-
-    # --- Step 2: Rotate orbiting planets ---
-    for sim_planet in state.planets:
-        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
-        sim_planet.x = new_x
-        sim_planet.y = new_y
-
-    # --- Step 3: Launch one fleet per move (skips moves with insufficient ships) ---
+    # --- Step 1: Launch one fleet per move (skips moves with insufficient ships) ---
+    # Matches the engine's step order (orbit_wars.py interpreter): Fleet Launch
+    # happens before Production and Planet Movement & Sweep, so the launch angle
+    # is applied from each source planet's PRE-rotation position — exactly the
+    # coordinates plan_expansion used to compute the angle in the first place.
     for move in moves:
         planet_id, angle, ships_to_send = move[0], move[1], move[2]
         source = next((p for p in state.planets if p.id == planet_id), None)
@@ -481,7 +486,7 @@ def step_state_multi(
                 )
             )
 
-    # --- Step 3b: Opponent fleet launches ---
+    # --- Step 1b: Opponent fleet launches ---
     if opponent_fn is not None:
         opp_moves = opponent_fn(state)
         for opp_move in opp_moves:
@@ -498,6 +503,17 @@ def step_state_multi(
                         ships=ships,
                     )
                 )
+
+    # --- Step 2: Production ---
+    for planet in state.planets:
+        if planet.owner != -1:
+            planet.ships += planet.production
+
+    # --- Step 3: Rotate orbiting planets ---
+    for sim_planet in state.planets:
+        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
+        sim_planet.x = new_x
+        sim_planet.y = new_y
 
     # --- Step 4: Move all fleets ---
     for fleet in state.fleets:

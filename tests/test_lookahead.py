@@ -315,17 +315,19 @@ class TestStepState:
         assert len(next_s.fleets) == 0
 
     def test_own_move_insufficient_ships_no_fleet_no_deduction(self):
-        """Own move requesting more ships than available after production is silently skipped.
+        """Own move requesting more ships than available at launch time is silently skipped.
 
-        Source starts at 10 ships, production=3 → 13 after production.
-        Move requests 14 (> 13 post-production) → guard fires, no fleet spawned,
-        source ship total remains at its post-production value of 13.
+        Launch now runs before production (matching the engine's step order), so
+        the guard checks the source's PRE-production ship count. Source starts at
+        10 ships, production=3. Move requests 14 (> 10 pre-production) → guard
+        fires, no fleet spawned, no deduction. Production still runs afterward,
+        so the final total is 10 + 3 = 13.
         """
         planet = make_planet(
             id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=10, production=3
         )
         state = build_state([planet], [], turn=0)
-        move = [0, 0.0, 14]  # request 14 ships; only 13 available after production
+        move = [0, 0.0, 14]  # request 14 ships; only 10 available pre-production
         next_s = step_state(state, move=move, player=0, angular_velocity=0.03)
 
         source = next(p for p in next_s.planets if p.id == 0)
@@ -333,11 +335,13 @@ class TestStepState:
         assert source.ships == 13  # 10 + 3 production; no deduction because guard fired
 
     def test_opponent_fn_insufficient_ships_no_fleet_no_deduction(self):
-        """opponent_fn move requesting more ships than available after production is silently skipped.
+        """opponent_fn move requesting more ships than available at launch time is silently skipped.
 
-        Opponent source starts at 10 ships, production=3 → 13 after production.
-        opponent_fn requests 14 (> 13 post-production) → guard fires, no opponent
-        fleet spawned, source ship total remains at its post-production value of 13.
+        Launch now runs before production (matching the engine's step order), so
+        the guard checks the source's PRE-production ship count. Opponent source
+        starts at 10 ships, production=3. opponent_fn requests 14 (> 10
+        pre-production) → guard fires, no opponent fleet spawned, no deduction.
+        Production still runs afterward, so the final total is 10 + 3 = 13.
         """
         opp_planet = make_planet(
             id=0, owner=1, x=70.0, y=50.0, radius=1.0, ships=10, production=3
@@ -345,7 +349,7 @@ class TestStepState:
         state = build_state([opp_planet], [], turn=0)
 
         def opponent_fn(s):
-            return [[0, 0.0, 14]]  # request 14 ships; only 13 available after production
+            return [[0, 0.0, 14]]  # request 14 ships; only 10 available pre-production
 
         next_s = step_state(
             state, move=None, player=0, angular_velocity=0.03, opponent_fn=opponent_fn
@@ -426,6 +430,58 @@ class TestStepState:
         # Tie on a neutral planet: stays neutral with 0 ships.
         assert p.owner == -1
         assert p.ships == 0
+
+    def test_launch_uses_pre_rotation_position_for_orbiting_source(self):
+        """Launch must fire from the source planet's PRE-rotation position, matching
+        the engine's step order (Fleet Launch happens before Planet Movement & Sweep
+        in orbit_wars.py's interpreter). The simulator previously rotated the planet
+        first, so the spawned fleet started from a point the engine would never use.
+        """
+        from kaggle_environments.envs.orbit_wars.orbit_wars import (
+            ROTATION_RADIUS_LIMIT,
+            SUN_RADIUS,
+        )
+        from src.math_utils import fleet_speed, orbital_radius, predict_planet_position
+
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=30, production=2
+        )
+        assert orbital_radius(planet) + SUN_RADIUS < ROTATION_RADIUS_LIMIT, (
+            "precondition: source planet must be orbiting (not stationary)"
+        )
+        orig_x, orig_y = planet.x, planet.y
+
+        angular_velocity = 0.05
+        rot_x, rot_y = predict_planet_position(planet, angular_velocity, 1)
+        assert (rot_x, rot_y) != (orig_x, orig_y), (
+            "precondition: the source planet must actually move this turn"
+        )
+
+        state = build_state([planet], [], turn=0)
+        angle = 0.7
+        ships = 10
+        move = [0, angle, ships]
+        next_s = step_state(
+            state, move=move, player=0, angular_velocity=angular_velocity
+        )
+
+        assert len(next_s.fleets) == 1
+        fleet = next_s.fleets[0]
+        # step_state also advances the fleet this turn (the engine's Fleet
+        # Movement follows Fleet Launch), so back that movement out to recover
+        # the spawn point process_moves would have produced.
+        speed = fleet_speed(ships)
+        spawn_x = fleet.x - speed * math.cos(angle)
+        spawn_y = fleet.y - speed * math.sin(angle)
+
+        # Engine formula: from_planet[2] + cos(angle) * (from_planet[4] + 0.1)
+        offset = planet.radius + 0.1
+        assert spawn_x == pytest.approx(orig_x + math.cos(angle) * offset)
+        assert spawn_y == pytest.approx(orig_y + math.sin(angle) * offset)
+
+        # And NOT the post-rotation position the old ordering used.
+        assert spawn_x != pytest.approx(rot_x + math.cos(angle) * offset)
+        assert spawn_y != pytest.approx(rot_y + math.sin(angle) * offset)
 
     def test_incumbent_largest_stack_but_loses_to_combined_attackers(self):
         """Multi-party: the incumbent is the largest SINGLE stack yet loses to
@@ -1173,6 +1229,41 @@ class TestStepStateMulti:
             state, moves=[], player=0, angular_velocity=0.0, opponent_fn=counting_fn
         )
         assert call_count[0] == 1
+
+    def test_agrees_with_step_state_for_single_move(self):
+        """step_state and step_state_multi must produce identical results for an
+        equivalent single move, under the new launch-before-production-and-rotation
+        ordering — step_state_multi's docstring promises the non-launch steps are
+        byte-for-byte equivalent to step_state.
+        """
+        planet_single = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
+        planet_multi = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
+        move = [0, 0.4, 10]
+
+        state_single = build_state([planet_single], [], turn=0)
+        next_single = step_state(
+            state_single, move=move, player=0, angular_velocity=0.05
+        )
+
+        state_multi = build_state([planet_multi], [], turn=0)
+        next_multi = step_state_multi(
+            state_multi, moves=[move], player=0, angular_velocity=0.05
+        )
+
+        p_single = next_single.planets[0]
+        p_multi = next_multi.planets[0]
+        assert p_single.ships == p_multi.ships
+        assert p_single.owner == p_multi.owner
+
+        assert len(next_single.fleets) == len(next_multi.fleets) == 1
+        f_single = next_single.fleets[0]
+        f_multi = next_multi.fleets[0]
+        assert f_single.x == pytest.approx(f_multi.x)
+        assert f_single.y == pytest.approx(f_multi.y)
 
 
 # ---------------------------------------------------------------------------
