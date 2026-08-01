@@ -1520,25 +1520,34 @@ def test_aggression_midpoint_interpolates_linearly():
 # --- plan_expansion candidates comment ---
 
 
-def test_plan_expansion_candidates_comment_lists_six_fields():
+def test_generate_candidates_comment_lists_six_fields():
+    """The candidates accumulator comment must name every tuple field.
+
+    Renamed from test_plan_expansion_candidates_comment_lists_six_fields in #115.
+    The assertion is unchanged — it inspects source text for the `candidates = []`
+    comment, and #115 moved that line out of plan_expansion into
+    _generate_candidates, so the test has to follow the code it pins. Keeping the
+    plan_expansion name would point readers at a function that no longer contains
+    the comment being checked.
+    """
     import inspect
 
-    from src.strategy import plan_expansion
+    from src.strategy import _generate_candidates
 
-    src_lines = inspect.getsource(plan_expansion).splitlines()
+    src_lines = inspect.getsource(_generate_candidates).splitlines()
     # Locate the specific inline comment on the candidates accumulator.
     comment_line = next(
         (line for line in src_lines if "candidates = []" in line and "list of" in line),
         None,
     )
     assert comment_line is not None, (
-        "candidates = [] comment line not found in plan_expansion"
+        "candidates = [] comment line not found in _generate_candidates"
     )
     # The comment must list all six tuple fields so readers aren't misled
     # about the shape passed to _blended_best.
     for field in ("greedy_score", "lookahead_score", "target", "fraction", "future_x", "future_y"):
         assert field in comment_line, (
-            f"plan_expansion candidates comment is missing '{field}'; "
+            f"_generate_candidates candidates comment is missing '{field}'; "
             "update the comment to match the 6-tuple actually appended"
         )
 
@@ -1598,6 +1607,109 @@ def test_build_opponent_fn_returns_frozen_plan_moves_result():
     )
 
     assert opponent_fn(state=None) == expected_moves
+
+
+# --- _generate_candidates ---
+
+
+def test_generate_candidates_soft_enemy_produces_one_candidate():
+    from src.strategy import _generate_candidates, _effective_distance_power
+
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    soft_enemy = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=1, production=1)
+    dist_power = _effective_distance_power(turn=0, params=PARAMS)
+
+    candidates = _generate_candidates(
+        source,
+        "FORTRESS",
+        [soft_enemy],
+        dist_power,
+        agg=1.0,
+        blend=0.0,
+        angular_velocity=0.03,
+        params=PARAMS,
+        comet_ids=frozenset(),
+        comet_velocities=None,
+        opponent_fn=None,
+        initial_planets=None,
+        fleets=None,
+        player=0,
+        turn=0,
+    )
+
+    assert len(candidates) == 1
+    greedy_score, lookahead_score, target, fraction, future_x, future_y = candidates[0]
+    assert target is soft_enemy
+    assert fraction == PARAMS["frac_fortress_soft_enemy"]
+    assert lookahead_score == greedy_score  # blend=0.0 fallback
+
+
+def test_generate_candidates_skip_combo_produces_none():
+    """(OUTPOST, HARD_NEUTRAL) is a SKIP_COMBOS pair (src/config.py) — the
+    outpost's probe ratio against a heavily-defended neutral must classify as
+    HARD_NEUTRAL, which is skipped outright with no candidate emitted."""
+    from src.strategy import _generate_candidates, _effective_distance_power
+    from src.config import SKIP_COMBOS
+
+    assert ("OUTPOST", "HARD_NEUTRAL") in SKIP_COMBOS
+
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+    hard_neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=100, production=2)
+    dist_power = _effective_distance_power(turn=0, params=PARAMS)
+
+    candidates = _generate_candidates(
+        source,
+        "OUTPOST",
+        [hard_neutral],
+        dist_power,
+        agg=1.0,
+        blend=0.0,
+        angular_velocity=0.03,
+        params=PARAMS,
+        comet_ids=frozenset(),
+        comet_velocities=None,
+        opponent_fn=None,
+        initial_planets=None,
+        fleets=None,
+        player=0,
+        turn=0,
+    )
+
+    assert candidates == []
+
+
+def test_generate_candidates_excludes_target_failing_can_capture():
+    """The target classifies as SOFT_ENEMY against the full-fleet probe (so it
+    clears SKIP_COMBOS and has a frac_* key), but a deliberately tiny fraction
+    sends so few ships that the actual (slower, single-ship) intercept arrives
+    with a smaller fleet than the target can defend with — can_capture must
+    reject it and no candidate is emitted."""
+    from src.strategy import _generate_candidates, _effective_distance_power
+
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    soft_enemy = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=5, production=1)
+    dist_power = _effective_distance_power(turn=0, params=PARAMS)
+    params = {**PARAMS, "frac_fortress_soft_enemy": 0.01}
+
+    candidates = _generate_candidates(
+        source,
+        "FORTRESS",
+        [soft_enemy],
+        dist_power,
+        agg=1.0,
+        blend=0.0,
+        angular_velocity=0.03,
+        params=params,
+        comet_ids=frozenset(),
+        comet_velocities=None,
+        opponent_fn=None,
+        initial_planets=None,
+        fleets=None,
+        player=0,
+        turn=0,
+    )
+
+    assert candidates == []
 
 
 # --- ETA_CONVERGENCE_ITERS shared constant ---
