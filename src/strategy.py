@@ -285,6 +285,47 @@ def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, 
     return lambda state, m=opp_moves: m  # noqa: E731
 
 
+def _try_send(
+    source: Planet,
+    target: Planet,
+    ships: int,
+    angular_velocity: float,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
+    *,
+    validate: bool = False,
+    aim: tuple[float, float] | None = None,
+) -> list | None:
+    """Build a ``[source.id, angle, ships]`` move, or ``None`` if un-sendable.
+
+    Runs ``intercept`` to find the aim point and returns ``None`` when it can't
+    find one. When ``validate=True``, also rejects when ``can_capture`` fails or
+    the path crosses the sun.
+
+    ``aim`` supplies an ``(future_x, future_y)`` already computed by the caller,
+    skipping the intercept entirely — the primary launch reuses the winning
+    candidate's geometry from the scoring loop rather than recomputing it.
+    Incompatible with ``validate=True``, which needs the ``eta`` only
+    ``intercept`` returns; that combination is a programming error.
+    """
+    if aim is not None:
+        if validate:
+            raise ValueError("aim= cannot be combined with validate=True (needs eta)")
+        future_x, future_y = aim
+    else:
+        future_x, future_y, eta = intercept(
+            source, target, angular_velocity, ships, comet_ids, comet_velocities
+        )
+        if future_x is None:
+            return None
+        if validate:
+            if not can_capture(ships, target, eta):
+                return None
+            if path_crosses_sun(source.x, source.y, future_x, future_y):
+                return None
+    return [source.id, angle_to_target(source.x, source.y, future_x, future_y), ships]
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -402,17 +443,23 @@ def plan_expansion(
 
         best_target, best_fraction, best_fx, best_fy = _blended_best(candidates, blend)
 
-        # Primary fleet — geometry reused from the scoring-loop intercept (best_fx, best_fy),
-        # so no redundant intercept() call here.
+        # Primary fleet — the candidate was fully validated during scoring, and
+        # first_send equals the ships_to_send that produced (best_fx, best_fy),
+        # so the geometry is reused via aim= and no intercept is repeated here.
         ships_remaining = source.ships
         first_send = max(1, int(ships_remaining * best_fraction * agg))
-        moves.append(
-            [
-                source.id,
-                angle_to_target(source.x, source.y, best_fx, best_fy),
-                first_send,
-            ]
+        move = _try_send(
+            source,
+            best_target,
+            first_send,
+            angular_velocity,
+            comet_ids,
+            comet_velocities,
+            aim=(best_fx, best_fy),
         )
+        if move is None:
+            continue
+        moves.append(move)
         ships_remaining -= first_send
 
         # Multi-target: drain excess ships to lower-scored candidates
@@ -431,24 +478,18 @@ def plan_expansion(
                 # ships_remaining > min_garrison here, so the clamped value is >= 1.
                 if ships_remaining - extra_send < min_garrison:
                     extra_send = ships_remaining - min_garrison
-                extra_result = intercept(
+                extra_move = _try_send(
                     source,
                     extra_target,
-                    angular_velocity,
                     extra_send,
+                    angular_velocity,
                     comet_ids,
                     comet_velocities,
+                    validate=True,
                 )
-                if extra_result[0] is None:
+                if extra_move is None:
                     continue
-                ex, ey, ex_eta = extra_result
-                if not can_capture(extra_send, extra_target, ex_eta):
-                    continue
-                if path_crosses_sun(source.x, source.y, ex, ey):
-                    continue
-                moves.append(
-                    [source.id, angle_to_target(source.x, source.y, ex, ey), extra_send]
-                )
+                moves.append(extra_move)
                 ships_remaining -= extra_send
                 already_sent.add(extra_target.id)
 
