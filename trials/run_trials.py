@@ -3,6 +3,7 @@
 Run from the project root:
     uv run python trials/run_trials.py
 """
+
 import hashlib
 import logging
 import math
@@ -27,6 +28,14 @@ N_GAMES = 40
 N_WORKERS = 4
 N_TRIALS = 200
 PROMOTION_THRESHOLD = 0.65
+
+# Best-of-N_TRIALS selection on noisy n=N_GAMES measurements is a winner's-curse
+# machine: at N_GAMES=40, best-of-200 clears PROMOTION_THRESHOLD by luck alone
+# with near-certainty even when every challenger is exactly champion-strength
+# (see issue #259). A confirmation run on a much larger, disjoint seed range
+# re-checks any trial that clears the threshold before it is allowed to promote.
+N_CONFIRM_GAMES = 120
+CONFIRM_SEED_BASE = 1_000_000
 
 STUDY_NAME = "orbit_wars"
 # user_attr key under which each study records the PARAM_SPACE fingerprint it
@@ -77,11 +86,17 @@ def _make_callback():
             if win_rate > _best_win_rate:
                 _best_win_rate = win_rate
             local_best = _best_win_rate
-        promoted = " [PROMOTED]" if win_rate >= PROMOTION_THRESHOLD else ""
+        # Clearing PROMOTION_THRESHOLD on the trial run no longer implies a
+        # promotion — the confirmation run can still reject the challenger — so
+        # tag only trials objective() actually promoted.
+        promoted = " [PROMOTED]" if trial.user_attrs.get("promoted") else ""
         try:
             logger.info(
                 "Trial %d: win_rate=%.2f | best=%.2f%s",
-                trial.number, win_rate, local_best, promoted,
+                trial.number,
+                win_rate,
+                local_best,
+                promoted,
             )
         except (ValueError, OSError):
             pass  # stderr closed during process teardown
@@ -105,25 +120,49 @@ def objective(trial: optuna.Trial) -> float:
     # reproducible and its paired games share generated maps. Scale by N_GAMES
     # so distinct trials never reuse another trial's map seeds.
     win_rate, _ = run_games(
-        challenger_params, current_champ, n_games=N_GAMES,
+        challenger_params,
+        current_champ,
+        n_games=N_GAMES,
         seed=trial.number * N_GAMES,
     )
 
     if win_rate >= PROMOTION_THRESHOLD:
-        with _lock:
-            # Guard against the stale-snapshot race: worker B may have promoted a
-            # stronger champion (v2) while this trial was playing its games against
-            # the old champion (v1). Re-check that the live champion is still the
-            # one we benchmarked against before committing. If it has changed, skip
-            # this promotion — the win_rate is stale and cannot justify overwriting
-            # a champion the challenger never faced.
-            # Trade-off: some valid promotions are dropped under heavy concurrency,
-            # but the champion can never regress to a weaker, unvalidated challenger.
-            if _current_champion != current_champ:
-                return win_rate
-            write_champion(challenger_params)
-            _current_champion.clear()
-            _current_champion.update(challenger_params)
+        # Confirm on a much larger, disjoint seed range before promoting — best-of-
+        # N_TRIALS selection on n=N_GAMES measurements clears PROMOTION_THRESHOLD by
+        # luck alone with near-certainty (see issue #259). Run outside _lock: holding
+        # the lock across N_CONFIRM_GAMES games would serialise every worker.
+        confirm_win_rate, _ = run_games(
+            challenger_params,
+            current_champ,
+            n_games=N_CONFIRM_GAMES,
+            seed=CONFIRM_SEED_BASE + trial.number * N_CONFIRM_GAMES,
+        )
+        if confirm_win_rate >= PROMOTION_THRESHOLD:
+            with _lock:
+                # Guard against the stale-snapshot race: worker B may have promoted a
+                # stronger champion (v2) while this trial was playing its games against
+                # the old champion (v1). Re-check that the live champion is still the
+                # one we benchmarked against before committing. If it has changed, skip
+                # this promotion — the win_rate is stale and cannot justify overwriting
+                # a champion the challenger never faced.
+                # Trade-off: some valid promotions are dropped under heavy concurrency,
+                # but the champion can never regress to a weaker, unvalidated challenger.
+                if _current_champion != current_champ:
+                    return win_rate
+                write_champion(challenger_params)
+                _current_champion.clear()
+                _current_champion.update(challenger_params)
+            # Record the promotion so the Optuna callback labels this trial
+            # [PROMOTED] on the strength of the confirmation, not the trial run.
+            trial.set_user_attr("promoted", True)
+        else:
+            logger.info(
+                "Trial %d: confirmation failed (trial win_rate=%.2f, "
+                "confirm win_rate=%.2f) — not promoting.",
+                trial.number,
+                win_rate,
+                confirm_win_rate,
+            )
 
     return win_rate
 
@@ -177,7 +216,9 @@ def load_guarded_study(db_path: Path, *, reset: bool = False) -> "optuna.Study":
     if db_path.exists():
         if reset:
             archive = _archive_stale_db(db_path)
-            logger.info("Reset requested — archived %s to %s.", db_path.name, archive.name)
+            logger.info(
+                "Reset requested — archived %s to %s.", db_path.name, archive.name
+            )
         else:
             existing_fp = _stored_fingerprint(storage_url)
             if existing_fp is not None and existing_fp != current_fp:
@@ -185,7 +226,10 @@ def load_guarded_study(db_path: Path, *, reset: bool = False) -> "optuna.Study":
                 logger.info(
                     "PARAM_SPACE fingerprint mismatch (study=%s…, current=%s…) — "
                     "archived stale %s to %s and starting fresh.",
-                    existing_fp[:12], current_fp[:12], db_path.name, archive.name,
+                    existing_fp[:12],
+                    current_fp[:12],
+                    db_path.name,
+                    archive.name,
                 )
 
     study = optuna.create_study(

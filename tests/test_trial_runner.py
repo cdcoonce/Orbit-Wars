@@ -1,4 +1,5 @@
 """Tests for trials/game_runner.py and trials/run_trials.py."""
+
 import concurrent.futures
 import logging
 import math
@@ -15,32 +16,62 @@ from src.config import PARAMS
 # make_agent
 # ---------------------------------------------------------------------------
 
+
 class TestMakeAgent:
     def test_returns_callable(self):
         from trials.game_runner import make_agent
+
         agent = make_agent(PARAMS)
         assert callable(agent)
 
     def test_callable_accepts_obs(self):
         from trials.game_runner import make_agent
+
         agent = make_agent(PARAMS)
-        obs = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 0}
+        obs = {
+            "planets": [],
+            "fleets": [],
+            "player": 0,
+            "angular_velocity": 0.03,
+            "step": 0,
+        }
         result = agent(obs)
         assert isinstance(result, list)
 
     def test_per_closure_initial_planets_resets_on_turn_zero(self):
         """Each make_agent() closure tracks its own initial_planets independently."""
         from trials.game_runner import make_agent
+
         captured = []
 
-        def mock_plan_moves(planets, fleets, player, angular_velocity, turn,
-                            params=None, comet_ids=None, initial_planets=None,
-                            comet_velocities=None):
+        def mock_plan_moves(
+            planets,
+            fleets,
+            player,
+            angular_velocity,
+            turn,
+            params=None,
+            comet_ids=None,
+            initial_planets=None,
+            comet_velocities=None,
+        ):
             captured.append(initial_planets)
             return []
 
-        obs0 = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 0}
-        obs1 = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 1}
+        obs0 = {
+            "planets": [],
+            "fleets": [],
+            "player": 0,
+            "angular_velocity": 0.03,
+            "step": 0,
+        }
+        obs1 = {
+            "planets": [],
+            "fleets": [],
+            "player": 0,
+            "angular_velocity": 0.03,
+            "step": 1,
+        }
 
         # make_agent delegates to src.agent.plan_turn, which calls plan_moves
         # via the src.agent namespace, so that is the patch target.
@@ -55,15 +86,30 @@ class TestMakeAgent:
     def test_two_closures_independent(self):
         """Two agents from separate make_agent() calls don't share initial_planets."""
         from trials.game_runner import make_agent
+
         initial_planets_seen = []
 
-        def mock_plan_moves(planets, fleets, player, angular_velocity, turn,
-                            params=None, comet_ids=None, initial_planets=None,
-                            comet_velocities=None):
+        def mock_plan_moves(
+            planets,
+            fleets,
+            player,
+            angular_velocity,
+            turn,
+            params=None,
+            comet_ids=None,
+            initial_planets=None,
+            comet_velocities=None,
+        ):
             initial_planets_seen.append(initial_planets)
             return []
 
-        obs0 = {"planets": [], "fleets": [], "player": 0, "angular_velocity": 0.03, "step": 0}
+        obs0 = {
+            "planets": [],
+            "fleets": [],
+            "player": 0,
+            "angular_velocity": 0.03,
+            "step": 0,
+        }
 
         agent_a = make_agent(PARAMS)
         agent_b = make_agent(PARAMS)
@@ -82,14 +128,17 @@ class TestMakeAgent:
 # run_games — player alternation
 # ---------------------------------------------------------------------------
 
+
 class TestRunGames:
     def test_alternates_challenger_player(self):
         """challenger_player for game i must be i % 2."""
         from trials.game_runner import run_games
+
         call_log = []
 
-        def mock_run_game(challenger_params, champion_params, challenger_player=0,
-                          timeout=60):
+        def mock_run_game(
+            challenger_params, champion_params, challenger_player=0, timeout=60
+        ):
             call_log.append(challenger_player)
             return "draw"
 
@@ -118,6 +167,7 @@ class TestRunGames:
 # run_game — timeout
 # ---------------------------------------------------------------------------
 
+
 class TestRunGameTimeout:
     def test_timeout_returns_draw(self):
         """A game exceeding the timeout must return 'draw' without raising.
@@ -144,6 +194,7 @@ class TestRunGameTimeout:
 # run_game — self-healing pool after BrokenProcessPool
 # ---------------------------------------------------------------------------
 
+
 class TestRunGameBrokenPoolSelfHeals:
     def test_poisoned_pool_is_replaced_and_next_call_gets_real_result(self, caplog):
         """A poisoned (broken) pool must be discarded so the next run_game call is
@@ -164,10 +215,13 @@ class TestRunGameBrokenPoolSelfHeals:
         game_runner._consecutive_pool_rebuilds = 0
         game_runner._pool_rebuilds_exhausted = False
         try:
-            with patch(
-                "trials.game_runner.concurrent.futures.ProcessPoolExecutor",
-                return_value=fresh_pool,
-            ), caplog.at_level(logging.WARNING, logger="trials.game_runner"):
+            with (
+                patch(
+                    "trials.game_runner.concurrent.futures.ProcessPoolExecutor",
+                    return_value=fresh_pool,
+                ),
+                caplog.at_level(logging.WARNING, logger="trials.game_runner"),
+            ):
                 first_result = game_runner.run_game(PARAMS, PARAMS)
                 assert first_result == "draw"
                 assert game_runner._pool is not poisoned_pool
@@ -191,8 +245,10 @@ class TestRunGameBrokenPoolSelfHeals:
         import trials.game_runner as game_runner
 
         always_broken_pool = MagicMock()
-        always_broken_pool.submit.side_effect = concurrent.futures.process.BrokenProcessPool(
-            "dead",
+        always_broken_pool.submit.side_effect = (
+            concurrent.futures.process.BrokenProcessPool(
+                "dead",
+            )
         )
 
         construct_calls = []
@@ -259,6 +315,7 @@ class TestRunGameBrokenPoolSelfHeals:
 # write_champion — atomic write
 # ---------------------------------------------------------------------------
 
+
 class TestWriteChampion:
     def test_atomic_write_creates_file(self, tmp_path):
         from trials.run_trials import write_champion
@@ -324,13 +381,16 @@ class TestWriteChampion:
 # champion.py — initial state
 # ---------------------------------------------------------------------------
 
+
 class TestChampionModule:
     def test_champion_params_has_all_keys(self):
         from trials.champion import CHAMPION_PARAMS
+
         assert set(CHAMPION_PARAMS.keys()) == set(PARAMS.keys())
 
     def test_champion_params_has_game_length(self):
         from trials.champion import CHAMPION_PARAMS
+
         assert "game_length" in CHAMPION_PARAMS
 
 
@@ -338,15 +398,18 @@ class TestChampionModule:
 # Stale-study.db guard — PARAM_SPACE fingerprint
 # ---------------------------------------------------------------------------
 
+
 class TestParamSpaceFingerprint:
     def test_fingerprint_is_stable_across_calls(self):
         """A process-stable digest (hashlib, not builtin hash()) must not vary."""
         from trials.run_trials import param_space_fingerprint
+
         assert param_space_fingerprint() == param_space_fingerprint()
 
     def test_fingerprint_changes_when_param_space_changes(self):
         """Altering any bound must change the fingerprint."""
         from trials import run_trials
+
         before = run_trials.param_space_fingerprint()
         mutated = {**run_trials.PARAM_SPACE, "fortress_min_ships": (1, 999, int)}
         with patch.object(run_trials, "PARAM_SPACE", mutated):
@@ -362,6 +425,7 @@ class TestLoadGuardedStudy:
             load_guarded_study,
             param_space_fingerprint,
         )
+
         db = tmp_path / "study.db"
         study = load_guarded_study(db)
         assert study.user_attrs[FINGERPRINT_ATTR] == param_space_fingerprint()
@@ -369,23 +433,27 @@ class TestLoadGuardedStudy:
     def test_matching_fingerprint_resumes(self, tmp_path):
         """A study with a matching fingerprint resumes — trials preserved, nothing archived."""
         from trials.run_trials import load_guarded_study
+
         db = tmp_path / "study.db"
         first = load_guarded_study(db)
         first.add_trial(optuna.trial.create_trial(value=0.5))
 
         second = load_guarded_study(db)
 
-        assert len(second.trials) == 1          # resumed, not reset
+        assert len(second.trials) == 1  # resumed, not reset
         assert not list(tmp_path.glob("*.stale*"))  # nothing archived
 
     def test_mismatch_archives_and_starts_fresh(self, tmp_path):
         """A study fingerprinted to a different PARAM_SPACE is archived, not resumed."""
         from trials import run_trials
+
         db = tmp_path / "study.db"
         storage = f"sqlite:///{db}"
 
         seed = optuna.create_study(
-            study_name=run_trials.STUDY_NAME, storage=storage, direction="maximize",
+            study_name=run_trials.STUDY_NAME,
+            storage=storage,
+            direction="maximize",
         )
         seed.set_user_attr(run_trials.FINGERPRINT_ATTR, "stale-fingerprint")
         seed.add_trial(optuna.trial.create_trial(value=0.9))
@@ -394,7 +462,7 @@ class TestLoadGuardedStudy:
         study = run_trials.load_guarded_study(db)
 
         assert list(tmp_path.glob("study.db.stale*"))  # stale db archived aside
-        assert len(study.trials) == 0                  # fresh — old trials not inherited
+        assert len(study.trials) == 0  # fresh — old trials not inherited
         assert study.user_attrs[run_trials.FINGERPRINT_ATTR] == (
             run_trials.param_space_fingerprint()
         )
@@ -402,6 +470,7 @@ class TestLoadGuardedStudy:
     def test_reset_archives_even_on_match(self, tmp_path):
         """--reset forces a fresh study even when the fingerprint matches."""
         from trials.run_trials import load_guarded_study
+
         db = tmp_path / "study.db"
         first = load_guarded_study(db)
         first.add_trial(optuna.trial.create_trial(value=0.5))
@@ -416,6 +485,7 @@ class TestPrintSummary:
     def test_no_completed_trials_does_not_raise(self, tmp_path, capsys):
         """study.best_trial raises ValueError with zero COMPLETE trials — must be guarded."""
         from trials.run_trials import _print_summary, load_guarded_study
+
         db = tmp_path / "study.db"
         study = load_guarded_study(db)
         study.add_trial(optuna.trial.create_trial(state=optuna.trial.TrialState.PRUNED))
@@ -428,6 +498,7 @@ class TestPrintSummary:
     def test_reports_best_trial_when_completed(self, tmp_path, capsys):
         """With at least one COMPLETE trial, the summary reports it as before."""
         from trials.run_trials import _print_summary, load_guarded_study
+
         db = tmp_path / "study.db"
         study = load_guarded_study(db)
         study.add_trial(optuna.trial.create_trial(value=0.75))
@@ -442,6 +513,7 @@ class TestPrintSummary:
 # ---------------------------------------------------------------------------
 # objective — stale-snapshot promotion guard
 # ---------------------------------------------------------------------------
+
 
 class TestObjectiveStaleChampionGuard:
     def test_stale_snapshot_does_not_overwrite_newer_champion(self):
@@ -462,6 +534,7 @@ class TestObjectiveStaleChampionGuard:
             run_trials._current_champion.update(v1)
 
         try:
+
             def mock_run_games(challenger_params, champ_params, n_games, seed):
                 # Simulate concurrent worker B promoting v2 while A is playing.
                 with run_trials._lock:
@@ -471,11 +544,11 @@ class TestObjectiveStaleChampionGuard:
 
             mock_trial = MagicMock()
             mock_trial.number = 99
-            mock_trial.suggest_int.side_effect = (
-                lambda k, lo, hi: int(PARAMS.get(k, lo))
+            mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(
+                PARAMS.get(k, lo)
             )
-            mock_trial.suggest_float.side_effect = (
-                lambda k, lo, hi: float(PARAMS.get(k, lo))
+            mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
+                PARAMS.get(k, lo)
             )
 
             with patch("trials.run_trials.run_games", mock_run_games):
@@ -489,3 +562,137 @@ class TestObjectiveStaleChampionGuard:
             with run_trials._lock:
                 run_trials._current_champion.clear()
                 run_trials._current_champion.update(original)
+
+
+# ---------------------------------------------------------------------------
+# objective — confirmation-run promotion gate (issue #259)
+# ---------------------------------------------------------------------------
+
+
+class TestPromotionConfirmation:
+    def _make_trial(self, number=0):
+        mock_trial = MagicMock()
+        mock_trial.number = number
+        mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(PARAMS.get(k, lo))
+        mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
+            PARAMS.get(k, lo)
+        )
+        return mock_trial
+
+    def test_failed_confirmation_does_not_promote(self):
+        """Trial run clears the threshold (0.70) but confirmation fails (0.30):
+        no promotion, no champion mutation."""
+        from trials import run_trials
+
+        original = dict(run_trials._current_champion)
+        try:
+            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
+            with patch("trials.run_trials.run_games", mock_run_games):
+                with patch("trials.run_trials.write_champion") as mock_write:
+                    run_trials.objective(self._make_trial())
+
+            mock_write.assert_not_called()
+            assert run_trials._current_champion == original
+        finally:
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(original)
+
+    def test_confirmed_promotion_calls_write_champion_once(self):
+        """Both the trial run and the confirmation clear the threshold: promote once."""
+        from trials import run_trials
+
+        original = dict(run_trials._current_champion)
+        try:
+            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.70, [])])
+            with patch("trials.run_trials.run_games", mock_run_games):
+                with patch("trials.run_trials.write_champion") as mock_write:
+                    run_trials.objective(self._make_trial())
+
+            mock_write.assert_called_once()
+        finally:
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(original)
+
+    def test_returns_trial_win_rate_not_confirmation_win_rate(self):
+        """The confirmation result must never feed back into the Optuna return value."""
+        from trials import run_trials
+
+        original = dict(run_trials._current_champion)
+        try:
+            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
+            with patch("trials.run_trials.run_games", mock_run_games):
+                with patch("trials.run_trials.write_champion"):
+                    result = run_trials.objective(self._make_trial())
+
+            assert result == pytest.approx(0.70)
+        finally:
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(original)
+
+    def test_confirm_seed_base_disjoint_from_trial_seeds(self):
+        """CONFIRM_SEED_BASE must exceed every seed any trial 0..N_TRIALS-1 can consume."""
+        from trials.run_trials import CONFIRM_SEED_BASE, N_GAMES, N_TRIALS
+
+        assert CONFIRM_SEED_BASE > N_TRIALS * N_GAMES
+
+    def test_failed_confirmation_does_not_flag_trial_as_promoted(self):
+        """A rejected challenger must not be recorded as promoted."""
+        from trials import run_trials
+
+        original = dict(run_trials._current_champion)
+        try:
+            trial = self._make_trial()
+            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
+            with patch("trials.run_trials.run_games", mock_run_games):
+                with patch("trials.run_trials.write_champion"):
+                    run_trials.objective(trial)
+
+            trial.set_user_attr.assert_not_called()
+        finally:
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(original)
+
+    def test_confirmed_promotion_flags_trial_as_promoted(self):
+        """A confirmed promotion records the flag the callback reads."""
+        from trials import run_trials
+
+        original = dict(run_trials._current_champion)
+        try:
+            trial = self._make_trial()
+            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.70, [])])
+            with patch("trials.run_trials.run_games", mock_run_games):
+                with patch("trials.run_trials.write_champion"):
+                    run_trials.objective(trial)
+
+            trial.set_user_attr.assert_called_once_with("promoted", True)
+        finally:
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(original)
+
+    def _run_callback(self, caplog, user_attrs):
+        from trials import run_trials
+
+        frozen = MagicMock()
+        frozen.number = 7
+        frozen.value = 0.70
+        frozen.user_attrs = user_attrs
+
+        previous_best = run_trials._best_win_rate
+        try:
+            with caplog.at_level(logging.INFO):
+                run_trials._make_callback()(MagicMock(), frozen)
+        finally:
+            run_trials._best_win_rate = previous_best
+        return caplog.text
+
+    def test_callback_omits_promoted_tag_when_confirmation_failed(self, caplog):
+        """A trial win rate over the threshold is not, on its own, a promotion."""
+        assert "[PROMOTED]" not in self._run_callback(caplog, {})
+
+    def test_callback_emits_promoted_tag_on_confirmed_promotion(self, caplog):
+        assert "[PROMOTED]" in self._run_callback(caplog, {"promoted": True})

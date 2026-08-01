@@ -1,17 +1,21 @@
 ## Overview
 
-Optuna samples a challenger parameter dict from `PARAM_SPACE`, runs `N_GAMES` self-play games (challenger vs the current champion, with alternating player assignment to neutralise first-move bias), computes win rate, and — if `win_rate >= PROMOTION_THRESHOLD` — atomically overwrites `trials/champion.py` with the new params and updates the in-process `_current_champion` dict so subsequent trials immediately compete against the promoted challenger. This repeats for `N_TRIALS` trials across `N_WORKERS` parallel workers, persisting Bayesian priors in `study.db` between sessions. See [Home](Home.md) for top-level orientation and [src/config](src/config.md) for param definitions.
+Optuna samples a challenger parameter dict from `PARAM_SPACE`, runs `N_GAMES` self-play games (challenger vs the current champion, with alternating player assignment to neutralise first-move bias), computes win rate, and — if `win_rate >= PROMOTION_THRESHOLD` — runs a larger confirmation series before atomically overwriting `trials/champion.py` with the new params and updating the in-process `_current_champion` dict so subsequent trials immediately compete against the promoted challenger. This repeats for `N_TRIALS` trials across `N_WORKERS` parallel workers, persisting Bayesian priors in `study.db` between sessions. See [Home](Home.md) for top-level orientation and [src/config](src/config.md) for param definitions.
+
+**Why the confirmation step exists:** taking the best of `N_TRIALS` noisy `N_GAMES`-game measurements is a winner's-curse selection — at `N_GAMES=40`, a measured mirror baseline (`CHAMPION_PARAMS` vs itself, paired seeds) comes in at win rate **0.475**, not the naive 0.5, and a 2026-08-01 campaign found a best-of-200 trial at 0.62 that re-benchmarked at only 0.350 win rate on a fresh, unseen seed range — clearly weaker than the champion despite scoring as the strongest of 200 candidates. See issue #259 for the full arithmetic.
 
 ## Constants
 
 All live in `trials/run_trials.py`:
 
-| Constant              | Value | Meaning                                  |
-| --------------------- | ----- | ---------------------------------------- |
-| `N_GAMES`             | 40    | Games per trial (challenger vs champion) |
-| `N_WORKERS`           | 4     | Parallel Optuna jobs (`n_jobs`)          |
-| `N_TRIALS`            | 200   | Total trials per `study.optimize()` call |
-| `PROMOTION_THRESHOLD` | 0.65  | Minimum win rate to promote challenger   |
+| Constant              | Value     | Meaning                                                                            |
+| --------------------- | --------- | ---------------------------------------------------------------------------------- |
+| `N_GAMES`             | 40        | Games per trial (challenger vs champion)                                           |
+| `N_WORKERS`           | 4         | Parallel Optuna jobs (`n_jobs`)                                                    |
+| `N_TRIALS`            | 200       | Total trials per `study.optimize()` call                                           |
+| `PROMOTION_THRESHOLD` | 0.65      | Minimum win rate to promote challenger                                             |
+| `N_CONFIRM_GAMES`     | 120       | Games in the confirmation series, run when a trial clears `PROMOTION_THRESHOLD`    |
+| `CONFIRM_SEED_BASE`   | 1,000,000 | Base seed for confirmation games — disjoint from every trial's per-game seed range |
 
 ## `objective(trial)`
 
@@ -20,8 +24,9 @@ Optuna calls `objective` with an `optuna.Trial` handle. The function:
 1. Builds `challenger_params` by starting from `PARAMS` defaults (so every key exists even if not in `PARAM_SPACE`), then calls `trial.suggest_int` or `trial.suggest_float` for each key in `PARAM_SPACE` according to the `(low, high, typ)` tuple stored there.
 2. Reads `_current_champion` under `_lock` (snapshot; avoids a mid-read promotion from another worker).
 3. Calls `run_games(challenger_params, current_champ, n_games=N_GAMES)` → `(win_rate, results)`.
-4. If `win_rate >= PROMOTION_THRESHOLD`: acquires `_lock`, calls `write_champion(challenger_params)`, clears and repopulates `_current_champion`.
-5. Returns `win_rate` — Optuna maximises this value and updates its Bayesian model.
+4. If `win_rate >= PROMOTION_THRESHOLD`: runs a confirmation series _outside_ `_lock` — `run_games(challenger_params, current_champ, n_games=N_CONFIRM_GAMES, seed=CONFIRM_SEED_BASE + trial.number * N_CONFIRM_GAMES)` — on a much larger, disjoint seed range. Held outside the lock so the N_CONFIRM_GAMES-game confirmation run does not serialise every other worker.
+5. Only if the confirmation win rate _also_ meets `PROMOTION_THRESHOLD`: acquires `_lock`, re-checks `_current_champion` against the stale-snapshot guard, calls `write_champion(challenger_params)`, clears and repopulates `_current_champion`. A failed confirmation logs one line naming the trial number and both win rates, and is not treated as an error.
+6. Returns the trial's `win_rate` (from step 3) — Optuna maximises this value and updates its Bayesian model. The confirmation win rate is never fed back into the sampler; it only gates promotion.
 
 ## Atomic promotion (`write_champion`)
 
@@ -79,7 +84,7 @@ uv run python trials/run_trials.py
 uv run python trials/benchmark.py
 ```
 
-`run_trials.py` prints a one-line summary per trial: `Trial N: win_rate=X.XX | best=Y.YY [PROMOTED]`. The `[PROMOTED]` tag appears whenever a challenger meets the threshold.
+`run_trials.py` prints a one-line summary per trial: `Trial N: win_rate=X.XX | best=Y.YY [PROMOTED]`. The `[PROMOTED]` tag appears only when the challenger was actually promoted — meeting `PROMOTION_THRESHOLD` on the trial run is not enough, the confirmation run must clear it too. A trial that clears the threshold but fails confirmation logs a separate `confirmation failed` line naming both win rates.
 
 ## Interpreting benchmark results
 
