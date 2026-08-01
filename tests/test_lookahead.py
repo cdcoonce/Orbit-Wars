@@ -1298,6 +1298,71 @@ class TestStepStateMulti:
         assert f_single.x == pytest.approx(f_multi.x)
         assert f_single.y == pytest.approx(f_multi.y)
 
+    def test_agrees_with_step_state_across_all_shared_phases(self):
+        """Characterization test pinning step_state_multi([move]) == step_state(move)
+        across every phase step_state_multi's docstring claims is byte-for-byte
+        shared: production, orbital rotation, an own launch, an opponent_fn
+        launch, and a fleet landing that triggers _resolve_combat. The two
+        functions are independently maintained copies — this guards against
+        silent drift between them.
+        """
+        from src.math_utils import fleet_speed
+
+        def build_planets():
+            # Player's own producing, launching, orbiting planet (av=0.03 moves it).
+            p0 = make_planet(
+                id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=3
+            )
+            # Opponent's producing, orbiting planet — source for opponent_fn's launch.
+            p1 = make_planet(
+                id=1, owner=1, x=30.0, y=50.0, radius=1.0, ships=25, production=2
+            )
+            # Static neutral target: the inbound fleet below lands here this turn.
+            p2 = make_planet(
+                id=2, owner=-1, x=90.0, y=50.0, radius=5.0, ships=3, production=0
+            )
+            return [p0, p1, p2]
+
+        def build_fleets():
+            speed = fleet_speed(10)
+            fleet_x = 90.0 - speed + 0.1  # lands inside p2's radius this turn
+            return [make_fleet(id=0, owner=1, x=fleet_x, y=50.0, angle=0.0, ships=10)]
+
+        def opponent_fn(s):
+            return [[1, math.pi, 5]]
+
+        move = [0, 0.4, 10]
+
+        state_single = build_state(build_planets(), build_fleets(), turn=0)
+        next_single = step_state(
+            state_single,
+            move=move,
+            player=0,
+            angular_velocity=0.03,
+            opponent_fn=opponent_fn,
+        )
+
+        state_multi = build_state(build_planets(), build_fleets(), turn=0)
+        next_multi = step_state_multi(
+            state_multi,
+            moves=[move],
+            player=0,
+            angular_velocity=0.03,
+            opponent_fn=opponent_fn,
+        )
+
+        single_planets = {p.id: (p.owner, p.ships) for p in next_single.planets}
+        multi_planets = {p.id: (p.owner, p.ships) for p in next_multi.planets}
+        assert single_planets == multi_planets
+
+        # Sanity check the scenario actually exercises combat/capture, not just
+        # a no-op landing.
+        assert single_planets[2] == (1, 6)
+
+        single_fleets = sorted((f.owner, f.ships) for f in next_single.fleets)
+        multi_fleets = sorted((f.owner, f.ships) for f in next_multi.fleets)
+        assert single_fleets == multi_fleets
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreCandidateLookaheadFullMoveList

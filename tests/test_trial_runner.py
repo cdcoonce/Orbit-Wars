@@ -412,6 +412,33 @@ class TestLoadGuardedStudy:
         assert len(study.trials) == 0
 
 
+class TestPrintSummary:
+    def test_no_completed_trials_does_not_raise(self, tmp_path, capsys):
+        """study.best_trial raises ValueError with zero COMPLETE trials — must be guarded."""
+        from trials.run_trials import _print_summary, load_guarded_study
+        db = tmp_path / "study.db"
+        study = load_guarded_study(db)
+        study.add_trial(optuna.trial.create_trial(state=optuna.trial.TrialState.PRUNED))
+        study.add_trial(optuna.trial.create_trial(state=optuna.trial.TrialState.FAIL))
+
+        _print_summary(study)  # must not raise
+
+        assert "No completed trials" in capsys.readouterr().out
+
+    def test_reports_best_trial_when_completed(self, tmp_path, capsys):
+        """With at least one COMPLETE trial, the summary reports it as before."""
+        from trials.run_trials import _print_summary, load_guarded_study
+        db = tmp_path / "study.db"
+        study = load_guarded_study(db)
+        study.add_trial(optuna.trial.create_trial(value=0.75))
+
+        _print_summary(study)
+
+        out = capsys.readouterr().out
+        assert "Best trial" in out
+        assert "0.75" in out
+
+
 # ---------------------------------------------------------------------------
 # objective — stale-snapshot promotion guard
 # ---------------------------------------------------------------------------

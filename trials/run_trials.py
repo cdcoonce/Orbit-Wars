@@ -199,6 +199,24 @@ def load_guarded_study(db_path: Path, *, reset: bool = False) -> "optuna.Study":
     return study
 
 
+def _print_summary(study):
+    """Print the end-of-run best-trial summary, guarding against zero completed trials.
+
+    study.best_trial raises ValueError when every trial was pruned or errored
+    (e.g. a systematic worker failure) — without this guard that crashes a
+    multi-hour run at the finish line, obscuring the per-trial results already
+    logged by _make_callback.
+    """
+    completed = study.get_trials(states=[optuna.trial.TrialState.COMPLETE])
+    if not completed:
+        print("No completed trials — nothing to report.")
+        return
+
+    best = study.best_trial
+    print(f"Best trial: {best.number}, win_rate={best.value:.2f}")
+    print(f"Best params: {best.params}")
+
+
 if __name__ == "__main__":
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -211,6 +229,4 @@ if __name__ == "__main__":
         callbacks=[_make_callback()],
     )
 
-    best = study.best_trial
-    print(f"Best trial: {best.number}, win_rate={best.value:.2f}")
-    print(f"Best params: {best.params}")
+    _print_summary(study)
