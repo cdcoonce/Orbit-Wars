@@ -88,6 +88,24 @@ def distance(x1: float, y1: float, x2: float, y2: float) -> float:
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
+def is_enemy(owner: int, player: int) -> bool:
+    """True for any non-neutral, non-player owner (neutral == -1)."""
+    return owner not in (-1, player)
+
+
+def sum_owned(units, player: int, attr: str = "ships", enemy: bool = False) -> int:
+    """Sum `attr` over units owned by `player`, or by any enemy when enemy=True.
+
+    `units` is any planet or fleet sequence — both expose `.owner`, `.ships`, and
+    (planets only) `.production`. Kept a thin generator-sum with no per-call setup:
+    score_state calls it four times per simulated state inside the lookahead hot
+    loop, which runs across every self-play game.
+    """
+    if enemy:
+        return sum(getattr(u, attr) for u in units if is_enemy(u.owner, player))
+    return sum(getattr(u, attr) for u in units if u.owner == player)
+
+
 def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
     """Fleet speed on the logarithmic curve from the spec, clamped to max_speed.
 
@@ -561,10 +579,10 @@ def step_state_multi(
 
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
     """Score a GameState from `player`'s perspective."""
-    my_prod = sum(p.production for p in state.planets if p.owner == player)
-    enemy_prod = sum(p.production for p in state.planets if p.owner not in (-1, player))
-    my_ships = sum(p.ships for p in state.planets if p.owner == player)
-    enemy_ships = sum(p.ships for p in state.planets if p.owner not in (-1, player))
+    my_prod = sum_owned(state.planets, player, attr="production")
+    enemy_prod = sum_owned(state.planets, player, attr="production", enemy=True)
+    my_ships = sum_owned(state.planets, player)
+    enemy_ships = sum_owned(state.planets, player, enemy=True)
     return (my_prod - enemy_prod) + ship_weight * (my_ships - enemy_ships)
 
 
@@ -656,9 +674,7 @@ def effective_production(planet: Planet, comet_ids: set, multiplier: float) -> f
 # --- src/endgame.py ---
 def total_ships(planets: list, fleets: list, player: int) -> int:
     """Count combined ships for player across all planets and in-transit fleets."""
-    planet_ships = sum(p.ships for p in planets if p.owner == player)
-    fleet_ships = sum(f.ships for f in fleets if f.owner == player)
-    return planet_ships + fleet_ships
+    return sum_owned(planets, player) + sum_owned(fleets, player)
 
 
 def should_play_defensive(
@@ -678,13 +694,12 @@ def should_play_defensive(
     if turn < threshold_turn:
         return False
 
-    # Sum every enemy's ships — across all non-player, non-neutral owners — over
-    # both planets and in-transit fleets (same planets+fleets shape as
-    # total_ships above; the owner filter matches score_state in lookahead.py).
-    enemy_ships = sum(
-        p.ships for p in planets if p.owner not in (-1, player)
-    ) + sum(
-        f.ships for f in fleets if f.owner not in (-1, player)
+    # Enemy bucket spans every non-player, non-neutral owner over both planets and
+    # in-transit fleets — the same planets+fleets shape as total_ships above.
+    # sum_owned(..., enemy=True) is the shared definition of that filter, which
+    # score_state in lookahead.py uses too.
+    enemy_ships = sum_owned(planets, player, enemy=True) + sum_owned(
+        fleets, player, enemy=True
     )
 
     if enemy_ships == 0:
