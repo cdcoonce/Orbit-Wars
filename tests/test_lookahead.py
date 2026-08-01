@@ -670,6 +670,30 @@ class TestScoreState:
         score = score_state(state, player=0)
         assert score == pytest.approx(0.0)
 
+    def test_owned_in_transit_fleet_raises_score(self):
+        my_planet = make_planet(id=0, owner=0, production=2, ships=10)
+        enemy_planet = make_planet(id=1, owner=1, production=2, ships=10)
+        my_fleet = make_fleet(id=0, owner=0, ships=8)
+        state_without_fleet = build_state([my_planet, enemy_planet], [], turn=0)
+        state_with_fleet = build_state(
+            [my_planet, enemy_planet], [my_fleet], turn=0
+        )
+        score_without = score_state(state_without_fleet, player=0, ship_weight=0.1)
+        score_with = score_state(state_with_fleet, player=0, ship_weight=0.1)
+        assert score_with > score_without
+
+    def test_enemy_in_transit_fleet_lowers_score_symmetrically(self):
+        my_planet = make_planet(id=0, owner=0, production=2, ships=10)
+        enemy_planet = make_planet(id=1, owner=1, production=2, ships=10)
+        enemy_fleet = make_fleet(id=0, owner=1, ships=8)
+        state_without_fleet = build_state([my_planet, enemy_planet], [], turn=0)
+        state_with_fleet = build_state(
+            [my_planet, enemy_planet], [enemy_fleet], turn=0
+        )
+        score_without = score_state(state_without_fleet, player=0, ship_weight=0.1)
+        score_with = score_state(state_with_fleet, player=0, ship_weight=0.1)
+        assert score_without - score_with == pytest.approx(0.1 * 8)
+
 
 # ---------------------------------------------------------------------------
 # Class: TestPlanExpansionBlend
