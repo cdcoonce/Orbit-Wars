@@ -179,12 +179,12 @@ def handle_threats(
                 # so THREATENED planets are naturally excluded here
                 continue
             # Flat fraction (legacy behavior) vs. magnitude-aware reinforcement that
-            # scales with the size of the incoming attack. The multiplier defaults to
-            # 0.0, so magnitude collapses to 0 and ships_to_send == flat — byte-for-byte
-            # identical to the pre-feature behavior until Optuna raises the knob.
+            # scales with the size of the incoming attack. At multiplier == 0.0,
+            # magnitude collapses to 0 and ships_to_send == flat — byte-for-byte
+            # identical to the pre-feature behavior.
             flat = int(source.ships * params["defense_reinforce_fraction"])
             magnitude = int(
-                threat.incoming_ships * params.get("defense_incoming_multiplier", 0.0)
+                threat.incoming_ships * params["defense_incoming_multiplier"]
             )
             ships_to_send = max(flat, magnitude)
             # Cap magnitude-driven growth so the source keeps min_garrison, but never
@@ -273,7 +273,7 @@ def plan_expansion(
     targets = neutrals + enemies
     min_garrison = int(_effective_min_garrison(turn, params) / agg)
     dist_power = _effective_distance_power(turn, params)
-    blend = params.get("lookahead_blend", 0.0)
+    blend = params["lookahead_blend"]
     use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
 
     # Precompute the opponent's frozen response ONCE per plan_expansion call. Every
@@ -332,6 +332,9 @@ def plan_expansion(
 
             if (src_class, tgt_class) in SKIP_COMBOS:
                 continue
+            # Deliberately optional: SKIP_COMBOS (src/config.py) means some
+            # (src_class, tgt_class) pairs have no frac_* key in PARAMS at all,
+            # so .get() + the None-check below is the documented control flow.
             fraction = params.get(f"frac_{src_class.lower()}_{tgt_class.lower()}")
             if fraction is None:
                 continue

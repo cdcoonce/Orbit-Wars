@@ -589,6 +589,25 @@ def test_handle_threats_flat_baseline_can_leave_source_below_min_garrison():
     assert remaining < params["min_garrison"]
 
 
+def test_handle_threats_missing_defense_incoming_multiplier_raises():
+    """defense_incoming_multiplier is present in PARAMS and PARAM_SPACE, so a
+    params dict missing it must fail loudly (KeyError), not silently apply a
+    0.0 multiplier — see issue #245."""
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=100, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {k: v for k, v in PARAMS.items() if k != "defense_incoming_multiplier"}
+    with pytest.raises(KeyError):
+        handle_threats(
+            threats,
+            [threatened, fortress],
+            own_classes,
+            angular_velocity=0.03,
+            params=params,
+        )
+
+
 # --- plan_expansion ---
 
 
@@ -647,6 +666,43 @@ def test_plan_expansion_skips_below_min_garrison():
         angular_velocity=0.03,
         params=params,
         turn=100,
+    )
+    assert len(moves) == 0
+
+
+def test_plan_expansion_missing_lookahead_blend_raises():
+    """lookahead_blend is present in PARAMS and PARAM_SPACE, so a params dict
+    missing it must fail loudly (KeyError), not silently degrade to
+    greedy-only expansion — see issue #245."""
+    fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    soft_enemy = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=1, production=1)
+    own_classes = {0: "FORTRESS"}
+    params = {k: v for k, v in PARAMS.items() if k != "lookahead_blend"}
+    with pytest.raises(KeyError):
+        plan_expansion(
+            [fortress],
+            [],
+            [soft_enemy],
+            own_classes,
+            angular_velocity=0.03,
+            params=params,
+        )
+
+
+def test_plan_expansion_missing_optional_frac_key_still_plans():
+    """The frac_* lookup at src/strategy.py is intentionally optional (some
+    (src_class, tgt_class) combos have no frac key per SKIP_COMBOS) — a params
+    dict missing the frac_* key for the pair being evaluated must skip that
+    target gracefully (fraction is None -> continue), not raise KeyError, and
+    the rest of plan_expansion must still run — unaffected by the strict
+    indexing of defense_incoming_multiplier/lookahead_blend."""
+    outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+    easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
+    own_classes = {0: "OUTPOST"}
+    params = {**PARAMS, "min_garrison": 10, "weak_ratio": 1.5}
+    del params["frac_outpost_easy_neutral"]
+    moves = plan_expansion(
+        [outpost], [easy_low], [], own_classes, angular_velocity=0.03, params=params
     )
     assert len(moves) == 0
 
