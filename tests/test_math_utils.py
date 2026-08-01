@@ -222,14 +222,18 @@ def test_predict_planet_position_long_horizon_matches_engine_formula():
     assert y == pytest.approx(expected_y, abs=1e-9)
 
 
-def test_orbital_radius_computed_once_for_orbiting_planet():
-    # Regression: the old code called orbital_radius twice for orbiting planets —
-    # once inside is_stationary and again explicitly. Verify it is called at most once.
+def test_orbital_radius_computed_twice_for_orbiting_planet():
+    # The static-planet guard now delegates to is_stationary (issue #165), which
+    # calls orbital_radius internally; predict_planet_position also needs radius
+    # for the orbital math, so it computes it again explicitly. That second call
+    # is the accepted DRY tradeoff called out in issue #165 — is_stationary stays
+    # the single source of truth for the static-planet rule instead of duplicating
+    # its formula inline.
     planet = make_planet(x=60.0, y=50.0)  # orbiting, not stationary
     with patch("src.math_utils.orbital_radius", wraps=orbital_radius) as mock_r:
         predict_planet_position(planet, angular_velocity=0.05, turns=10)
-    assert mock_r.call_count == 1, (
-        f"orbital_radius called {mock_r.call_count} times, expected 1"
+    assert mock_r.call_count == 2, (
+        f"orbital_radius called {mock_r.call_count} times, expected 2"
     )
 
 
