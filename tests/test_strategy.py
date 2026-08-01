@@ -8,6 +8,7 @@ from src.strategy import aggression
 from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
+from src.strategy import _try_send
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
@@ -106,6 +107,72 @@ def test_intercept_stationary_target_returns_current_position():
 
     assert future_x == target.x
     assert future_y == target.y
+
+
+# --- _try_send ---
+
+
+def test_try_send_valid_send_returns_move():
+    source = make_planet(id=0, x=50.0, y=10.0)
+    target = make_planet(id=1, owner=-1, x=70.0, y=50.0, ships=5)
+    move = _try_send(source, target, 20, angular_velocity=0.03)
+    assert move is not None
+    future_x, future_y, _eta = intercept(source, target, 0.03, 20)
+    expected_angle = angle_to_target(source.x, source.y, future_x, future_y)
+    assert move == [source.id, expected_angle, 20]
+
+
+def test_try_send_none_when_uninterceptable():
+    # Comet target with no velocity data yet — intercept() returns (None, None, None).
+    source = make_planet(id=0, x=10.0, y=50.0)
+    comet = make_planet(id=5, owner=-1, x=60.0, y=50.0, ships=0)
+    move = _try_send(
+        source, comet, 20, angular_velocity=0.03, comet_ids={5}, comet_velocities={}
+    )
+    assert move is None
+
+
+def test_try_send_validate_none_on_can_capture_failure():
+    source = make_planet(id=0, x=50.0, y=10.0)
+    enemy = make_planet(id=1, owner=1, x=70.0, y=50.0, ships=100, production=5)
+    move = _try_send(source, enemy, 1, angular_velocity=0.03, validate=True)
+    assert move is None
+
+
+def test_try_send_validate_none_on_sun_crossing_path():
+    # x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50) → static,
+    # so intercept aims at the current position — a straight line through the sun's center.
+    source = make_planet(id=0, x=10.0, y=50.0)
+    target = make_planet(id=1, owner=-1, x=90.0, y=50.0, ships=0)
+    move = _try_send(source, target, 10, angular_velocity=0.03, validate=True)
+    assert move is None
+
+
+def test_try_send_aim_skips_intercept(monkeypatch):
+    """aim= reuses caller-supplied geometry, so intercept() is never called —
+    this is what keeps the primary launch down to one intercept per candidate."""
+    import src.strategy as strat
+
+    source = make_planet(id=0, x=50.0, y=10.0)
+    target = make_planet(id=1, owner=-1, x=70.0, y=50.0, ships=5)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("intercept() must not be called when aim= is supplied")
+
+    monkeypatch.setattr(strat, "intercept", boom)
+    move = strat._try_send(source, target, 20, angular_velocity=0.03, aim=(70.0, 50.0))
+    assert move == [source.id, angle_to_target(source.x, source.y, 70.0, 50.0), 20]
+
+
+def test_try_send_aim_with_validate_raises():
+    """Revalidating needs the eta only intercept() returns, so aim=+validate=True
+    is a programming error rather than a silently unvalidated send."""
+    source = make_planet(id=0, x=50.0, y=10.0)
+    target = make_planet(id=1, owner=-1, x=70.0, y=50.0, ships=5)
+    with pytest.raises(ValueError):
+        _try_send(
+            source, target, 20, angular_velocity=0.03, validate=True, aim=(70.0, 50.0)
+        )
 
 
 # --- classify_own ---
@@ -589,6 +656,25 @@ def test_handle_threats_flat_baseline_can_leave_source_below_min_garrison():
     assert remaining < params["min_garrison"]
 
 
+def test_handle_threats_missing_defense_incoming_multiplier_raises():
+    """defense_incoming_multiplier is present in PARAMS and PARAM_SPACE, so a
+    params dict missing it must fail loudly (KeyError), not silently apply a
+    0.0 multiplier — see issue #245."""
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=100, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {k: v for k, v in PARAMS.items() if k != "defense_incoming_multiplier"}
+    with pytest.raises(KeyError):
+        handle_threats(
+            threats,
+            [threatened, fortress],
+            own_classes,
+            angular_velocity=0.03,
+            params=params,
+        )
+
+
 # --- plan_expansion ---
 
 
@@ -647,6 +733,43 @@ def test_plan_expansion_skips_below_min_garrison():
         angular_velocity=0.03,
         params=params,
         turn=100,
+    )
+    assert len(moves) == 0
+
+
+def test_plan_expansion_missing_lookahead_blend_raises():
+    """lookahead_blend is present in PARAMS and PARAM_SPACE, so a params dict
+    missing it must fail loudly (KeyError), not silently degrade to
+    greedy-only expansion — see issue #245."""
+    fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    soft_enemy = make_planet(id=1, owner=1, x=72.0, y=50.0, ships=1, production=1)
+    own_classes = {0: "FORTRESS"}
+    params = {k: v for k, v in PARAMS.items() if k != "lookahead_blend"}
+    with pytest.raises(KeyError):
+        plan_expansion(
+            [fortress],
+            [],
+            [soft_enemy],
+            own_classes,
+            angular_velocity=0.03,
+            params=params,
+        )
+
+
+def test_plan_expansion_missing_optional_frac_key_still_plans():
+    """The frac_* lookup at src/strategy.py is intentionally optional (some
+    (src_class, tgt_class) combos have no frac key per SKIP_COMBOS) — a params
+    dict missing the frac_* key for the pair being evaluated must skip that
+    target gracefully (fraction is None -> continue), not raise KeyError, and
+    the rest of plan_expansion must still run — unaffected by the strict
+    indexing of defense_incoming_multiplier/lookahead_blend."""
+    outpost = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20, production=1)
+    easy_low = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=5, production=1)
+    own_classes = {0: "OUTPOST"}
+    params = {**PARAMS, "min_garrison": 10, "weak_ratio": 1.5}
+    del params["frac_outpost_easy_neutral"]
+    moves = plan_expansion(
+        [outpost], [easy_low], [], own_classes, angular_velocity=0.03, params=params
     )
     assert len(moves) == 0
 
@@ -1418,6 +1541,63 @@ def test_plan_expansion_candidates_comment_lists_six_fields():
             f"plan_expansion candidates comment is missing '{field}'; "
             "update the comment to match the 6-tuple actually appended"
         )
+
+
+# --- _build_opponent_fn ---
+
+
+def test_build_opponent_fn_none_when_blend_zero():
+    from src.strategy import _build_opponent_fn
+
+    planets = [make_planet(id=0, owner=0, ships=20)]
+    fleets = []
+    result = _build_opponent_fn(
+        planets, fleets, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.0
+    )
+    assert result is None
+
+
+def test_build_opponent_fn_none_when_inputs_missing():
+    from src.strategy import _build_opponent_fn
+
+    result = _build_opponent_fn(
+        None, None, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.9
+    )
+    assert result is None
+
+
+def test_build_opponent_fn_returns_frozen_plan_moves_result():
+    from src.strategy import _build_opponent_fn, build_state, plan_moves
+
+    planets = [
+        make_planet(id=0, owner=0, x=70.0, y=50.0, ships=20),
+        make_planet(id=1, owner=1, x=30.0, y=50.0, ships=20),
+        make_planet(id=2, owner=-1, x=50.0, y=90.0, ships=5),
+    ]
+    fleets = []
+    turn = 0
+    player = 0
+    angular_velocity = 0.03
+
+    opponent_fn = _build_opponent_fn(
+        planets, fleets, turn, player, angular_velocity, PARAMS, blend=0.9
+    )
+    assert opponent_fn is not None
+
+    opp_player = 1 - player
+    greedy_params_opp = {**PARAMS, "lookahead_blend": 0.0}
+    base = build_state(planets, fleets, turn)
+    expected_moves = plan_moves(
+        base.planets,
+        base.fleets,
+        opp_player,
+        angular_velocity,
+        turn=turn,
+        params=greedy_params_opp,
+        initial_planets=planets,
+    )
+
+    assert opponent_fn(state=None) == expected_moves
 
 
 # --- ETA_CONVERGENCE_ITERS shared constant ---
