@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-from .math_utils import distance, fleet_speed, predict_planet_position
+from .math_utils import distance, fleet_speed, predict_planet_position, sum_owned
 
 
 @dataclass
@@ -331,10 +331,10 @@ def step_state_multi(
 
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
     """Score a GameState from `player`'s perspective."""
-    my_prod = sum(p.production for p in state.planets if p.owner == player)
-    enemy_prod = sum(p.production for p in state.planets if p.owner not in (-1, player))
-    my_ships = sum(p.ships for p in state.planets if p.owner == player)
-    enemy_ships = sum(p.ships for p in state.planets if p.owner not in (-1, player))
+    my_prod = sum_owned(state.planets, player, attr="production")
+    enemy_prod = sum_owned(state.planets, player, attr="production", enemy=True)
+    my_ships = sum_owned(state.planets, player)
+    enemy_ships = sum_owned(state.planets, player, enemy=True)
     return (my_prod - enemy_prod) + ship_weight * (my_ships - enemy_ships)
 
 

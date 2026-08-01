@@ -9,10 +9,12 @@ from src.math_utils import (
     angle_to_target,
     distance,
     fleet_speed,
+    is_enemy,
     is_stationary,
     orbital_radius,
     path_crosses_sun,
     predict_planet_position,
+    sum_owned,
     turns_to_arrive,
 )
 from kaggle_environments import make
@@ -312,11 +314,62 @@ def test_turns_to_arrive_larger_fleet_no_slower_than_single_ship():
         assert turns_to_arrive(0.0, 0.0, 30.0, 0.0, n) <= single_ship_turns
 
 
-# --- removal regression ---
+# --- owner-bucketed summing (is_enemy / sum_owned) ---
+#
+# These replace test_sum_owned_and_is_enemy_removed, which asserted both symbols
+# must NOT exist. That guard was landed by #177 when the helpers had no callers:
+# #110 added them ahead of their consumers, #177 ran before #111/#112 landed and
+# correctly saw dead code. The removal was right at the time and wrong one slice
+# later — it froze a transient "currently unused" observation into a permanent
+# prohibition and left #111/#112 unbuildable. Deleted deliberately, with both
+# consumers landing in the same change so the helpers cannot go unused again.
 
 
-def test_sum_owned_and_is_enemy_removed():
-    import src.math_utils as m
+def test_is_enemy_true_for_other_player():
+    assert is_enemy(2, 0) is True
 
-    assert not hasattr(m, "sum_owned"), "sum_owned is dead code and must be removed"
-    assert not hasattr(m, "is_enemy"), "is_enemy is dead code and must be removed"
+
+def test_is_enemy_false_for_self():
+    assert is_enemy(0, 0) is False
+
+
+def test_is_enemy_false_for_neutral():
+    # Neutral is -1, not an enemy — this is the distinction the shared filter exists
+    # to keep consistent between should_play_defensive and score_state.
+    assert is_enemy(-1, 0) is False
+
+
+class _Unit:
+    """Minimal stand-in exposing the owner/ships/production attrs both real
+    Planets and Fleets provide."""
+
+    def __init__(self, owner, ships, production=0):
+        self.owner = owner
+        self.ships = ships
+        self.production = production
+
+
+def test_sum_owned_player_bucket():
+    units = [_Unit(0, 5), _Unit(1, 10), _Unit(-1, 100)]
+    assert sum_owned(units, player=0) == 5
+
+
+def test_sum_owned_enemy_bucket_excludes_neutral_and_self():
+    units = [_Unit(0, 5), _Unit(1, 10), _Unit(-1, 100)]
+    assert sum_owned(units, player=0, enemy=True) == 10
+
+
+def test_sum_owned_enemy_bucket_sums_multiple_enemies():
+    units = [_Unit(1, 10), _Unit(2, 7), _Unit(-1, 100)]
+    assert sum_owned(units, player=0, enemy=True) == 17
+
+
+def test_sum_owned_respects_attr():
+    units = [_Unit(0, 5, production=4), _Unit(1, 10, production=2)]
+    assert sum_owned(units, player=0, attr="production") == 4
+    assert sum_owned(units, player=0, attr="production", enemy=True) == 2
+
+
+def test_sum_owned_empty_returns_zero():
+    assert sum_owned([], player=0) == 0
+    assert sum_owned([], player=0, enemy=True) == 0

@@ -83,6 +83,24 @@ def distance(x1: float, y1: float, x2: float, y2: float) -> float:
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
+def is_enemy(owner: int, player: int) -> bool:
+    """True for any non-neutral, non-player owner (neutral == -1)."""
+    return owner not in (-1, player)
+
+
+def sum_owned(units, player: int, attr: str = "ships", enemy: bool = False) -> int:
+    """Sum `attr` over units owned by `player`, or by any enemy when enemy=True.
+
+    `units` is any planet or fleet sequence — both expose `.owner`, `.ships`, and
+    (planets only) `.production`. Kept a thin generator-sum with no per-call setup:
+    score_state calls it four times per simulated state inside the lookahead hot
+    loop, which runs across every self-play game.
+    """
+    if enemy:
+        return sum(getattr(u, attr) for u in units if is_enemy(u.owner, player))
+    return sum(getattr(u, attr) for u in units if u.owner == player)
+
+
 def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
     """Fleet speed on the logarithmic curve from the spec, clamped to max_speed.
 
