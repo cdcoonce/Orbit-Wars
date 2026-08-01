@@ -9,6 +9,7 @@ from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.strategy import _try_send
+from src.strategy import _min_dist_pt_to_segment
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
@@ -1730,3 +1731,31 @@ def test_eta_convergence_iters_used_in_both_intercept_loops():
         assert "ETA_CONVERGENCE_ITERS" in src, (
             f"{fn.__name__} does not reference ETA_CONVERGENCE_ITERS"
         )
+
+
+# --- _min_dist_pt_to_segment ---
+
+
+def test_min_dist_pt_to_segment_zero_length_segment_uses_point_distance():
+    # sx1==sx2 and sy1==sy2: d_len_sq == 0 branch, straight point-to-point distance.
+    dist = _min_dist_pt_to_segment(0.0, 0.0, 3.0, 4.0, 3.0, 4.0)
+    assert dist == pytest.approx(5.0)
+
+
+def test_min_dist_pt_to_segment_clamps_before_start():
+    # Projection falls before t=0, so distance clamps to the start endpoint (0, 0).
+    dist = _min_dist_pt_to_segment(-5.0, 3.0, 0.0, 0.0, 10.0, 0.0)
+    assert dist == pytest.approx(math.sqrt(34.0))
+
+
+def test_min_dist_pt_to_segment_clamps_past_end():
+    # Projection falls past t=1, so distance clamps to the end endpoint (10, 0).
+    dist = _min_dist_pt_to_segment(15.0, 3.0, 0.0, 0.0, 10.0, 0.0)
+    assert dist == pytest.approx(math.sqrt(34.0))
+
+
+def test_min_dist_pt_to_segment_interior_projection_uses_perpendicular_distance():
+    # Perpendicular foot lands inside the segment (above the midpoint), so the
+    # result is the straight perpendicular distance, not a clamped endpoint.
+    dist = _min_dist_pt_to_segment(5.0, 3.0, 0.0, 0.0, 10.0, 0.0)
+    assert dist == pytest.approx(3.0)

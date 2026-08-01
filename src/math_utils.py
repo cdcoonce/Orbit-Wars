@@ -25,9 +25,19 @@ def orbital_radius(planet: Planet) -> float:
     return math.sqrt(dx * dx + dy * dy)
 
 
+def _is_stationary_radius(radius: float) -> bool:
+    """The static-planet rule, over an already-computed orbital radius.
+
+    The single source of truth for the boundary. Callers that already hold the
+    radius (predict_planet_position needs it for the orbital math regardless)
+    use this directly rather than recomputing it via is_stationary.
+    """
+    return radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT
+
+
 def is_stationary(planet: Planet) -> bool:
     """True if the planet sits outside the rotation limit and never moves."""
-    return orbital_radius(planet) + SUN_RADIUS >= ROTATION_RADIUS_LIMIT
+    return _is_stationary_radius(orbital_radius(planet))
 
 
 def predict_planet_position(
@@ -47,7 +57,7 @@ def predict_planet_position(
     cos/sin periodicity handles large horizons naturally — no modulo needed.
     """
     radius = orbital_radius(planet)
-    if radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT or angular_velocity == 0:
+    if _is_stationary_radius(radius) or angular_velocity == 0:
         return (planet.x, planet.y)
     current_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
     future_angle = current_angle + angular_velocity * turns
