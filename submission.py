@@ -198,6 +198,12 @@ PARAMS = {
     # until re-tuned. See CLAUDE.md "Pending re-tune: lookahead launch-before-
     # rotation ordering" (rm trials/study.db → run_trials.py → copy winners here
     # → build.py).
+    # NOTE (#256): score_state (src/lookahead.py) now also counts in-transit
+    # fleet ships (previously only planet-held ships), matching
+    # src/endgame.py's total_ships. This changes what my_ships/enemy_ships
+    # measure, which changes what these three params were tuned against — do
+    # NOT promote until re-tuned via #117 (rm trials/study.db → run_trials.py
+    # → copy winners here → build.py).
     "lookahead_turns": 5,
     "lookahead_blend": 0.9032151725931578,
     "lookahead_ship_weight": 0.07240125896738046,
@@ -581,8 +587,15 @@ def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> flo
     """Score a GameState from `player`'s perspective."""
     my_prod = sum_owned(state.planets, player, attr="production")
     enemy_prod = sum_owned(state.planets, player, attr="production", enemy=True)
-    my_ships = sum_owned(state.planets, player)
-    enemy_ships = sum_owned(state.planets, player, enemy=True)
+    # Includes in-transit fleet ships (not just planet-held ships), matching
+    # src/endgame.py's total_ships — a fleet launched by step_state and still
+    # flying at the lookahead horizon no longer vanishes from the score. This
+    # changes the measurement lookahead_blend/lookahead_ship_weight/lookahead_turns
+    # (src/config.py) were tuned against; not for promotion until re-tuned via #117.
+    my_ships = sum_owned(state.planets, player) + sum_owned(state.fleets, player)
+    enemy_ships = sum_owned(state.planets, player, enemy=True) + sum_owned(
+        state.fleets, player, enemy=True
+    )
     return (my_prod - enemy_prod) + ship_weight * (my_ships - enemy_ships)
 
 

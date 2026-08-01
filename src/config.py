@@ -54,6 +54,12 @@ PARAMS = {
     # until re-tuned. See CLAUDE.md "Pending re-tune: lookahead launch-before-
     # rotation ordering" (rm trials/study.db → run_trials.py → copy winners here
     # → build.py).
+    # NOTE (#256): score_state (src/lookahead.py) now also counts in-transit
+    # fleet ships (previously only planet-held ships), matching
+    # src/endgame.py's total_ships. This changes what my_ships/enemy_ships
+    # measure, which changes what these three params were tuned against — do
+    # NOT promote until re-tuned via #117 (rm trials/study.db → run_trials.py
+    # → copy winners here → build.py).
     "lookahead_turns": 5,
     "lookahead_blend": 0.9032151725931578,
     "lookahead_ship_weight": 0.07240125896738046,
