@@ -948,6 +948,115 @@ def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, 
     return lambda state, m=opp_moves: m  # noqa: E731
 
 
+def _generate_candidates(
+    source: Planet,
+    src_class: str,
+    targets: list[Planet],
+    dist_power: float,
+    agg: float,
+    blend: float,
+    angular_velocity: float,
+    params: dict,
+    comet_ids: set,
+    comet_velocities: dict | None,
+    opponent_fn,
+    initial_planets,
+    fleets,
+    player: int,
+    turn: int,
+) -> list:
+    """Return scored expansion candidates for one source planet.
+
+    Each candidate is a ``(greedy_score, lookahead_score, target, fraction,
+    future_x, future_y)`` tuple, scored via classification, intercept,
+    ``can_capture``, sun-path checks, greedy scoring, and optional lookahead
+    scoring against ``opponent_fn``.
+    """
+    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
+    # Use full fleet for classification so FACTORY correctly sees adjacent
+    # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
+    probe_ships = source.ships
+
+    candidates = []  # list of (greedy_score, lookahead_score, target, fraction, future_x, future_y)
+
+    for target in targets:
+        if target.owner == -1:
+            tgt_class = classify_neutral(target, probe_ships, params)
+        else:
+            probe_result = intercept(
+                source,
+                target,
+                angular_velocity,
+                probe_ships,
+                comet_ids,
+                comet_velocities,
+            )
+            if probe_result[0] is None:
+                continue
+            _, _, probe_eta = probe_result
+            tgt_class = classify_enemy(target, probe_ships, probe_eta, params)
+
+        if (src_class, tgt_class) in SKIP_COMBOS:
+            continue
+        # Deliberately optional: SKIP_COMBOS (src/config.py) means some
+        # (src_class, tgt_class) pairs have no frac_* key in PARAMS at all,
+        # so .get() + the None-check below is the documented control flow.
+        fraction = params.get(f"frac_{src_class.lower()}_{tgt_class.lower()}")
+        if fraction is None:
+            continue
+
+        ships_to_send = max(1, int(source.ships * fraction * agg))
+        intercept_result = intercept(
+            source,
+            target,
+            angular_velocity,
+            ships_to_send,
+            comet_ids,
+            comet_velocities,
+        )
+        if intercept_result[0] is None:
+            continue
+        future_x, future_y, eta = intercept_result
+        if not can_capture(ships_to_send, target, eta):
+            continue
+        if path_crosses_sun(source.x, source.y, future_x, future_y):
+            continue
+
+        bonus = params["stationary_value_bonus"] if is_stationary(target) else 0
+        eff_prod = effective_production(
+            target, comet_ids, params["comet_value_multiplier"]
+        )
+        greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
+
+        # Lookahead score — simulate the candidate forward and score it.
+        # opponent_fn is constructed once per plan_expansion call and passed
+        # in, reused across every source planet and candidate target.
+        if use_lookahead:
+            candidate_move = [
+                source.id,
+                angle_to_target(source.x, source.y, future_x, future_y),
+                ships_to_send,
+            ]
+            # plan_moves injected so lookahead.py stays free of a strategy import.
+            lookahead_score = score_candidate_lookahead(
+                initial_planets,
+                fleets,
+                turn,
+                candidate_move,
+                player,
+                angular_velocity,
+                opponent_fn,
+                params,
+                plan_moves,
+            )
+        else:
+            lookahead_score = greedy_score  # fallback keeps blend=0 equivalent
+
+        candidates.append((greedy_score, lookahead_score, target, fraction, future_x, future_y))
+
+    return candidates
+
+
 def _try_send(
     source: Planet,
     target: Planet,
@@ -1009,7 +1118,6 @@ def plan_expansion(
     min_garrison = int(_effective_min_garrison(turn, params) / agg)
     dist_power = _effective_distance_power(turn, params)
     blend = params["lookahead_blend"]
-    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     opponent_fn = _build_opponent_fn(
         initial_planets, fleets, turn, player, angular_velocity, params, blend
     )
@@ -1021,85 +1129,23 @@ def plan_expansion(
         if source.ships < min_garrison:
             continue
 
-        # Use full fleet for classification so FACTORY correctly sees adjacent
-        # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
-        probe_ships = source.ships
-
-        candidates = []  # list of (greedy_score, lookahead_score, target, fraction, future_x, future_y)
-
-        for target in targets:
-            if target.owner == -1:
-                tgt_class = classify_neutral(target, probe_ships, params)
-            else:
-                probe_result = intercept(
-                    source,
-                    target,
-                    angular_velocity,
-                    probe_ships,
-                    comet_ids,
-                    comet_velocities,
-                )
-                if probe_result[0] is None:
-                    continue
-                _, _, probe_eta = probe_result
-                tgt_class = classify_enemy(target, probe_ships, probe_eta, params)
-
-            if (src_class, tgt_class) in SKIP_COMBOS:
-                continue
-            # Deliberately optional: SKIP_COMBOS (src/config.py) means some
-            # (src_class, tgt_class) pairs have no frac_* key in PARAMS at all,
-            # so .get() + the None-check below is the documented control flow.
-            fraction = params.get(f"frac_{src_class.lower()}_{tgt_class.lower()}")
-            if fraction is None:
-                continue
-
-            ships_to_send = max(1, int(source.ships * fraction * agg))
-            intercept_result = intercept(
-                source,
-                target,
-                angular_velocity,
-                ships_to_send,
-                comet_ids,
-                comet_velocities,
-            )
-            if intercept_result[0] is None:
-                continue
-            future_x, future_y, eta = intercept_result
-            if not can_capture(ships_to_send, target, eta):
-                continue
-            if path_crosses_sun(source.x, source.y, future_x, future_y):
-                continue
-
-            bonus = params["stationary_value_bonus"] if is_stationary(target) else 0
-            eff_prod = effective_production(
-                target, comet_ids, params["comet_value_multiplier"]
-            )
-            greedy_score = (eff_prod + bonus) / (eta + 1) ** dist_power
-
-            # Lookahead score — simulate the candidate forward and score it.
-            # opponent_fn is constructed once per plan_expansion call (above) and reused.
-            if use_lookahead:
-                candidate_move = [
-                    source.id,
-                    angle_to_target(source.x, source.y, future_x, future_y),
-                    ships_to_send,
-                ]
-                # plan_moves injected so lookahead.py stays free of a strategy import.
-                lookahead_score = score_candidate_lookahead(
-                    initial_planets,
-                    fleets,
-                    turn,
-                    candidate_move,
-                    player,
-                    angular_velocity,
-                    opponent_fn,
-                    params,
-                    plan_moves,
-                )
-            else:
-                lookahead_score = greedy_score  # fallback keeps blend=0 equivalent
-
-            candidates.append((greedy_score, lookahead_score, target, fraction, future_x, future_y))
+        candidates = _generate_candidates(
+            source,
+            src_class,
+            targets,
+            dist_power,
+            agg,
+            blend,
+            angular_velocity,
+            params,
+            comet_ids,
+            comet_velocities,
+            opponent_fn,
+            initial_planets,
+            fleets,
+            player,
+            turn,
+        )
 
         if not candidates:
             continue
