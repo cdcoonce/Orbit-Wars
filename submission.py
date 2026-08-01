@@ -52,7 +52,7 @@ def predict_planet_position(
     cos/sin periodicity handles large horizons naturally — no modulo needed.
     """
     radius = orbital_radius(planet)
-    if radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT or angular_velocity == 0:
+    if is_stationary(planet) or angular_velocity == 0:
         return (planet.x, planet.y)
     current_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
     future_angle = current_angle + angular_velocity * turns
