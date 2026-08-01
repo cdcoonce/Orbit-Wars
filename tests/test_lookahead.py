@@ -587,6 +587,39 @@ class TestResolveCombat:
         assert planet.owner == 1
         assert planet.ships == 1  # surviving = 10 - (3 + 5) = 2, minus 1 foothold cost
 
+    def test_two_equal_non_incumbent_attackers_on_neutral_stays_neutral(self):
+        """Two non-incumbent attackers tie for the largest stack on a neutral
+        planet: the arbitrary tie-break picks one of them as `winner`, but
+        surviving == 0 and winner != planet.owner (-1), so the planet must
+        fall through to the neutral branch rather than be retained.
+        """
+        planet = self._planet(owner=-1, ships=0)
+        arrivals = [
+            self._fleet(owner=1, ships=6),
+            self._fleet(owner=2, ships=6),
+        ]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == -1
+        assert planet.ships == 0
+
+    def test_two_equal_attackers_beat_smaller_incumbent_goes_neutral(self):
+        """Two equal non-incumbent attackers combine to push a smaller
+        incumbent garrison to surviving < 0: the planet must go neutral,
+        not be retained by the incumbent.
+
+        owner=0 holds 5 ships; owners 1 and 2 each send 6 (combined 12 > 5).
+        winner is one of the two equal attackers, total_others = 5 + 6 = 11,
+        surviving = 6 - 11 = -5 < 0 → neutral, 0 ships.
+        """
+        planet = self._planet(owner=0, ships=5)
+        arrivals = [
+            self._fleet(owner=1, ships=6),
+            self._fleet(owner=2, ships=6),
+        ]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == -1
+        assert planet.ships == 0
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreState
