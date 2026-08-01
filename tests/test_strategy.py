@@ -227,6 +227,24 @@ def test_classify_neutral_zero_ships():
     assert classify_neutral(target, 1) == "EASY_NEUTRAL"
 
 
+def test_classify_neutral_ratio_equal_to_weak_ratio_is_hard():
+    params = {**PARAMS, "weak_ratio": 2.0}
+    target = make_planet(owner=-1, ships=5)
+    assert classify_neutral(target, 10, params=params) == "HARD_NEUTRAL"
+
+
+def test_classify_neutral_ratio_just_above_weak_ratio_is_easy():
+    params = {**PARAMS, "weak_ratio": 2.0}
+    target = make_planet(owner=-1, ships=5)
+    assert classify_neutral(target, 11, params=params) == "EASY_NEUTRAL"
+
+
+def test_classify_neutral_zero_ships_ignores_ships_to_send():
+    params = {**PARAMS, "weak_ratio": 2.0}
+    target = make_planet(owner=-1, ships=0)
+    assert classify_neutral(target, 1000, params=params) == "EASY_NEUTRAL"
+
+
 def test_classify_enemy_soft():
     target = make_planet(owner=1, ships=5, production=1)
     eta = 10
