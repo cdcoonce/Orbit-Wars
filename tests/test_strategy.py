@@ -9,6 +9,7 @@ from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.strategy import _try_send
+from src.strategy import _drain_excess
 from src.strategy import _min_dist_pt_to_segment
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
@@ -868,6 +869,60 @@ def test_plan_expansion_drain_clamps_at_min_garrison():
     )  # floor branch is exercised
     assert moves[1][2] == ships_remaining - params["min_garrison"]
     assert source.ships - sum(m[2] for m in moves) == params["min_garrison"]
+
+
+# --- _drain_excess ---
+
+
+def test_drain_excess_drains_to_second_target():
+    """Leftover ships after the primary send drain into the next-best,
+    not-yet-targeted candidate."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    frac = PARAMS["frac_fortress_easy_neutral"]
+    candidates = [
+        (10.0, 10.0, high, frac, 0.0, 0.0),
+        (5.0, 5.0, low, frac, 0.0, 0.0),
+    ]
+    first_send = max(1, int(source.ships * frac))
+    ships_remaining = source.ships - first_send
+
+    moves = _drain_excess(
+        source, candidates, high.id, ships_remaining, min_garrison=10, agg=1.0,
+        angular_velocity=0.03,
+    )
+
+    assert len(moves) == 1
+    assert moves[0][0] == source.id
+    extra_send = max(1, int(ships_remaining * frac))
+    assert moves[0][2] == extra_send
+
+
+def test_drain_excess_clamps_at_min_garrison():
+    """When the leftover fleet sits just above min_garrison, the drain send is
+    clamped to (ships_remaining - min_garrison) rather than over-draining."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=35, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    frac = PARAMS["frac_fortress_easy_neutral"]
+    candidates = [
+        (10.0, 10.0, high, frac, 0.0, 0.0),
+        (5.0, 5.0, low, frac, 0.0, 0.0),
+    ]
+    first_send = max(1, int(source.ships * frac))
+    ships_remaining = source.ships - first_send
+    min_garrison = 10
+    unclamped = max(1, int(ships_remaining * frac))
+    assert unclamped > ships_remaining - min_garrison  # floor branch is exercised
+
+    moves = _drain_excess(
+        source, candidates, high.id, ships_remaining, min_garrison=min_garrison,
+        agg=1.0, angular_velocity=0.03,
+    )
+
+    assert len(moves) == 1
+    assert moves[0][2] == ships_remaining - min_garrison
 
 
 def test_plan_expansion_drain_ranks_by_greedy_not_blended():
