@@ -174,6 +174,22 @@ re-tuned**. To re-tune:
 3. Copy the winning params into `src/config.py` PARAMS
 4. `python build.py` then submit
 
+### Pending re-tune: lookahead in-transit ship counting
+
+`score_state` (`src/lookahead.py`) now counts in-transit fleet ships toward
+`my_ships`/`enemy_ships`, not just planet-held ships, matching
+`src/endgame.py`'s `total_ships`. This changes what those totals measure,
+which changes what the `lookahead_turns`, `lookahead_blend`, and
+`lookahead_ship_weight` params (`src/config.py`) were tuned against. Those
+params **must NOT be promoted until re-tuned** via #117. See the `NOTE (#256)`
+at their definition in `src/config.py` for the inline coupling note. To
+re-tune:
+
+1. `rm trials/study.db` — clear stale Bayesian priors
+2. `uv run python trials/run_trials.py` — run fresh Optuna self-play tuning
+3. Copy the winning params into `src/config.py` PARAMS
+4. `python build.py` then submit
+
 ## Doc-Invariant Test Conventions
 
 Tests that assert "no doc references the old value X" must follow four rules (see issue #97 for the PR #72 failure modes that motivated this):
