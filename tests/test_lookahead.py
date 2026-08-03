@@ -146,6 +146,46 @@ class TestStepState:
         # Position must change after 1 turn with angular_velocity=0.03
         assert (p.x, p.y) != (70.0, 50.0)
 
+    def test_comet_advances_linearly_not_orbitally(self):
+        """A comet planet must move by exactly (vx, vy) per turn, not rotate."""
+        planet = make_planet(
+            id=0, owner=-1, x=70.0, y=50.0, radius=5.0, ships=0, production=0
+        )
+        state = build_state(
+            [planet],
+            [],
+            turn=0,
+            comet_ids={0},
+            comet_velocities={0: (1.5, -0.5)},
+        )
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
+        p = next_s.planets[0]
+        assert p.x == pytest.approx(71.5)
+        assert p.y == pytest.approx(49.5)
+
+    def test_non_comet_planet_still_rotates_orbitally(self):
+        """A regular planet passed alongside comet args still uses orbital rotation."""
+        orbiting = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10, production=1
+        )
+        comet = make_planet(
+            id=1, owner=-1, x=30.0, y=50.0, radius=5.0, ships=0, production=0
+        )
+        state = build_state(
+            [orbiting, comet],
+            [],
+            turn=0,
+            comet_ids={1},
+            comet_velocities={1: (2.0, 0.0)},
+        )
+        next_s = step_state(state, move=None, player=0, angular_velocity=0.03)
+        p = next(pl for pl in next_s.planets if pl.id == 0)
+        from src.math_utils import predict_planet_position
+
+        expected_x, expected_y = predict_planet_position(orbiting, 0.03, 1)
+        assert p.x == pytest.approx(expected_x)
+        assert p.y == pytest.approx(expected_y)
+
     def test_move_deducts_ships_from_source(self):
         """Launching a fleet must deduct ships from the source planet and leave fleet in transit."""
         # radius=1 ensures launched fleet clears the planet boundary (fleet_speed(10) ≈ 1.96 > 1)

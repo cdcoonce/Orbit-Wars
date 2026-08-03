@@ -15,6 +15,9 @@ class SimPlanet:
     radius: float
     ships: int
     production: int
+    is_comet: bool = False
+    vx: float = 0.0
+    vy: float = 0.0
 
 
 @dataclass
@@ -34,8 +37,22 @@ class GameState:
     turn: int
 
 
-def build_state(planets, fleets, turn: int) -> GameState:
-    """Convert immutable kaggle namedtuples to mutable SimPlanet/SimFleet objects."""
+def build_state(
+    planets,
+    fleets,
+    turn: int,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
+) -> GameState:
+    """Convert immutable kaggle namedtuples to mutable SimPlanet/SimFleet objects.
+
+    Args:
+        comet_ids: Planet ids that should be treated as comets (linear motion
+                    instead of orbital rotation) during step_state.
+        comet_velocities: Optional {planet_id: (vx, vy)} map for comet planets.
+                           Planets in comet_ids without an entry default to (0.0, 0.0).
+    """
+    velocities = comet_velocities if comet_velocities is not None else {}
     sim_planets = [
         SimPlanet(
             id=p.id,
@@ -45,6 +62,9 @@ def build_state(planets, fleets, turn: int) -> GameState:
             radius=p.radius,
             ships=p.ships,
             production=p.production,
+            is_comet=p.id in comet_ids,
+            vx=velocities.get(p.id, (0.0, 0.0))[0],
+            vy=velocities.get(p.id, (0.0, 0.0))[1],
         )
         for p in planets
     ]
@@ -179,11 +199,15 @@ def step_state(
         if planet.owner != -1:
             planet.ships += planet.production
 
-    # --- Step 3: Rotate orbiting planets ---
+    # --- Step 3: Rotate orbiting planets (comets advance linearly instead) ---
     for sim_planet in state.planets:
-        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
-        sim_planet.x = new_x
-        sim_planet.y = new_y
+        if sim_planet.is_comet:
+            sim_planet.x += sim_planet.vx
+            sim_planet.y += sim_planet.vy
+        else:
+            new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
+            sim_planet.x = new_x
+            sim_planet.y = new_y
 
     # --- Step 4: Move all fleets ---
     for fleet in state.fleets:
