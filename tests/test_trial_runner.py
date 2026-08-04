@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import optuna
 import pytest
 
+from conftest import assert_covers_params
 from src.config import PARAMS
 
 
@@ -386,7 +387,7 @@ class TestChampionModule:
     def test_champion_params_has_all_keys(self):
         from trials.champion import CHAMPION_PARAMS
 
-        assert set(CHAMPION_PARAMS.keys()) == set(PARAMS.keys())
+        assert_covers_params(CHAMPION_PARAMS, "CHAMPION_PARAMS", exact=True)
 
     def test_champion_params_has_game_length(self):
         from trials.champion import CHAMPION_PARAMS
