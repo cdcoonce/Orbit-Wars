@@ -1,6 +1,6 @@
 """Tests for trials/benchmark.py ORIGINAL_DEFAULTS integrity."""
 
-from src.config import PARAMS
+from conftest import assert_covers_params
 from trials.game_runner import tally_results
 
 
@@ -29,8 +29,7 @@ class TestOriginalDefaults:
         """
         from trials.benchmark import ORIGINAL_DEFAULTS
 
-        missing = set(PARAMS) - set(ORIGINAL_DEFAULTS)
-        assert not missing, f"ORIGINAL_DEFAULTS missing keys: {sorted(missing)}"
+        assert_covers_params(ORIGINAL_DEFAULTS, "ORIGINAL_DEFAULTS")
 
     def test_preserves_hand_tuned_overrides(self):
         """The original hand-tuned values must survive the full-defaults merge."""
