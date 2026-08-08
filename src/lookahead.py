@@ -137,86 +137,8 @@ def step_state(
     Returns:
         The mutated GameState after one simulated turn.
     """
-    # --- Step 1: Launch fleet from move ---
-    # Matches the engine's step order (orbit_wars.py interpreter): Fleet Launch
-    # happens before Production and Planet Movement & Sweep, so the launch angle
-    # is applied from the source planet's PRE-rotation position — exactly the
-    # coordinates plan_expansion used to compute the angle in the first place.
-    if move is not None:
-        planet_id, angle, ships_to_send = move[0], move[1], move[2]
-        source = next((p for p in state.planets if p.id == planet_id), None)
-        if source is not None and source.ships >= ships_to_send:
-            source.ships -= ships_to_send
-            new_fleet = SimFleet(
-                owner=player,
-                x=source.x + math.cos(angle) * (source.radius + 0.1),
-                y=source.y + math.sin(angle) * (source.radius + 0.1),
-                angle=angle,
-                ships=ships_to_send,
-            )
-            state.fleets.append(new_fleet)
-
-    # --- Step 1b: Opponent fleet launches ---
-    if opponent_fn is not None:
-        opp_moves = opponent_fn(state)
-        for opp_move in opp_moves:
-            planet_id, angle, ships = opp_move[0], opp_move[1], opp_move[2]
-            opp_source = next((p for p in state.planets if p.id == planet_id), None)
-            if opp_source is not None and opp_source.ships >= ships:
-                opp_source.ships -= ships
-                state.fleets.append(
-                    SimFleet(
-                        owner=1 - player,
-                        x=opp_source.x + math.cos(angle) * (opp_source.radius + 0.1),
-                        y=opp_source.y + math.sin(angle) * (opp_source.radius + 0.1),
-                        angle=angle,
-                        ships=ships,
-                    )
-                )
-
-    # --- Step 2: Production ---
-    for planet in state.planets:
-        if planet.owner != -1:
-            planet.ships += planet.production
-
-    # --- Step 3: Rotate orbiting planets ---
-    for sim_planet in state.planets:
-        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
-        sim_planet.x = new_x
-        sim_planet.y = new_y
-
-    # --- Step 4: Move all fleets ---
-    for fleet in state.fleets:
-        speed = fleet_speed(fleet.ships)
-        fleet.x += speed * math.cos(fleet.angle)
-        fleet.y += speed * math.sin(fleet.angle)
-
-    # --- Step 5: Combat ---
-    # Single pass: assign each fleet to the first planet it lands on, or keep flying.
-    remaining_fleets = []
-    planet_arrivals: dict[int, list] = {p.id: [] for p in state.planets}
-    for fleet in state.fleets:
-        landed = False
-        for planet in state.planets:
-            dist = distance(fleet.x, fleet.y, planet.x, planet.y)
-            if dist <= planet.radius:
-                planet_arrivals[planet.id].append(fleet)
-                landed = True
-                break
-        if not landed:
-            remaining_fleets.append(fleet)
-
-    for planet in state.planets:
-        arrivals = planet_arrivals[planet.id]
-        if not arrivals:
-            continue
-        _resolve_combat(planet, arrivals)
-
-    # Keep only fleets that didn't land on any planet
-    state.fleets = remaining_fleets
-
-    state.turn += 1
-    return state
+    moves = [] if move is None else [move]
+    return step_state_multi(state, moves, player, angular_velocity, opponent_fn)
 
 
 def step_state_multi(

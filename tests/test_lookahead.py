@@ -1,5 +1,6 @@
 """Tests for src/lookahead.py — TDD: red phase."""
 
+import copy
 import math
 import pytest
 
@@ -1387,6 +1388,41 @@ class TestStepStateMulti:
         multi_fleets = sorted((f.owner, f.ships) for f in next_multi.fleets)
         assert single_fleets == multi_fleets
 
+    @pytest.mark.parametrize("move", [[0, 0.4, 10], None])
+    def test_step_state_delegates_to_step_state_multi(self, move):
+        """step_state(state, move, ...) must produce a state identical to
+        step_state_multi(deepcopy(state), [move] or [], ...) — step_state is a
+        thin wrapper that converts the optional move into a one-or-zero-element
+        list and delegates. Covers both a real move and move=None.
+        """
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
+        state_direct = build_state([planet], [], turn=0)
+        state_for_multi = copy.deepcopy(state_direct)
+
+        next_direct = step_state(
+            state_direct, move=move, player=0, angular_velocity=0.05
+        )
+        moves = [move] if move is not None else []
+        next_multi = step_state_multi(
+            state_for_multi, moves=moves, player=0, angular_velocity=0.05
+        )
+
+        direct_planets = {p.id: (p.owner, p.ships) for p in next_direct.planets}
+        multi_planets = {p.id: (p.owner, p.ships) for p in next_multi.planets}
+        assert direct_planets == multi_planets
+
+        direct_fleets = sorted(
+            (f.owner, f.ships, round(f.x, 9), round(f.y, 9))
+            for f in next_direct.fleets
+        )
+        multi_fleets = sorted(
+            (f.owner, f.ships, round(f.x, 9), round(f.y, 9))
+            for f in next_multi.fleets
+        )
+        assert direct_fleets == multi_fleets
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreCandidateLookaheadFullMoveList
@@ -1437,9 +1473,12 @@ class TestScoreCandidateLookaheadFullMoveList:
             "step_state_multi must be called during the roll-forward loop; "
             "got 0 calls (the loop may still be using step_state with our_greedy[0])"
         )
-        assert len(captured_move_lists[0]) == 2, (
+        # step_state (used for the T+1 candidate move) now delegates to
+        # step_state_multi too, so the roll-forward loop's call is the LAST
+        # recorded one, not necessarily the first.
+        assert len(captured_move_lists[-1]) == 2, (
             f"step_state_multi must receive the full move list (2 moves), "
-            f"got {len(captured_move_lists[0])}"
+            f"got {len(captured_move_lists[-1])}"
         )
 
 
