@@ -8,6 +8,7 @@ from kaggle_environments.envs.orbit_wars.orbit_wars import (
 from .math_utils import (
     BOARD_MAX,
     BOARD_MIN,
+    _min_dist_pt_to_segment,
     angle_to_target,
     distance,
     fleet_speed,
@@ -76,22 +77,6 @@ def classify_enemy(
     if ratio > params["contested_ratio"]:
         return "CONTESTED_ENEMY"
     return "HARDENED_ENEMY"
-
-
-def _min_dist_pt_to_segment(
-    px: float, py: float,
-    sx1: float, sy1: float, sx2: float, sy2: float,
-) -> float:
-    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
-    dx = sx2 - sx1
-    dy = sy2 - sy1
-    d_len_sq = dx * dx + dy * dy
-    if d_len_sq == 0:
-        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
-    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
-    cx = sx1 + t * dx
-    cy = sy1 + t * dy
-    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
 
 
 def detect_threats(

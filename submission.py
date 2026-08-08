@@ -118,19 +118,25 @@ def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
     return min(speed, max_speed)
 
 
-def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
-    """True if the segment from (x1,y1) to (x2,y2) passes within SUN_RADIUS of CENTER."""
-    dx = x2 - x1
-    dy = y2 - y1
-    fx = x1 - CENTER
-    fy = y1 - CENTER
+def _min_dist_pt_to_segment(
+    px: float, py: float,
+    sx1: float, sy1: float, sx2: float, sy2: float,
+) -> float:
+    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
+    dx = sx2 - sx1
+    dy = sy2 - sy1
     d_len_sq = dx * dx + dy * dy
     if d_len_sq == 0:
-        return math.sqrt(fx * fx + fy * fy) < SUN_RADIUS
-    t = max(0.0, min(1.0, -(fx * dx + fy * dy) / d_len_sq))
-    closest_x = fx + t * dx
-    closest_y = fy + t * dy
-    return closest_x * closest_x + closest_y * closest_y < SUN_RADIUS * SUN_RADIUS
+        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
+    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
+    cx = sx1 + t * dx
+    cy = sy1 + t * dy
+    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+
+
+def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
+    """True if the segment from (x1,y1) to (x2,y2) passes within SUN_RADIUS of CENTER."""
+    return _min_dist_pt_to_segment(CENTER, CENTER, x1, y1, x2, y2) < SUN_RADIUS
 
 
 def turns_to_arrive(
@@ -699,22 +705,6 @@ def classify_enemy(
     if ratio > params["contested_ratio"]:
         return "CONTESTED_ENEMY"
     return "HARDENED_ENEMY"
-
-
-def _min_dist_pt_to_segment(
-    px: float, py: float,
-    sx1: float, sy1: float, sx2: float, sy2: float,
-) -> float:
-    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
-    dx = sx2 - sx1
-    dy = sy2 - sy1
-    d_len_sq = dx * dx + dy * dy
-    if d_len_sq == 0:
-        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
-    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
-    cx = sx1 + t * dx
-    cy = sy1 + t * dy
-    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
 
 
 def detect_threats(

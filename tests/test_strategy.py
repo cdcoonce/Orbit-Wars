@@ -9,7 +9,7 @@ from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.strategy import _try_send
-from src.strategy import _min_dist_pt_to_segment
+from src.math_utils import _min_dist_pt_to_segment
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
