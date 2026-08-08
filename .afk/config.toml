@@ -16,7 +16,18 @@ auto_promote = true
 agent_prompt = """Implement the linked GitHub issue using test-driven development \
 (red-green-refactor): write the failing test first, watch it fail, then write the \
 minimal code to pass. Keep changes minimal and scoped to the issue's acceptance \
-criteria. Do not modify unrelated files. Match the surrounding code style."""
+criteria. Do not modify unrelated files. Match the surrounding code style.
+
+submission.py is a GENERATED bundle, not source: `python build.py` bundles src/ \
+into it, and it is the file that actually ships to Kaggle. Any change under src/ \
+therefore REQUIRES running `python build.py` and committing the regenerated \
+submission.py as part of the same slice — \
+tests/test_build.py::test_committed_submission_matches_fresh_build compares the \
+committed bundle against a fresh build and fails when they diverge. Treat that \
+regenerated file as a required artifact of your change: the "do not modify \
+unrelated files" rule above does NOT apply to it, and it is never scope creep, \
+even when the issue body does not name it. Never hand-edit submission.py — only \
+regenerate it via build.py."""
 
 [caps]
 max_retries = 2
