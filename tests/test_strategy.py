@@ -1074,6 +1074,31 @@ def test_plan_expansion_outpost_attacks_easy_neutral_any_value():
     assert len(moves) == 1
 
 
+def test_plan_expansion_skips_target_whose_path_crosses_sun():
+    # Source and target sit opposite each other across the sun (both at
+    # orbital_radius=40, stationary): the straight-line intercept path runs
+    # through CENTER (50,50), well within SUN_RADIUS — plan_expansion must
+    # drop the only candidate rather than suicide the fleet into the sun.
+    source = make_planet(id=0, owner=0, x=90.0, y=50.0, ships=60, production=2)
+    target = make_planet(id=1, owner=-1, x=10.0, y=50.0, ships=0, production=1)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([source], [target], [], own_classes, angular_velocity=0.03)
+    assert moves == []
+
+
+def test_plan_expansion_sends_when_path_is_clear_of_sun():
+    # Positive control: same source and orbital radius, target rotated 90
+    # degrees around the sun so the straight-line path clears the exclusion
+    # zone (closest approach to CENTER is ~28.3, outside SUN_RADIUS=10) —
+    # proving the prior test's no-move result is specifically the sun-crossing
+    # skip, not some other rejection.
+    source = make_planet(id=0, owner=0, x=90.0, y=50.0, ships=60, production=2)
+    target = make_planet(id=1, owner=-1, x=50.0, y=90.0, ships=0, production=1)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([source], [target], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 1
+
+
 def test_plan_moves_returns_moves():
     owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
     neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
