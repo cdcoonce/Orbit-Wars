@@ -114,11 +114,15 @@ def detect_threats(
     # (planet.id, t) -> (px, py). predict_planet_position depends only on
     # (planet, t), not on the enemy fleet, so precompute it once per planet/t
     # here rather than recomputing it for every enemy fleet in the loop below.
-    planet_positions: dict[tuple[int, int], tuple[float, float]] = {
-        (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
-        for t in range(1, params["threat_eta_window"] + 1)
-        for planet in my_planets
-    }
+    # Skip the precompute entirely when no enemy fleets are present — the loop
+    # below never consults planet_positions in that case.
+    planet_positions: dict[tuple[int, int], tuple[float, float]] = {}
+    if any(fleet.owner != player for fleet in fleets):
+        planet_positions = {
+            (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
+            for t in range(1, params["threat_eta_window"] + 1)
+            for planet in my_planets
+        }
     for fleet in fleets:
         if fleet.owner == player:
             continue

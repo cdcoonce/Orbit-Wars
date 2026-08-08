@@ -427,6 +427,39 @@ def test_detect_threats_hoists_planet_position_prediction(monkeypatch):
     )
 
 
+def test_detect_threats_skips_precompute_without_enemy_fleets(monkeypatch):
+    # With no enemy fleets present (empty list, or only own fleets), the
+    # planet_positions precompute must be skipped entirely — predict_planet_position
+    # should never be called — since the loop below has nothing to check against.
+    import src.strategy as strategy
+
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    own_fleet = make_fleet(owner=0, x=70.0, y=50.0, angle=0.0, ships=10)
+
+    calls = []
+    original = strategy.predict_planet_position
+
+    def spy(planet, av, t):
+        calls.append((planet.id, t))
+        return original(planet, av, t)
+
+    monkeypatch.setattr(strategy, "predict_planet_position", spy)
+
+    threats_empty = strategy.detect_threats(
+        [planet], [], player=0, angular_velocity=0.03
+    )
+    threats_own_only = strategy.detect_threats(
+        [planet], [own_fleet], player=0, angular_velocity=0.03
+    )
+
+    assert calls == [], (
+        f"expected predict_planet_position to be skipped when no enemy fleets "
+        f"are present, got {len(calls)} calls"
+    )
+    assert threats_empty == []
+    assert threats_own_only == []
+
+
 def test_handle_threats_scales_against_combined_incoming():
     # Downstream: feeding two converging fleets through detect_threats yields a single
     # threat whose summed incoming_ships drives magnitude-aware reinforcement — handle_threats
