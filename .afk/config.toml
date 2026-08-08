@@ -6,6 +6,20 @@
 test_command = "uv run pytest -q"
 permission_mode = "acceptEdits"
 
+# Grant the bundle build. allowed_tools is otherwise DERIVED from test_command
+# alone (#1086), which granted `uv run pytest -q` and nothing else — so every
+# `build.py` invocation was denied ("requires approval: python build.py"). The
+# agent could not regenerate submission.py, hand-edited it to mirror what
+# build.py would emit, and the reviewer then failed that as scope creep; the
+# retry reverted it and the bundle-sync gate went red. Deadlock (#116, #120).
+# Both spellings are granted because the agent reached for both. No new
+# privilege: it can already execute repo code via pytest.
+# Merge is additive — the derived pytest grant is preserved (_merge_allowed_tools).
+allowed_tools = [
+  "Bash(uv run python build.py:*)",
+  "Bash(python build.py:*)",
+]
+
 # Integration model (live end-to-end test): build onto a standing staging branch
 # via the merge-queue, auto-promote afk-sized proposals, and (F2) open the
 # staging->main MR. A human still merges staging->main.
@@ -18,16 +32,21 @@ agent_prompt = """Implement the linked GitHub issue using test-driven developmen
 minimal code to pass. Keep changes minimal and scoped to the issue's acceptance \
 criteria. Do not modify unrelated files. Match the surrounding code style.
 
-submission.py is a GENERATED bundle, not source: `python build.py` bundles src/ \
-into it, and it is the file that actually ships to Kaggle. Any change under src/ \
-therefore REQUIRES running `python build.py` and committing the regenerated \
-submission.py as part of the same slice — \
+submission.py is a GENERATED bundle, not source: build.py bundles src/ into it, \
+and it is the file that actually ships to Kaggle. Any change under src/ therefore \
+REQUIRES regenerating it and committing the result as part of the same slice — \
 tests/test_build.py::test_committed_submission_matches_fresh_build compares the \
 committed bundle against a fresh build and fails when they diverge. Treat that \
 regenerated file as a required artifact of your change: the "do not modify \
 unrelated files" rule above does NOT apply to it, and it is never scope creep, \
-even when the issue body does not name it. Never hand-edit submission.py — only \
-regenerate it via build.py."""
+even when the issue body does not name it.
+
+Run it as exactly `uv run python build.py` — that spelling is granted in \
+allowed_tools; other spellings are denied by the permission harness. Never \
+hand-edit submission.py to mimic what build.py would emit, even if a build \
+command is refused: a hand-written bundle can silently diverge from src/ and is \
+what ships to Kaggle. If the build genuinely cannot run, write the blocker to \
+.afk/question.md and stop rather than editing the bundle by hand."""
 
 [caps]
 max_retries = 2

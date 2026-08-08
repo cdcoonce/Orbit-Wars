@@ -25,10 +25,14 @@ kaggle competitions submit -c orbit-wars -f submission.py -m "description"  # su
 the bundle that actually ships to Kaggle, and
 `tests/test_build.py::test_committed_submission_matches_fresh_build` compares the
 committed copy against a fresh build, so a `src/` change that skips `build.py`
-fails the suite. Run `python build.py` and commit the result **in the same change**
-— it is a required artifact of that change, never an unrelated file and never
-scope creep, even when an issue names only the `src/` file. Never hand-edit
-`submission.py`; only regenerate it.
+fails the suite. Run `uv run python build.py` and commit the result **in the same
+change** — it is a required artifact of that change, never an unrelated file and
+never scope creep, even when an issue names only the `src/` file. Never hand-edit
+`submission.py` to mimic a build; a hand-written bundle can silently diverge from
+`src/`, and the bundle is what ships.
+
+Agents: `uv run python build.py` is the spelling granted in `.afk/config.toml`
+`allowed_tools`. Other spellings are refused by the permission harness.
 
 Any issue that touches `src/` should say so in its own scope: name `submission.py`
 alongside the `src/` file. Reviewers see only the issue body and the diff, so an
