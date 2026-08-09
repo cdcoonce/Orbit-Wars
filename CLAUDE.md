@@ -266,3 +266,13 @@ Tests that assert "no doc references the old value X" must follow five rules (se
    actually enforced for the full repository, and the stale value could persist
    indefinitely because nothing ever grepped the excluded tree to confirm it was
    clean.
+
+## Copilot Review Instructions
+
+`.github/copilot-instructions.md` restates the conventions on this page in
+reviewer-facing form (boundary-split guard rule, named-field records,
+tuned-constant update rule, doc-invariant test conventions, semantics-change
+re-tune rule) so automated review can apply the same rules this file gives
+the coding agent, instead of only flagging violations after merge. This file
+remains the source of truth — **keep `.github/copilot-instructions.md` in
+sync whenever a convention here changes or a new one is added.**
