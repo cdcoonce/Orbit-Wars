@@ -90,8 +90,8 @@ def detect_threats(
     # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
     # handle_threats sizes reinforcement against the combined attack, not just one fleet.
     # Use id(fleet) (object identity) rather than fleet.id so that distinct fleet
-    # objects sharing the same .id value (e.g. sim-spawned sentinels where id=-1)
-    # each contribute their ships exactly once.
+    # objects sharing the same .id value (e.g. sim-spawned sentinels, which all
+    # default to id=None) each contribute their ships exactly once.
     seen: set[tuple[int, int]] = set()
     # planet_id -> (summed_ships, earliest_eta). An explicit 2-tuple keeps each
     # slot self-documenting (no positional [0]/[1] mutation to accidentally swap).
@@ -125,8 +125,8 @@ def detect_threats(
             for planet in my_planets:
                 # seen guards a single fleet object from contributing its ships
                 # more than once to the same planet (it may stay in-radius across
-                # several t). Keyed on object identity so fleets sharing .id=-1
-                # (lookahead sim-spawned sentinels) are not collapsed.
+                # several t). Keyed on object identity so fleets sharing
+                # .id=None (lookahead sim-spawned sentinels) are not collapsed.
                 if (id(fleet), planet.id) in seen:
                     continue
                 px, py = planet_positions[(planet.id, t)]
