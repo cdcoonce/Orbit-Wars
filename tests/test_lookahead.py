@@ -161,6 +161,17 @@ class TestStepState:
         assert source.ships == 22
         assert len(next_s.fleets) == 1
 
+    def test_sim_spawned_fleet_id_sentinel_does_not_collide_with_neutral_owner(self):
+        """A sim-spawned fleet's default id must not equal -1, the neutral-owner sentinel."""
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
+        state = build_state([planet], [], turn=0)
+        move = [0, 0.0, 10]
+        next_s = step_state(state, move=move, player=0, angular_velocity=0.03)
+        assert len(next_s.fleets) == 1
+        assert next_s.fleets[0].id != -1
+
     def test_slow_fleet_stays_in_transit_after_launch(self):
         """Slow fleet (fleet_speed < source.radius) must not re-land on the origin planet.
 

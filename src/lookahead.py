@@ -24,7 +24,9 @@ class SimFleet:
     y: float
     angle: float
     ships: int
-    id: int = -1  # sentinel for sim-spawned fleets; real fleets get kaggle id
+    # sentinel for sim-spawned fleets; real fleets get kaggle id. None (not -1)
+    # so this can never be mistaken for the owner==-1 neutral-owner convention.
+    id: int | None = None
 
 
 @dataclass
