@@ -1054,6 +1054,55 @@ def _try_send(
     return [source.id, angle_to_target(source.x, source.y, future_x, future_y), ships]
 
 
+def _drain_excess(
+    source: Planet,
+    candidates: list,
+    best_target_id: int,
+    ships_remaining: int,
+    min_garrison: int,
+    agg: float,
+    angular_velocity: float,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
+) -> list:
+    """Drain leftover ships from ``source`` into lower-scored candidates.
+
+    Ranks by raw greedy c[0], not blended: lookahead is expensive and
+    leftover-fleet stakes are low. Clamps each send so ``ships_remaining``
+    never drops below ``min_garrison``.
+    """
+    moves = []
+    already_sent = {best_target_id}
+    for _, _, extra_target, extra_fraction, _, _ in sorted(
+        candidates, key=lambda c: c[0], reverse=True
+    ):
+        if ships_remaining <= min_garrison:
+            break
+        if extra_target.id in already_sent:
+            continue
+        extra_send = max(1, int(ships_remaining * extra_fraction * agg))
+        # Don't drop below min_garrison. The loop guard above ensures
+        # ships_remaining > min_garrison here, so the clamped value is >= 1.
+        if ships_remaining - extra_send < min_garrison:
+            extra_send = ships_remaining - min_garrison
+        extra_move = _try_send(
+            source,
+            extra_target,
+            extra_send,
+            angular_velocity,
+            comet_ids,
+            comet_velocities,
+            validate=True,
+        )
+        if extra_move is None:
+            continue
+        moves.append(extra_move)
+        ships_remaining -= extra_send
+        already_sent.add(extra_target.id)
+
+    return moves
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -1129,34 +1178,19 @@ def plan_expansion(
 
         # Multi-target: drain excess ships to lower-scored candidates
         if ships_remaining > min_garrison:
-            already_sent = {best_target.id}
-            # Drain ranks by raw greedy c[0], not blended: lookahead is expensive and leftover-fleet stakes are low.
-            for _, _, extra_target, extra_fraction, _, _ in sorted(
-                candidates, key=lambda c: c[0], reverse=True
-            ):
-                if ships_remaining <= min_garrison:
-                    break
-                if extra_target.id in already_sent:
-                    continue
-                extra_send = max(1, int(ships_remaining * extra_fraction * agg))
-                # Don't drop below min_garrison. The loop guard above ensures
-                # ships_remaining > min_garrison here, so the clamped value is >= 1.
-                if ships_remaining - extra_send < min_garrison:
-                    extra_send = ships_remaining - min_garrison
-                extra_move = _try_send(
+            moves.extend(
+                _drain_excess(
                     source,
-                    extra_target,
-                    extra_send,
+                    candidates,
+                    best_target.id,
+                    ships_remaining,
+                    min_garrison,
+                    agg,
                     angular_velocity,
                     comet_ids,
                     comet_velocities,
-                    validate=True,
                 )
-                if extra_move is None:
-                    continue
-                moves.append(extra_move)
-                ships_remaining -= extra_send
-                already_sent.add(extra_target.id)
+            )
 
     return moves
 
