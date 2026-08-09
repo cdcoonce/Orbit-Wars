@@ -210,7 +210,7 @@ re-tune:
 
 ## Doc-Invariant Test Conventions
 
-Tests that assert "no doc references the old value X" must follow four rules (see issue #97 for the PR #72 failure modes that motivated this):
+Tests that assert "no doc references the old value X" must follow five rules (see issue #97 for the PR #72 failure modes that motivated this):
 
 1. **Match all value representations.** Check every encoding of the guarded value
    — percent form (e.g. `65%`), decimal form (e.g. `0.65`), and any other
@@ -250,3 +250,19 @@ Tests that assert "no doc references the old value X" must follow four rules (se
    `test_tuned_constant_convention.py` fixed the `PROMOTION_THRESHOLD` and
    `N_GAMES` drift by hand, one bespoke test per constant; this rule generalizes
    so the next drifted constant doesn't need its own hand-written guard.
+
+5. **Verify and clean excluded directories — documenting them is not enough.**
+   When a doc-scan test excludes a directory it cannot police (e.g. `.claude/`,
+   `.afk/`), the same change must manually `grep` that directory for the guarded
+   value and fix any stale occurrences found, in addition to satisfying rule 3.
+   The exclusion comment must record that the directory was **verified clean as
+   of `<commit/PR>`** — naming the CI limitation alone, without confirming the
+   excluded tree is actually free of the stale value, is not sufficient.
+
+   _Motivating failure:_ PR #72's `test_no_doc_references_old_55_percent`
+   excluded `.claude/` from its scan and documented the CI limitation, but
+   `.claude/docs/project.md` still carried the stale promotion-threshold figure
+   the test is named for — so that test's acceptance criterion was never
+   actually enforced for the full repository, and the stale value could persist
+   indefinitely because nothing ever grepped the excluded tree to confirm it was
+   clean.
