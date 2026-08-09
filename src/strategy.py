@@ -175,12 +175,12 @@ def handle_threats(
             magnitude = int(
                 threat.incoming_ships * params["defense_incoming_multiplier"]
             )
-            ships_to_send = max(flat, magnitude)
             # Cap magnitude-driven growth so the source keeps min_garrison, but never
             # below the flat baseline (preserves the legacy floor when the knob is 0).
-            ships_to_send = max(
-                flat, min(ships_to_send, source.ships - params["min_garrison"])
-            )
+            # max(flat, min(max(flat, magnitude), cap)) collapses to max(flat, min(magnitude, cap)):
+            # when magnitude >= flat both forms agree; when magnitude < flat both reduce to flat.
+            cap = source.ships - params["min_garrison"]
+            ships_to_send = max(flat, min(magnitude, cap))
             if ships_to_send < params["min_garrison"]:
                 continue
             future_x, future_y, eta = intercept(
