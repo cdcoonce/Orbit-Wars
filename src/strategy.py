@@ -243,9 +243,11 @@ def _blended_best(candidates: list, blend: float):
     return best_scored[1], best_scored[2], best_scored[3], best_scored[4]
 
 
-def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, params, blend):
+def _build_opponent_fn(
+    initial_planets, fleets, turn, player, angular_velocity, params, use_lookahead
+):
     """Return a frozen opponent_fn (state -> precomputed moves) for lookahead, or None
-    when blend==0 or inputs are missing. Forces blend=0 in the opponent plan to terminate recursion.
+    when use_lookahead is False. Forces blend=0 in the opponent plan to terminate recursion.
 
     Precompute the opponent's frozen response ONCE per plan_expansion call. Every
     input (initial_planets, fleets, turn, player, angular_velocity, params) is
@@ -255,7 +257,6 @@ def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, 
     with lookahead_blend≈0.97 in real games and across self-play). Forces blend=0 to
     prevent recursive lookahead (recursion termination).
     """
-    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     if not use_lookahead:
         return None
 
@@ -280,7 +281,6 @@ def _generate_candidates(
     targets: list[Planet],
     dist_power: float,
     agg: float,
-    blend: float,
     angular_velocity: float,
     params: dict,
     comet_ids: set,
@@ -290,6 +290,7 @@ def _generate_candidates(
     fleets,
     player: int,
     turn: int,
+    use_lookahead: bool,
 ) -> list:
     """Return scored expansion candidates for one source planet.
 
@@ -298,7 +299,6 @@ def _generate_candidates(
     ``can_capture``, sun-path checks, greedy scoring, and optional lookahead
     scoring against ``opponent_fn``.
     """
-    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     # Use full fleet for classification so FACTORY correctly sees adjacent
     # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
     probe_ships = source.ships
@@ -493,8 +493,9 @@ def plan_expansion(
     min_garrison = int(_effective_min_garrison(turn, params) / agg)
     dist_power = _effective_distance_power(turn, params)
     blend = params["lookahead_blend"]
+    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     opponent_fn = _build_opponent_fn(
-        initial_planets, fleets, turn, player, angular_velocity, params, blend
+        initial_planets, fleets, turn, player, angular_velocity, params, use_lookahead
     )
 
     for source in owned:
@@ -510,7 +511,6 @@ def plan_expansion(
             targets,
             dist_power,
             agg,
-            blend,
             angular_velocity,
             params,
             comet_ids,
@@ -520,6 +520,7 @@ def plan_expansion(
             fleets,
             player,
             turn,
+            use_lookahead,
         )
 
         if not candidates:

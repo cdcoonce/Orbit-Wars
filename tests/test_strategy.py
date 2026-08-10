@@ -1313,18 +1313,21 @@ def test_plan_expansion_late_game_agg_scales_sends_and_inflates_floor():
 
 
 def test_plan_expansion_lookahead_guard_not_duplicated():
-    """plan_expansion must hoist the lookahead-enablement condition into a single
-    flag rather than repeating the guard verbatim at two call sites.  Duplication
-    means the two sites can silently drift out of sync."""
+    """The lookahead-enablement condition must be computed once in plan_expansion
+    and threaded into its helpers as a parameter, rather than being recomputed
+    verbatim in each helper. Duplication means the copies can silently drift out
+    of sync — this scans the whole module, not just plan_expansion's own source,
+    since the guard actually lives in the helper functions plan_expansion calls."""
     import inspect
-    from src.strategy import plan_expansion
+    import src.strategy as strat
 
-    src = inspect.getsource(plan_expansion)
+    src = inspect.getsource(strat)
     guard = "blend > 0 and initial_planets is not None and fleets is not None"
     count = src.count(guard)
     assert count <= 1, (
-        f"The guard '{guard}' appears {count} times in plan_expansion — "
-        "hoist it into a single `use_lookahead` flag instead."
+        f"The guard '{guard}' appears {count} times in strategy.py — "
+        "hoist it into a single `use_lookahead` flag computed once in "
+        "plan_expansion and threaded into its helpers as a parameter."
     )
 
 
@@ -1693,7 +1696,13 @@ def test_build_opponent_fn_none_when_blend_zero():
     planets = [make_planet(id=0, owner=0, ships=20)]
     fleets = []
     result = _build_opponent_fn(
-        planets, fleets, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.0
+        planets,
+        fleets,
+        turn=0,
+        player=0,
+        angular_velocity=0.03,
+        params=PARAMS,
+        use_lookahead=False,
     )
     assert result is None
 
@@ -1702,7 +1711,13 @@ def test_build_opponent_fn_none_when_inputs_missing():
     from src.strategy import _build_opponent_fn
 
     result = _build_opponent_fn(
-        None, None, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.9
+        None,
+        None,
+        turn=0,
+        player=0,
+        angular_velocity=0.03,
+        params=PARAMS,
+        use_lookahead=False,
     )
     assert result is None
 
@@ -1721,7 +1736,7 @@ def test_build_opponent_fn_returns_frozen_plan_moves_result():
     angular_velocity = 0.03
 
     opponent_fn = _build_opponent_fn(
-        planets, fleets, turn, player, angular_velocity, PARAMS, blend=0.9
+        planets, fleets, turn, player, angular_velocity, PARAMS, use_lookahead=True
     )
     assert opponent_fn is not None
 
@@ -1757,7 +1772,6 @@ def test_generate_candidates_soft_enemy_produces_one_candidate():
         [soft_enemy],
         dist_power,
         agg=1.0,
-        blend=0.0,
         angular_velocity=0.03,
         params=PARAMS,
         comet_ids=frozenset(),
@@ -1767,6 +1781,7 @@ def test_generate_candidates_soft_enemy_produces_one_candidate():
         fleets=None,
         player=0,
         turn=0,
+        use_lookahead=False,
     )
 
     assert len(candidates) == 1
@@ -1795,7 +1810,6 @@ def test_generate_candidates_skip_combo_produces_none():
         [hard_neutral],
         dist_power,
         agg=1.0,
-        blend=0.0,
         angular_velocity=0.03,
         params=PARAMS,
         comet_ids=frozenset(),
@@ -1805,6 +1819,7 @@ def test_generate_candidates_skip_combo_produces_none():
         fleets=None,
         player=0,
         turn=0,
+        use_lookahead=False,
     )
 
     assert candidates == []
@@ -1829,7 +1844,6 @@ def test_generate_candidates_excludes_target_failing_can_capture():
         [soft_enemy],
         dist_power,
         agg=1.0,
-        blend=0.0,
         angular_velocity=0.03,
         params=params,
         comet_ids=frozenset(),
@@ -1839,6 +1853,7 @@ def test_generate_candidates_excludes_target_failing_can_capture():
         fleets=None,
         player=0,
         turn=0,
+        use_lookahead=False,
     )
 
     assert candidates == []
