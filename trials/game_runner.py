@@ -209,16 +209,11 @@ def run_games(
     results = []
     for i in range(n_games):
         challenger_player = i % 2
-        if seed is None:
-            result = run_game(
-                challenger_params, champion_params,
-                challenger_player=challenger_player,
-            )
-        else:
-            result = run_game(
-                challenger_params, champion_params,
-                challenger_player=challenger_player, seed=seed + i // 2,
-            )
+        game_seed = None if seed is None else seed + i // 2
+        result = run_game(
+            challenger_params, champion_params,
+            challenger_player=challenger_player, seed=game_seed,
+        )
         results.append(result)
     tally = tally_results(results)
     win_rate = tally["challenger"] / n_games
