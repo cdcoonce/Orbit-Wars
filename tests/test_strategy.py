@@ -278,6 +278,22 @@ def test_classify_enemy_hardened():
     assert classify_enemy(target, ships_to_send, eta) == "HARDENED_ENEMY"
 
 
+def test_classify_enemy_ratio_equal_to_weak_ratio_is_contested():
+    params = {**PARAMS, "weak_ratio": 2.0, "contested_ratio": 1.0}
+    target = make_planet(owner=1, ships=5, production=0)
+    eta = 10
+    # expected_defenders = 5; ratio = 10/5 = 2.0 == weak_ratio
+    assert classify_enemy(target, 10, eta, params=params) == "CONTESTED_ENEMY"
+
+
+def test_classify_enemy_ratio_equal_to_contested_ratio_is_hardened():
+    params = {**PARAMS, "weak_ratio": 2.0, "contested_ratio": 1.5}
+    target = make_planet(owner=1, ships=10, production=0)
+    eta = 10
+    # expected_defenders = 10; ratio = 15/10 = 1.5 == contested_ratio
+    assert classify_enemy(target, 15, eta, params=params) == "HARDENED_ENEMY"
+
+
 def make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=0.0, from_planet_id=99, ships=10):
     return Fleet(id, owner, x, y, angle, from_planet_id, ships)
 
