@@ -728,6 +728,67 @@ def test_handle_threats_missing_defense_incoming_multiplier_raises():
         )
 
 
+def test_handle_threats_skips_reinforcement_whose_path_crosses_sun():
+    """handle_threats' sun-skip (strategy.py `if path_crosses_sun(...): continue`)
+    is only reachable after the ETA and min_garrison gates pass — this test proves
+    it fires on its own, not as a byproduct of one of those other gates.
+
+    Geometry: fortress at (10, 50), threatened planet at (90, 50) — both static
+    (x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50)),
+    so intercept() aims straight at (90, 50) and the source->intercept segment is
+    the horizontal line y=50, which passes directly through CENTER (50, 50) —
+    the same direct-hit geometry as test_try_send_validate_none_on_sun_crossing_path.
+
+    Gates satisfied so the sun check is the *only* reason for rejection:
+      - min_garrison: fortress.ships=100, min_garrison=10, defense_reinforce_fraction=0.5
+        -> ships_to_send=50, well over min_garrison.
+      - eta: threat.eta=200 is deliberately huge (the "large threat.eta" from the
+        issue) so the real intercept ETA for an 80-unit trip (well under 80 turns
+        even at the slowest fleet speed) clears `eta <= threat.eta - eta_buffer(5) = 195`.
+    """
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=10.0, y=50.0, ships=100, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=200)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    # Precondition: the straight-line path this geometry produces does cross the sun.
+    assert path_crosses_sun(fortress.x, fortress.y, threatened.x, threatened.y) is True
+
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert moves == []
+
+    # Contrast: same source, same ETA/garrison margins, geometry shifted off the
+    # sun line (y=90 instead of y=50 — CENTER's y-distance is now 40 > SUN_RADIUS).
+    # The reinforcement now fires, proving the suppression above is sun-specific
+    # rather than an unrelated ETA or garrison gate silently rejecting it.
+    threatened_clear = make_planet(id=1, owner=0, x=90.0, y=90.0, ships=20, production=2)
+    fortress_clear = make_planet(id=2, owner=0, x=10.0, y=90.0, ships=100, production=4)
+    assert (
+        path_crosses_sun(fortress_clear.x, fortress_clear.y, threatened_clear.x, threatened_clear.y)
+        is False
+    )
+    clear_moves = handle_threats(
+        threats,
+        [threatened_clear, fortress_clear],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(clear_moves) == 1
+    assert clear_moves[0][0] == fortress_clear.id
+
+
 # --- plan_expansion ---
 
 
