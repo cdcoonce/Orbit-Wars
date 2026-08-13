@@ -560,6 +560,17 @@ class TestResolveCombat:
         assert planet.owner == 0
         assert planet.ships == 5  # surviving = 10 - 5 = 5
 
+    def test_neutral_defends_and_retains_ships(self):
+        """Neutral incumbent (owner=-1) repels a smaller attack: it keeps the
+        surviving ships and stays neutral — no foothold cost, since
+        winner == planet.owner (-1) already.
+        """
+        planet = self._planet(owner=-1, ships=10)
+        arrivals = [self._fleet(owner=1, ships=3)]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == -1
+        assert planet.ships == 7  # surviving = 10 - 3 = 7, no foothold deduction
+
     def test_exact_tie_incumbent_holds(self):
         """Exact tie (surviving == 0) breaks to incumbent; planet held with 0 ships."""
         planet = self._planet(owner=0, ships=5)
