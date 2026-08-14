@@ -254,7 +254,13 @@ def step_state_multi(
 
 
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
-    """Score a GameState from `player`'s perspective."""
+    """Score a GameState from `player`'s perspective.
+
+    The operative weight in real play is `lookahead_ship_weight` in PARAMS
+    (`src/config.py`), passed explicitly by `score_candidate_lookahead`. The
+    `ship_weight=0.01` signature default is only a fallback for direct or
+    unit-test calls that omit the argument — no production caller relies on it.
+    """
     my_prod = sum_owned(state.planets, player, attr="production")
     enemy_prod = sum_owned(state.planets, player, attr="production", enemy=True)
     # Includes in-transit fleet ships (not just planet-held ships), matching
