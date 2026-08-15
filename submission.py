@@ -377,6 +377,30 @@ def _resolve_combat(planet: SimPlanet, arrivals: list) -> None:
         planet.ships = 0
 
 
+def _launch_fleet(
+    state: GameState, planet_id: int, angle: float, ships: int, owner: int
+) -> None:
+    """Launch a fleet from ``planet_id`` toward ``angle``, or silently skip.
+
+    Deducts ``ships`` from the source planet and appends a SimFleet spawned
+    just outside its radius (the ``+ 0.1`` offset keeps the fleet from
+    landing back on its own source planet next combat pass). No-op if the
+    source planet doesn't exist or doesn't have enough ships.
+    """
+    source = next((p for p in state.planets if p.id == planet_id), None)
+    if source is not None and source.ships >= ships:
+        source.ships -= ships
+        state.fleets.append(
+            SimFleet(
+                owner=owner,
+                x=source.x + math.cos(angle) * (source.radius + 0.1),
+                y=source.y + math.sin(angle) * (source.radius + 0.1),
+                angle=angle,
+                ships=ships,
+            )
+        )
+
+
 def step_state(
     state: GameState,
     move,
@@ -437,36 +461,14 @@ def step_state_multi(
     # coordinates plan_expansion used to compute the angle in the first place.
     for move in moves:
         planet_id, angle, ships_to_send = move[0], move[1], move[2]
-        source = next((p for p in state.planets if p.id == planet_id), None)
-        if source is not None and source.ships >= ships_to_send:
-            source.ships -= ships_to_send
-            state.fleets.append(
-                SimFleet(
-                    owner=player,
-                    x=source.x + math.cos(angle) * (source.radius + 0.1),
-                    y=source.y + math.sin(angle) * (source.radius + 0.1),
-                    angle=angle,
-                    ships=ships_to_send,
-                )
-            )
+        _launch_fleet(state, planet_id, angle, ships_to_send, owner=player)
 
     # --- Step 1b: Opponent fleet launches ---
     if opponent_fn is not None:
         opp_moves = opponent_fn(state)
         for opp_move in opp_moves:
             planet_id, angle, ships = opp_move[0], opp_move[1], opp_move[2]
-            opp_source = next((p for p in state.planets if p.id == planet_id), None)
-            if opp_source is not None and opp_source.ships >= ships:
-                opp_source.ships -= ships
-                state.fleets.append(
-                    SimFleet(
-                        owner=1 - player,
-                        x=opp_source.x + math.cos(angle) * (opp_source.radius + 0.1),
-                        y=opp_source.y + math.sin(angle) * (opp_source.radius + 0.1),
-                        angle=angle,
-                        ships=ships,
-                    )
-                )
+            _launch_fleet(state, planet_id, angle, ships, owner=1 - player)
 
     # --- Step 2: Production ---
     for planet in state.planets:
