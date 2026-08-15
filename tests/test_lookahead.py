@@ -10,6 +10,7 @@ from src.lookahead import (
     GameState,
     SimFleet,
     SimPlanet,
+    _launch_fleet,
     _resolve_combat,
     build_state,
     score_state,
@@ -86,6 +87,52 @@ class TestBuildState:
         planets = [make_planet(id=i) for i in range(4)]
         state = build_state(planets, [], turn=0)
         assert len(state.planets) == 4
+
+
+# ---------------------------------------------------------------------------
+# Class: TestLaunchFleet
+# ---------------------------------------------------------------------------
+
+
+class TestLaunchFleet:
+    def test_launches_fleet_and_deducts_ships(self):
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=20, production=2
+        )
+        state = build_state([planet], [], turn=0)
+
+        _launch_fleet(state, planet_id=0, angle=0.0, ships=8, owner=0)
+
+        source = next(p for p in state.planets if p.id == 0)
+        assert source.ships == 12
+        assert len(state.fleets) == 1
+        fleet = state.fleets[0]
+        assert fleet.owner == 0
+        assert fleet.ships == 8
+        assert fleet.angle == 0.0
+        assert fleet.x == pytest.approx(70.0 + math.cos(0.0) * (5.0 + 0.1))
+        assert fleet.y == pytest.approx(50.0 + math.sin(0.0) * (5.0 + 0.1))
+
+    def test_insufficient_ships_no_fleet_no_deduction(self):
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=5, production=2
+        )
+        state = build_state([planet], [], turn=0)
+
+        _launch_fleet(state, planet_id=0, angle=0.0, ships=6, owner=0)
+
+        source = next(p for p in state.planets if p.id == 0)
+        assert source.ships == 5
+        assert len(state.fleets) == 0
+
+    def test_missing_source_planet_is_noop(self):
+        planet = make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5.0, ships=10)
+        state = build_state([planet], [], turn=0)
+
+        _launch_fleet(state, planet_id=99, angle=0.0, ships=1, owner=0)
+
+        assert len(state.fleets) == 0
+        assert state.planets[0].ships == 10
 
 
 # ---------------------------------------------------------------------------
