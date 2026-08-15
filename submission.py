@@ -127,11 +127,11 @@ def _min_dist_pt_to_segment(
     dy = sy2 - sy1
     d_len_sq = dx * dx + dy * dy
     if d_len_sq == 0:
-        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
+        return distance(px, py, sx1, sy1)
     t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
     cx = sx1 + t * dx
     cy = sy1 + t * dy
-    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+    return distance(px, py, cx, cy)
 
 
 def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
