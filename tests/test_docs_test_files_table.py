@@ -46,3 +46,17 @@ class TestTestFilesTableComplete:
             f"for: {missing}. Add a row naming the module covered and its key "
             "invariant groups."
         )
+
+    def test_test_strategy_row_does_not_claim_value_tier_coverage(self):
+        """value_tier was removed from src/strategy.py and tests/test_strategy.py
+        has no test for it — the row must not claim that coverage (issue #314)."""
+        for line in OVERVIEW.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("| `tests/test_strategy.py`"):
+                assert "value tier" not in stripped.lower(), (
+                    "tests/test_strategy.py row still claims value-tier coverage, "
+                    "but value_tier was removed from src/strategy.py and no test "
+                    "for it exists."
+                )
+                return
+        raise AssertionError("tests/test_strategy.py row not found in overview.md")

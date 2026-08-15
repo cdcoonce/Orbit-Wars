@@ -1,5 +1,6 @@
 """Tests for src/lookahead.py — TDD: red phase."""
 
+import copy
 import math
 import pytest
 
@@ -159,6 +160,17 @@ class TestStepState:
         # 30 ships - 10 launched + 2 production = 22; fleet stays in transit
         assert source.ships == 22
         assert len(next_s.fleets) == 1
+
+    def test_sim_spawned_fleet_id_sentinel_does_not_collide_with_neutral_owner(self):
+        """A sim-spawned fleet's default id must not equal -1, the neutral-owner sentinel."""
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
+        state = build_state([planet], [], turn=0)
+        move = [0, 0.0, 10]
+        next_s = step_state(state, move=move, player=0, angular_velocity=0.03)
+        assert len(next_s.fleets) == 1
+        assert next_s.fleets[0].id != -1
 
     def test_slow_fleet_stays_in_transit_after_launch(self):
         """Slow fleet (fleet_speed < source.radius) must not re-land on the origin planet.
@@ -547,6 +559,17 @@ class TestResolveCombat:
         _resolve_combat(planet, arrivals)
         assert planet.owner == 0
         assert planet.ships == 5  # surviving = 10 - 5 = 5
+
+    def test_neutral_defends_and_retains_ships(self):
+        """Neutral incumbent (owner=-1) repels a smaller attack: it keeps the
+        surviving ships and stays neutral — no foothold cost, since
+        winner == planet.owner (-1) already.
+        """
+        planet = self._planet(owner=-1, ships=10)
+        arrivals = [self._fleet(owner=1, ships=3)]
+        _resolve_combat(planet, arrivals)
+        assert planet.owner == -1
+        assert planet.ships == 7  # surviving = 10 - 3 = 7, no foothold deduction
 
     def test_exact_tie_incumbent_holds(self):
         """Exact tie (surviving == 0) breaks to incumbent; planet held with 0 ships."""
@@ -1387,6 +1410,41 @@ class TestStepStateMulti:
         multi_fleets = sorted((f.owner, f.ships) for f in next_multi.fleets)
         assert single_fleets == multi_fleets
 
+    @pytest.mark.parametrize("move", [[0, 0.4, 10], None])
+    def test_step_state_delegates_to_step_state_multi(self, move):
+        """step_state(state, move, ...) must produce a state identical to
+        step_state_multi(deepcopy(state), [move] or [], ...) — step_state is a
+        thin wrapper that converts the optional move into a one-or-zero-element
+        list and delegates. Covers both a real move and move=None.
+        """
+        planet = make_planet(
+            id=0, owner=0, x=70.0, y=50.0, radius=1.0, ships=30, production=2
+        )
+        state_direct = build_state([planet], [], turn=0)
+        state_for_multi = copy.deepcopy(state_direct)
+
+        next_direct = step_state(
+            state_direct, move=move, player=0, angular_velocity=0.05
+        )
+        moves = [move] if move is not None else []
+        next_multi = step_state_multi(
+            state_for_multi, moves=moves, player=0, angular_velocity=0.05
+        )
+
+        direct_planets = {p.id: (p.owner, p.ships) for p in next_direct.planets}
+        multi_planets = {p.id: (p.owner, p.ships) for p in next_multi.planets}
+        assert direct_planets == multi_planets
+
+        direct_fleets = sorted(
+            (f.owner, f.ships, round(f.x, 9), round(f.y, 9))
+            for f in next_direct.fleets
+        )
+        multi_fleets = sorted(
+            (f.owner, f.ships, round(f.x, 9), round(f.y, 9))
+            for f in next_multi.fleets
+        )
+        assert direct_fleets == multi_fleets
+
 
 # ---------------------------------------------------------------------------
 # Class: TestScoreCandidateLookaheadFullMoveList
@@ -1437,9 +1495,12 @@ class TestScoreCandidateLookaheadFullMoveList:
             "step_state_multi must be called during the roll-forward loop; "
             "got 0 calls (the loop may still be using step_state with our_greedy[0])"
         )
-        assert len(captured_move_lists[0]) == 2, (
+        # step_state (used for the T+1 candidate move) now delegates to
+        # step_state_multi too, so the roll-forward loop's call is the LAST
+        # recorded one, not necessarily the first.
+        assert len(captured_move_lists[-1]) == 2, (
             f"step_state_multi must receive the full move list (2 moves), "
-            f"got {len(captured_move_lists[0])}"
+            f"got {len(captured_move_lists[-1])}"
         )
 
 

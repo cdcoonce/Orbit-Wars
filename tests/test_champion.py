@@ -1,6 +1,6 @@
 """Tests for trials/champion.py CHAMPION_PARAMS integrity."""
 
-from src.config import PARAMS
+from conftest import assert_covers_params
 
 
 class TestChampionParams:
@@ -19,10 +19,4 @@ class TestChampionParams:
         """
         from trials.champion import CHAMPION_PARAMS
 
-        missing = set(PARAMS) - set(CHAMPION_PARAMS)
-        assert not missing, (
-            f"CHAMPION_PARAMS is missing keys: {sorted(missing)}.  "
-            "The champion predates a new tunable — re-tune before use "
-            "(rm trials/study.db → uv run python trials/run_trials.py → "
-            "copy winners into src/config.py PARAMS)."
-        )
+        assert_covers_params(CHAMPION_PARAMS, "CHAMPION_PARAMS")

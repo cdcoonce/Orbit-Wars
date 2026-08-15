@@ -108,7 +108,7 @@ Scores the state from `player`'s perspective:
 score = (my_prod - enemy_prod) + ship_weight * (my_ships - enemy_ships)
 ```
 
-Only counts ships on planets (not in-flight fleets). `ship_weight` (`lookahead_ship_weight` in PARAMS, default 0.01) controls how much raw ship count matters vs production differential. Neutral planets are excluded from both sides.
+Only counts ships on planets (not in-flight fleets). `ship_weight` controls how much raw ship count matters vs production differential; in real play it is always `lookahead_ship_weight` from PARAMS (`src/config.py`), passed explicitly by `score_candidate_lookahead` — the signature's `ship_weight=0.01` is only a fallback for direct/unit-test calls. Neutral planets are excluded from both sides.
 
 ---
 

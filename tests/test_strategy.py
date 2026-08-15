@@ -9,7 +9,8 @@ from src.strategy import _intercept_comet_linear
 from src.strategy import _effective_distance_power
 from src.strategy import can_capture, intercept
 from src.strategy import _try_send
-from src.strategy import _min_dist_pt_to_segment
+from src.strategy import _drain_excess
+from src.math_utils import _min_dist_pt_to_segment
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
@@ -277,6 +278,22 @@ def test_classify_enemy_hardened():
     assert classify_enemy(target, ships_to_send, eta) == "HARDENED_ENEMY"
 
 
+def test_classify_enemy_ratio_equal_to_weak_ratio_is_contested():
+    params = {**PARAMS, "weak_ratio": 2.0, "contested_ratio": 1.0}
+    target = make_planet(owner=1, ships=5, production=0)
+    eta = 10
+    # expected_defenders = 5; ratio = 10/5 = 2.0 == weak_ratio
+    assert classify_enemy(target, 10, eta, params=params) == "CONTESTED_ENEMY"
+
+
+def test_classify_enemy_ratio_equal_to_contested_ratio_is_hardened():
+    params = {**PARAMS, "weak_ratio": 2.0, "contested_ratio": 1.5}
+    target = make_planet(owner=1, ships=10, production=0)
+    eta = 10
+    # expected_defenders = 10; ratio = 15/10 = 1.5 == contested_ratio
+    assert classify_enemy(target, 15, eta, params=params) == "HARDENED_ENEMY"
+
+
 def make_fleet(id=0, owner=1, x=70.0, y=50.0, angle=0.0, from_planet_id=99, ships=10):
     return Fleet(id, owner, x, y, angle, from_planet_id, ships)
 
@@ -425,6 +442,39 @@ def test_detect_threats_hoists_planet_position_prediction(monkeypatch):
         f"expected {window * 2} predict_planet_position calls (W*P, independent "
         f"of fleet count), got {len(calls)}"
     )
+
+
+def test_detect_threats_skips_precompute_without_enemy_fleets(monkeypatch):
+    # With no enemy fleets present (empty list, or only own fleets), the
+    # planet_positions precompute must be skipped entirely — predict_planet_position
+    # should never be called — since the loop below has nothing to check against.
+    import src.strategy as strategy
+
+    planet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    own_fleet = make_fleet(owner=0, x=70.0, y=50.0, angle=0.0, ships=10)
+
+    calls = []
+    original = strategy.predict_planet_position
+
+    def spy(planet, av, t):
+        calls.append((planet.id, t))
+        return original(planet, av, t)
+
+    monkeypatch.setattr(strategy, "predict_planet_position", spy)
+
+    threats_empty = strategy.detect_threats(
+        [planet], [], player=0, angular_velocity=0.03
+    )
+    threats_own_only = strategy.detect_threats(
+        [planet], [own_fleet], player=0, angular_velocity=0.03
+    )
+
+    assert calls == [], (
+        f"expected predict_planet_position to be skipped when no enemy fleets "
+        f"are present, got {len(calls)} calls"
+    )
+    assert threats_empty == []
+    assert threats_own_only == []
 
 
 def test_handle_threats_scales_against_combined_incoming():
@@ -694,6 +744,67 @@ def test_handle_threats_missing_defense_incoming_multiplier_raises():
         )
 
 
+def test_handle_threats_skips_reinforcement_whose_path_crosses_sun():
+    """handle_threats' sun-skip (strategy.py `if path_crosses_sun(...): continue`)
+    is only reachable after the ETA and min_garrison gates pass — this test proves
+    it fires on its own, not as a byproduct of one of those other gates.
+
+    Geometry: fortress at (10, 50), threatened planet at (90, 50) — both static
+    (x=90: orbital_radius=40, 40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50)),
+    so intercept() aims straight at (90, 50) and the source->intercept segment is
+    the horizontal line y=50, which passes directly through CENTER (50, 50) —
+    the same direct-hit geometry as test_try_send_validate_none_on_sun_crossing_path.
+
+    Gates satisfied so the sun check is the *only* reason for rejection:
+      - min_garrison: fortress.ships=100, min_garrison=10, defense_reinforce_fraction=0.5
+        -> ships_to_send=50, well over min_garrison.
+      - eta: threat.eta=200 is deliberately huge (the "large threat.eta" from the
+        issue) so the real intercept ETA for an 80-unit trip (well under 80 turns
+        even at the slowest fleet speed) clears `eta <= threat.eta - eta_buffer(5) = 195`.
+    """
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=10.0, y=50.0, ships=100, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=200)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    # Precondition: the straight-line path this geometry produces does cross the sun.
+    assert path_crosses_sun(fortress.x, fortress.y, threatened.x, threatened.y) is True
+
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert moves == []
+
+    # Contrast: same source, same ETA/garrison margins, geometry shifted off the
+    # sun line (y=90 instead of y=50 — CENTER's y-distance is now 40 > SUN_RADIUS).
+    # The reinforcement now fires, proving the suppression above is sun-specific
+    # rather than an unrelated ETA or garrison gate silently rejecting it.
+    threatened_clear = make_planet(id=1, owner=0, x=90.0, y=90.0, ships=20, production=2)
+    fortress_clear = make_planet(id=2, owner=0, x=10.0, y=90.0, ships=100, production=4)
+    assert (
+        path_crosses_sun(fortress_clear.x, fortress_clear.y, threatened_clear.x, threatened_clear.y)
+        is False
+    )
+    clear_moves = handle_threats(
+        threats,
+        [threatened_clear, fortress_clear],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(clear_moves) == 1
+    assert clear_moves[0][0] == fortress_clear.id
+
+
 # --- plan_expansion ---
 
 
@@ -868,6 +979,60 @@ def test_plan_expansion_drain_clamps_at_min_garrison():
     )  # floor branch is exercised
     assert moves[1][2] == ships_remaining - params["min_garrison"]
     assert source.ships - sum(m[2] for m in moves) == params["min_garrison"]
+
+
+# --- _drain_excess ---
+
+
+def test_drain_excess_drains_to_second_target():
+    """Leftover ships after the primary send drain into the next-best,
+    not-yet-targeted candidate."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=100, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    frac = PARAMS["frac_fortress_easy_neutral"]
+    candidates = [
+        (10.0, 10.0, high, frac, 0.0, 0.0),
+        (5.0, 5.0, low, frac, 0.0, 0.0),
+    ]
+    first_send = max(1, int(source.ships * frac))
+    ships_remaining = source.ships - first_send
+
+    moves = _drain_excess(
+        source, candidates, high.id, ships_remaining, min_garrison=10, agg=1.0,
+        angular_velocity=0.03,
+    )
+
+    assert len(moves) == 1
+    assert moves[0][0] == source.id
+    extra_send = max(1, int(ships_remaining * frac))
+    assert moves[0][2] == extra_send
+
+
+def test_drain_excess_clamps_at_min_garrison():
+    """When the leftover fleet sits just above min_garrison, the drain send is
+    clamped to (ships_remaining - min_garrison) rather than over-draining."""
+    source = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=35, production=4)
+    high = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=0, production=5)
+    low = make_planet(id=2, owner=-1, x=68.0, y=50.0, ships=0, production=2)
+    frac = PARAMS["frac_fortress_easy_neutral"]
+    candidates = [
+        (10.0, 10.0, high, frac, 0.0, 0.0),
+        (5.0, 5.0, low, frac, 0.0, 0.0),
+    ]
+    first_send = max(1, int(source.ships * frac))
+    ships_remaining = source.ships - first_send
+    min_garrison = 10
+    unclamped = max(1, int(ships_remaining * frac))
+    assert unclamped > ships_remaining - min_garrison  # floor branch is exercised
+
+    moves = _drain_excess(
+        source, candidates, high.id, ships_remaining, min_garrison=min_garrison,
+        agg=1.0, angular_velocity=0.03,
+    )
+
+    assert len(moves) == 1
+    assert moves[0][2] == ships_remaining - min_garrison
 
 
 def test_plan_expansion_drain_ranks_by_greedy_not_blended():
@@ -1074,6 +1239,31 @@ def test_plan_expansion_outpost_attacks_easy_neutral_any_value():
     assert len(moves) == 1
 
 
+def test_plan_expansion_skips_target_whose_path_crosses_sun():
+    # Source and target sit opposite each other across the sun (both at
+    # orbital_radius=40, stationary): the straight-line intercept path runs
+    # through CENTER (50,50), well within SUN_RADIUS — plan_expansion must
+    # drop the only candidate rather than suicide the fleet into the sun.
+    source = make_planet(id=0, owner=0, x=90.0, y=50.0, ships=60, production=2)
+    target = make_planet(id=1, owner=-1, x=10.0, y=50.0, ships=0, production=1)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([source], [target], [], own_classes, angular_velocity=0.03)
+    assert moves == []
+
+
+def test_plan_expansion_sends_when_path_is_clear_of_sun():
+    # Positive control: same source and orbital radius, target rotated 90
+    # degrees around the sun so the straight-line path clears the exclusion
+    # zone (closest approach to CENTER is ~28.3, outside SUN_RADIUS=10) —
+    # proving the prior test's no-move result is specifically the sun-crossing
+    # skip, not some other rejection.
+    source = make_planet(id=0, owner=0, x=90.0, y=50.0, ships=60, production=2)
+    target = make_planet(id=1, owner=-1, x=50.0, y=90.0, ships=0, production=1)
+    own_classes = {0: "OUTPOST"}
+    moves = plan_expansion([source], [target], [], own_classes, angular_velocity=0.03)
+    assert len(moves) == 1
+
+
 def test_plan_moves_returns_moves():
     owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
     neutral = make_planet(id=1, owner=-1, x=72.0, y=50.0, ships=1, production=1)
@@ -1200,18 +1390,21 @@ def test_plan_expansion_late_game_agg_scales_sends_and_inflates_floor():
 
 
 def test_plan_expansion_lookahead_guard_not_duplicated():
-    """plan_expansion must hoist the lookahead-enablement condition into a single
-    flag rather than repeating the guard verbatim at two call sites.  Duplication
-    means the two sites can silently drift out of sync."""
+    """The lookahead-enablement condition must be computed once in plan_expansion
+    and threaded into its helpers as a parameter, rather than being recomputed
+    verbatim in each helper. Duplication means the copies can silently drift out
+    of sync — this scans the whole module, not just plan_expansion's own source,
+    since the guard actually lives in the helper functions plan_expansion calls."""
     import inspect
-    from src.strategy import plan_expansion
+    import src.strategy as strat
 
-    src = inspect.getsource(plan_expansion)
+    src = inspect.getsource(strat)
     guard = "blend > 0 and initial_planets is not None and fleets is not None"
     count = src.count(guard)
     assert count <= 1, (
-        f"The guard '{guard}' appears {count} times in plan_expansion — "
-        "hoist it into a single `use_lookahead` flag instead."
+        f"The guard '{guard}' appears {count} times in strategy.py — "
+        "hoist it into a single `use_lookahead` flag computed once in "
+        "plan_expansion and threaded into its helpers as a parameter."
     )
 
 
@@ -1580,7 +1773,13 @@ def test_build_opponent_fn_none_when_blend_zero():
     planets = [make_planet(id=0, owner=0, ships=20)]
     fleets = []
     result = _build_opponent_fn(
-        planets, fleets, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.0
+        planets,
+        fleets,
+        turn=0,
+        player=0,
+        angular_velocity=0.03,
+        params=PARAMS,
+        use_lookahead=False,
     )
     assert result is None
 
@@ -1589,7 +1788,13 @@ def test_build_opponent_fn_none_when_inputs_missing():
     from src.strategy import _build_opponent_fn
 
     result = _build_opponent_fn(
-        None, None, turn=0, player=0, angular_velocity=0.03, params=PARAMS, blend=0.9
+        None,
+        None,
+        turn=0,
+        player=0,
+        angular_velocity=0.03,
+        params=PARAMS,
+        use_lookahead=False,
     )
     assert result is None
 
@@ -1608,7 +1813,7 @@ def test_build_opponent_fn_returns_frozen_plan_moves_result():
     angular_velocity = 0.03
 
     opponent_fn = _build_opponent_fn(
-        planets, fleets, turn, player, angular_velocity, PARAMS, blend=0.9
+        planets, fleets, turn, player, angular_velocity, PARAMS, use_lookahead=True
     )
     assert opponent_fn is not None
 
@@ -1644,7 +1849,6 @@ def test_generate_candidates_soft_enemy_produces_one_candidate():
         [soft_enemy],
         dist_power,
         agg=1.0,
-        blend=0.0,
         angular_velocity=0.03,
         params=PARAMS,
         comet_ids=frozenset(),
@@ -1654,6 +1858,7 @@ def test_generate_candidates_soft_enemy_produces_one_candidate():
         fleets=None,
         player=0,
         turn=0,
+        use_lookahead=False,
     )
 
     assert len(candidates) == 1
@@ -1682,7 +1887,6 @@ def test_generate_candidates_skip_combo_produces_none():
         [hard_neutral],
         dist_power,
         agg=1.0,
-        blend=0.0,
         angular_velocity=0.03,
         params=PARAMS,
         comet_ids=frozenset(),
@@ -1692,6 +1896,7 @@ def test_generate_candidates_skip_combo_produces_none():
         fleets=None,
         player=0,
         turn=0,
+        use_lookahead=False,
     )
 
     assert candidates == []
@@ -1716,7 +1921,6 @@ def test_generate_candidates_excludes_target_failing_can_capture():
         [soft_enemy],
         dist_power,
         agg=1.0,
-        blend=0.0,
         angular_velocity=0.03,
         params=params,
         comet_ids=frozenset(),
@@ -1726,6 +1930,7 @@ def test_generate_candidates_excludes_target_failing_can_capture():
         fleets=None,
         player=0,
         turn=0,
+        use_lookahead=False,
     )
 
     assert candidates == []

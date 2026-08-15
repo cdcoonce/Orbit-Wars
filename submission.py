@@ -118,19 +118,25 @@ def fleet_speed(num_ships: int, max_speed: float = 6.0) -> float:
     return min(speed, max_speed)
 
 
-def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
-    """True if the segment from (x1,y1) to (x2,y2) passes within SUN_RADIUS of CENTER."""
-    dx = x2 - x1
-    dy = y2 - y1
-    fx = x1 - CENTER
-    fy = y1 - CENTER
+def _min_dist_pt_to_segment(
+    px: float, py: float,
+    sx1: float, sy1: float, sx2: float, sy2: float,
+) -> float:
+    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
+    dx = sx2 - sx1
+    dy = sy2 - sy1
     d_len_sq = dx * dx + dy * dy
     if d_len_sq == 0:
-        return math.sqrt(fx * fx + fy * fy) < SUN_RADIUS
-    t = max(0.0, min(1.0, -(fx * dx + fy * dy) / d_len_sq))
-    closest_x = fx + t * dx
-    closest_y = fy + t * dy
-    return closest_x * closest_x + closest_y * closest_y < SUN_RADIUS * SUN_RADIUS
+        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
+    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
+    cx = sx1 + t * dx
+    cy = sy1 + t * dy
+    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+
+
+def path_crosses_sun(x1: float, y1: float, x2: float, y2: float) -> bool:
+    """True if the segment from (x1,y1) to (x2,y2) passes within SUN_RADIUS of CENTER."""
+    return _min_dist_pt_to_segment(CENTER, CENTER, x1, y1, x2, y2) < SUN_RADIUS
 
 
 def turns_to_arrive(
@@ -278,7 +284,9 @@ class SimFleet:
     y: float
     angle: float
     ships: int
-    id: int = -1  # sentinel for sim-spawned fleets; real fleets get kaggle id
+    # sentinel for sim-spawned fleets; real fleets get kaggle id. None (not -1)
+    # so this can never be mistaken for the owner==-1 neutral-owner convention.
+    id: int | None = None
 
 
 @dataclass
@@ -391,86 +399,8 @@ def step_state(
     Returns:
         The mutated GameState after one simulated turn.
     """
-    # --- Step 1: Launch fleet from move ---
-    # Matches the engine's step order (orbit_wars.py interpreter): Fleet Launch
-    # happens before Production and Planet Movement & Sweep, so the launch angle
-    # is applied from the source planet's PRE-rotation position — exactly the
-    # coordinates plan_expansion used to compute the angle in the first place.
-    if move is not None:
-        planet_id, angle, ships_to_send = move[0], move[1], move[2]
-        source = next((p for p in state.planets if p.id == planet_id), None)
-        if source is not None and source.ships >= ships_to_send:
-            source.ships -= ships_to_send
-            new_fleet = SimFleet(
-                owner=player,
-                x=source.x + math.cos(angle) * (source.radius + 0.1),
-                y=source.y + math.sin(angle) * (source.radius + 0.1),
-                angle=angle,
-                ships=ships_to_send,
-            )
-            state.fleets.append(new_fleet)
-
-    # --- Step 1b: Opponent fleet launches ---
-    if opponent_fn is not None:
-        opp_moves = opponent_fn(state)
-        for opp_move in opp_moves:
-            planet_id, angle, ships = opp_move[0], opp_move[1], opp_move[2]
-            opp_source = next((p for p in state.planets if p.id == planet_id), None)
-            if opp_source is not None and opp_source.ships >= ships:
-                opp_source.ships -= ships
-                state.fleets.append(
-                    SimFleet(
-                        owner=1 - player,
-                        x=opp_source.x + math.cos(angle) * (opp_source.radius + 0.1),
-                        y=opp_source.y + math.sin(angle) * (opp_source.radius + 0.1),
-                        angle=angle,
-                        ships=ships,
-                    )
-                )
-
-    # --- Step 2: Production ---
-    for planet in state.planets:
-        if planet.owner != -1:
-            planet.ships += planet.production
-
-    # --- Step 3: Rotate orbiting planets ---
-    for sim_planet in state.planets:
-        new_x, new_y = predict_planet_position(sim_planet, angular_velocity, 1)
-        sim_planet.x = new_x
-        sim_planet.y = new_y
-
-    # --- Step 4: Move all fleets ---
-    for fleet in state.fleets:
-        speed = fleet_speed(fleet.ships)
-        fleet.x += speed * math.cos(fleet.angle)
-        fleet.y += speed * math.sin(fleet.angle)
-
-    # --- Step 5: Combat ---
-    # Single pass: assign each fleet to the first planet it lands on, or keep flying.
-    remaining_fleets = []
-    planet_arrivals: dict[int, list] = {p.id: [] for p in state.planets}
-    for fleet in state.fleets:
-        landed = False
-        for planet in state.planets:
-            dist = distance(fleet.x, fleet.y, planet.x, planet.y)
-            if dist <= planet.radius:
-                planet_arrivals[planet.id].append(fleet)
-                landed = True
-                break
-        if not landed:
-            remaining_fleets.append(fleet)
-
-    for planet in state.planets:
-        arrivals = planet_arrivals[planet.id]
-        if not arrivals:
-            continue
-        _resolve_combat(planet, arrivals)
-
-    # Keep only fleets that didn't land on any planet
-    state.fleets = remaining_fleets
-
-    state.turn += 1
-    return state
+    moves = [] if move is None else [move]
+    return step_state_multi(state, moves, player, angular_velocity, opponent_fn)
 
 
 def step_state_multi(
@@ -584,7 +514,13 @@ def step_state_multi(
 
 
 def score_state(state: GameState, player: int, ship_weight: float = 0.01) -> float:
-    """Score a GameState from `player`'s perspective."""
+    """Score a GameState from `player`'s perspective.
+
+    The operative weight in real play is `lookahead_ship_weight` in PARAMS
+    (`src/config.py`), passed explicitly by `score_candidate_lookahead`. The
+    `ship_weight=0.01` signature default is only a fallback for direct or
+    unit-test calls that omit the argument — no production caller relies on it.
+    """
     my_prod = sum_owned(state.planets, player, attr="production")
     enemy_prod = sum_owned(state.planets, player, attr="production", enemy=True)
     # Includes in-transit fleet ships (not just planet-held ships), matching
@@ -779,22 +715,6 @@ def classify_enemy(
     return "HARDENED_ENEMY"
 
 
-def _min_dist_pt_to_segment(
-    px: float, py: float,
-    sx1: float, sy1: float, sx2: float, sy2: float,
-) -> float:
-    """Minimum distance from point (px, py) to segment (sx1,sy1)→(sx2,sy2)."""
-    dx = sx2 - sx1
-    dy = sy2 - sy1
-    d_len_sq = dx * dx + dy * dy
-    if d_len_sq == 0:
-        return math.sqrt((px - sx1) ** 2 + (py - sy1) ** 2)
-    t = max(0.0, min(1.0, ((px - sx1) * dx + (py - sy1) * dy) / d_len_sq))
-    cx = sx1 + t * dx
-    cy = sy1 + t * dy
-    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
-
-
 def detect_threats(
     my_planets: list[Planet],
     fleets: list[Fleet],
@@ -806,8 +726,8 @@ def detect_threats(
     # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
     # handle_threats sizes reinforcement against the combined attack, not just one fleet.
     # Use id(fleet) (object identity) rather than fleet.id so that distinct fleet
-    # objects sharing the same .id value (e.g. sim-spawned sentinels where id=-1)
-    # each contribute their ships exactly once.
+    # objects sharing the same .id value (e.g. sim-spawned sentinels, which all
+    # default to id=None) each contribute their ships exactly once.
     seen: set[tuple[int, int]] = set()
     # planet_id -> (summed_ships, earliest_eta). An explicit 2-tuple keeps each
     # slot self-documenting (no positional [0]/[1] mutation to accidentally swap).
@@ -815,11 +735,15 @@ def detect_threats(
     # (planet.id, t) -> (px, py). predict_planet_position depends only on
     # (planet, t), not on the enemy fleet, so precompute it once per planet/t
     # here rather than recomputing it for every enemy fleet in the loop below.
-    planet_positions: dict[tuple[int, int], tuple[float, float]] = {
-        (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
-        for t in range(1, params["threat_eta_window"] + 1)
-        for planet in my_planets
-    }
+    # Skip the precompute entirely when no enemy fleets are present — the loop
+    # below never consults planet_positions in that case.
+    planet_positions: dict[tuple[int, int], tuple[float, float]] = {}
+    if any(fleet.owner != player for fleet in fleets):
+        planet_positions = {
+            (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
+            for t in range(1, params["threat_eta_window"] + 1)
+            for planet in my_planets
+        }
     for fleet in fleets:
         if fleet.owner == player:
             continue
@@ -837,8 +761,8 @@ def detect_threats(
             for planet in my_planets:
                 # seen guards a single fleet object from contributing its ships
                 # more than once to the same planet (it may stay in-radius across
-                # several t). Keyed on object identity so fleets sharing .id=-1
-                # (lookahead sim-spawned sentinels) are not collapsed.
+                # several t). Keyed on object identity so fleets sharing
+                # .id=None (lookahead sim-spawned sentinels) are not collapsed.
                 if (id(fleet), planet.id) in seen:
                     continue
                 px, py = planet_positions[(planet.id, t)]
@@ -887,12 +811,12 @@ def handle_threats(
             magnitude = int(
                 threat.incoming_ships * params["defense_incoming_multiplier"]
             )
-            ships_to_send = max(flat, magnitude)
             # Cap magnitude-driven growth so the source keeps min_garrison, but never
             # below the flat baseline (preserves the legacy floor when the knob is 0).
-            ships_to_send = max(
-                flat, min(ships_to_send, source.ships - params["min_garrison"])
-            )
+            # max(flat, min(max(flat, magnitude), cap)) collapses to max(flat, min(magnitude, cap)):
+            # when magnitude >= flat both forms agree; when magnitude < flat both reduce to flat.
+            cap = source.ships - params["min_garrison"]
+            ships_to_send = max(flat, min(magnitude, cap))
             if ships_to_send < params["min_garrison"]:
                 continue
             future_x, future_y, eta = intercept(
@@ -955,9 +879,11 @@ def _blended_best(candidates: list, blend: float):
     return best_scored[1], best_scored[2], best_scored[3], best_scored[4]
 
 
-def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, params, blend):
+def _build_opponent_fn(
+    initial_planets, fleets, turn, player, angular_velocity, params, use_lookahead
+):
     """Return a frozen opponent_fn (state -> precomputed moves) for lookahead, or None
-    when blend==0 or inputs are missing. Forces blend=0 in the opponent plan to terminate recursion.
+    when use_lookahead is False. Forces blend=0 in the opponent plan to terminate recursion.
 
     Precompute the opponent's frozen response ONCE per plan_expansion call. Every
     input (initial_planets, fleets, turn, player, angular_velocity, params) is
@@ -967,7 +893,6 @@ def _build_opponent_fn(initial_planets, fleets, turn, player, angular_velocity, 
     with lookahead_blend≈0.97 in real games and across self-play). Forces blend=0 to
     prevent recursive lookahead (recursion termination).
     """
-    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     if not use_lookahead:
         return None
 
@@ -992,7 +917,6 @@ def _generate_candidates(
     targets: list[Planet],
     dist_power: float,
     agg: float,
-    blend: float,
     angular_velocity: float,
     params: dict,
     comet_ids: set,
@@ -1002,6 +926,7 @@ def _generate_candidates(
     fleets,
     player: int,
     turn: int,
+    use_lookahead: bool,
 ) -> list:
     """Return scored expansion candidates for one source planet.
 
@@ -1010,7 +935,6 @@ def _generate_candidates(
     ``can_capture``, sun-path checks, greedy scoring, and optional lookahead
     scoring against ``opponent_fn``.
     """
-    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     # Use full fleet for classification so FACTORY correctly sees adjacent
     # enemies as SOFT rather than CONTESTED (half-fleet underestimates ratio).
     probe_ships = source.ships
@@ -1136,6 +1060,55 @@ def _try_send(
     return [source.id, angle_to_target(source.x, source.y, future_x, future_y), ships]
 
 
+def _drain_excess(
+    source: Planet,
+    candidates: list,
+    best_target_id: int,
+    ships_remaining: int,
+    min_garrison: int,
+    agg: float,
+    angular_velocity: float,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
+) -> list:
+    """Drain leftover ships from ``source`` into lower-scored candidates.
+
+    Ranks by raw greedy c[0], not blended: lookahead is expensive and
+    leftover-fleet stakes are low. Clamps each send so ``ships_remaining``
+    never drops below ``min_garrison``.
+    """
+    moves = []
+    already_sent = {best_target_id}
+    for _, _, extra_target, extra_fraction, _, _ in sorted(
+        candidates, key=lambda c: c[0], reverse=True
+    ):
+        if ships_remaining <= min_garrison:
+            break
+        if extra_target.id in already_sent:
+            continue
+        extra_send = max(1, int(ships_remaining * extra_fraction * agg))
+        # Don't drop below min_garrison. The loop guard above ensures
+        # ships_remaining > min_garrison here, so the clamped value is >= 1.
+        if ships_remaining - extra_send < min_garrison:
+            extra_send = ships_remaining - min_garrison
+        extra_move = _try_send(
+            source,
+            extra_target,
+            extra_send,
+            angular_velocity,
+            comet_ids,
+            comet_velocities,
+            validate=True,
+        )
+        if extra_move is None:
+            continue
+        moves.append(extra_move)
+        ships_remaining -= extra_send
+        already_sent.add(extra_target.id)
+
+    return moves
+
+
 def plan_expansion(
     owned: list[Planet],
     neutrals: list[Planet],
@@ -1156,8 +1129,9 @@ def plan_expansion(
     min_garrison = int(_effective_min_garrison(turn, params) / agg)
     dist_power = _effective_distance_power(turn, params)
     blend = params["lookahead_blend"]
+    use_lookahead = blend > 0 and initial_planets is not None and fleets is not None
     opponent_fn = _build_opponent_fn(
-        initial_planets, fleets, turn, player, angular_velocity, params, blend
+        initial_planets, fleets, turn, player, angular_velocity, params, use_lookahead
     )
 
     for source in owned:
@@ -1173,7 +1147,6 @@ def plan_expansion(
             targets,
             dist_power,
             agg,
-            blend,
             angular_velocity,
             params,
             comet_ids,
@@ -1183,6 +1156,7 @@ def plan_expansion(
             fleets,
             player,
             turn,
+            use_lookahead,
         )
 
         if not candidates:
@@ -1211,34 +1185,19 @@ def plan_expansion(
 
         # Multi-target: drain excess ships to lower-scored candidates
         if ships_remaining > min_garrison:
-            already_sent = {best_target.id}
-            # Drain ranks by raw greedy c[0], not blended: lookahead is expensive and leftover-fleet stakes are low.
-            for _, _, extra_target, extra_fraction, _, _ in sorted(
-                candidates, key=lambda c: c[0], reverse=True
-            ):
-                if ships_remaining <= min_garrison:
-                    break
-                if extra_target.id in already_sent:
-                    continue
-                extra_send = max(1, int(ships_remaining * extra_fraction * agg))
-                # Don't drop below min_garrison. The loop guard above ensures
-                # ships_remaining > min_garrison here, so the clamped value is >= 1.
-                if ships_remaining - extra_send < min_garrison:
-                    extra_send = ships_remaining - min_garrison
-                extra_move = _try_send(
+            moves.extend(
+                _drain_excess(
                     source,
-                    extra_target,
-                    extra_send,
+                    candidates,
+                    best_target.id,
+                    ships_remaining,
+                    min_garrison,
+                    agg,
                     angular_velocity,
                     comet_ids,
                     comet_velocities,
-                    validate=True,
                 )
-                if extra_move is None:
-                    continue
-                moves.append(extra_move)
-                ships_remaining -= extra_send
-                already_sent.add(extra_target.id)
+            )
 
     return moves
 

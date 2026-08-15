@@ -15,19 +15,19 @@ Always use `uv run` — the project pins Python 3.11 via `.python-version`.
 
 ## Module Inventory
 
-| File                   | Lines | Purpose                                                                                                                            |
-| ---------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `src/agent.py`         | 13    | Entry point: `agent(obs) -> list[list]`. Parses observation, caches initial planets, calls `plan_moves`.                           |
-| `src/strategy.py`      | 375   | Core decision logic: `plan_moves`, `plan_expansion`, `aggression`, classifiers, `detect_threats`, `handle_threats`, `intercept`.   |
-| `src/lookahead.py`     | 201   | 1–N turn simulator: `build_state`, `step_state`, `score_state`. Data classes: `SimPlanet`, `SimFleet`, `GameState`.                |
-| `src/config.py`        | 89    | 32-key `PARAMS` dict (active defaults), `SKIP_COMBOS` set, `PARAM_SPACE` bounds for Optuna.                                        |
-| `src/math_utils.py`    | 84    | Orbital mechanics: `predict_planet_position`, `fleet_speed`, `turns_to_arrive`, `path_crosses_sun`, `angle_to_target`, `distance`. |
-| `src/comets.py`        | 32    | Comet value scaling: `get_comet_ids`, `effective_production`.                                                                      |
-| `src/endgame.py`       | 40    | Late-game defense: `should_play_defensive`, `total_ships`.                                                                         |
-| `trials/run_trials.py` | —     | Optuna self-play tuning loop; promotes challengers to `champion.py` at the `PROMOTION_THRESHOLD` win rate (currently ≥65%).        |
-| `trials/champion.py`   | —     | Best known params — auto-promoted by `run_trials.py`.                                                                              |
-| `trials/benchmark.py`  | —     | Quick sanity check: champion vs original defaults (20 games).                                                                      |
-| `build.py`             | —     | Concatenates `src/` modules into `submission.py` for Kaggle.                                                                       |
+| File                    | Purpose                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/agent.py`          | Entry point: `agent(obs) -> list[list]`. Parses observation, caches initial planets, calls `plan_moves`.                           |
+| `src/strategy.py`       | Core decision logic: `plan_moves`, `plan_expansion`, `aggression`, classifiers, `detect_threats`, `handle_threats`, `intercept`.   |
+| `src/lookahead.py`      | 1–N turn simulator: `build_state`, `step_state`, `score_state`. Data classes: `SimPlanet`, `SimFleet`, `GameState`.                |
+| `src/config.py`         | `PARAMS` dict (active defaults), `SKIP_COMBOS` set, `PARAM_SPACE` bounds for Optuna.                                               |
+| `src/math_utils.py`     | Orbital mechanics: `predict_planet_position`, `fleet_speed`, `turns_to_arrive`, `path_crosses_sun`, `angle_to_target`, `distance`. |
+| `src/comets.py`         | Comet value scaling: `get_comet_ids`, `effective_production`.                                                                      |
+| `src/endgame.py`        | Late-game defense: `should_play_defensive`, `total_ships`.                                                                         |
+| `trials/run_trials.py`  | Optuna self-play tuning loop; promotes challengers to `champion.py` at the `PROMOTION_THRESHOLD` win rate (currently ≥65%).        |
+| `trials/champion.py`    | Best known params — auto-promoted by `run_trials.py`.                                                                              |
+| `trials/benchmark.py`   | Quick sanity check: champion vs original defaults (20 games).                                                                      |
+| `build.py`              | Concatenates `src/` modules into `submission.py` for Kaggle.                                                                       |
 
 ## Call Chain
 

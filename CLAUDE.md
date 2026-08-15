@@ -192,9 +192,25 @@ re-tuned**. To re-tune:
 3. Copy the winning params into `src/config.py` PARAMS
 4. `python build.py` then submit
 
+### Pending re-tune: lookahead in-transit ship counting
+
+`score_state` (`src/lookahead.py`) now counts in-transit fleet ships toward
+`my_ships`/`enemy_ships`, not just planet-held ships, matching
+`src/endgame.py`'s `total_ships`. This changes what those totals measure,
+which changes what the `lookahead_turns`, `lookahead_blend`, and
+`lookahead_ship_weight` params (`src/config.py`) were tuned against. Those
+params **must NOT be promoted until re-tuned** via #117. See the `NOTE (#256)`
+at their definition in `src/config.py` for the inline coupling note. To
+re-tune:
+
+1. `rm trials/study.db` — clear stale Bayesian priors
+2. `uv run python trials/run_trials.py` — run fresh Optuna self-play tuning
+3. Copy the winning params into `src/config.py` PARAMS
+4. `python build.py` then submit
+
 ## Doc-Invariant Test Conventions
 
-Tests that assert "no doc references the old value X" must follow four rules (see issue #97 for the PR #72 failure modes that motivated this):
+Tests that assert "no doc references the old value X" must follow five rules (see issue #97 for the PR #72 failure modes that motivated this):
 
 1. **Match all value representations.** Check every encoding of the guarded value
    — percent form (e.g. `65%`), decimal form (e.g. `0.65`), and any other
@@ -234,3 +250,29 @@ Tests that assert "no doc references the old value X" must follow four rules (se
    `test_tuned_constant_convention.py` fixed the `PROMOTION_THRESHOLD` and
    `N_GAMES` drift by hand, one bespoke test per constant; this rule generalizes
    so the next drifted constant doesn't need its own hand-written guard.
+
+5. **Verify and clean excluded directories — documenting them is not enough.**
+   When a doc-scan test excludes a directory it cannot police (e.g. `.claude/`,
+   `.afk/`), the same change must manually `grep` that directory for the guarded
+   value and fix any stale occurrences found, in addition to satisfying rule 3.
+   The exclusion comment must record that the directory was **verified clean as
+   of `<commit/PR>`** — naming the CI limitation alone, without confirming the
+   excluded tree is actually free of the stale value, is not sufficient.
+
+   _Motivating failure:_ PR #72's `test_no_doc_references_old_55_percent`
+   excluded `.claude/` from its scan and documented the CI limitation, but
+   `.claude/docs/project.md` still carried the stale promotion-threshold figure
+   the test is named for — so that test's acceptance criterion was never
+   actually enforced for the full repository, and the stale value could persist
+   indefinitely because nothing ever grepped the excluded tree to confirm it was
+   clean.
+
+## Copilot Review Instructions
+
+`.github/copilot-instructions.md` restates the conventions on this page in
+reviewer-facing form (boundary-split guard rule, named-field records,
+tuned-constant update rule, doc-invariant test conventions, semantics-change
+re-tune rule) so automated review can apply the same rules this file gives
+the coding agent, instead of only flagging violations after merge. This file
+remains the source of truth — **keep `.github/copilot-instructions.md` in
+sync whenever a convention here changes or a new one is added.**

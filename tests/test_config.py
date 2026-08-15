@@ -1,4 +1,7 @@
+from kaggle_environments.envs.orbit_wars.orbit_wars import Planet
+
 from src.config import PARAMS, PARAM_SPACE, SKIP_COMBOS
+from src.strategy import classify_enemy, classify_neutral, classify_own
 
 # Class matrix mirrors the string literals returned by classify_own /
 # classify_neutral / classify_enemy in src/strategy.py. plan_expansion looks up
@@ -52,6 +55,57 @@ def test_params_within_param_space_bounds():
     assert not out_of_bounds, (
         f"PARAMS defaults outside PARAM_SPACE bounds: {out_of_bounds}"
     )
+
+
+def _make_planet(id=0, owner=0, x=70.0, y=50.0, radius=5, ships=20, production=2):
+    return Planet(id, owner, x, y, radius, ships, production)
+
+
+def test_classifier_return_strings_match_class_matrix():
+    # Drive each classifier across crafted inputs covering every branch, then
+    # assert the observed output set against the literal set the classifier is
+    # documented to return — catching drift between the classifiers and the
+    # hand-copied SRC_CLASSES/TGT_CLASSES matrix above.
+    threatened = _make_planet(id=1, ships=50, production=5)
+    fortress = _make_planet(
+        ships=PARAMS["fortress_min_ships"], production=PARAMS["fortress_min_production"]
+    )
+    factory = _make_planet(ships=10, production=PARAMS["factory_min_production"])
+    outpost = _make_planet(ships=10, production=1)
+    own_results = {
+        classify_own(threatened, {threatened.id}),
+        classify_own(fortress, set()),
+        classify_own(factory, set()),
+        classify_own(outpost, set()),
+    }
+    assert own_results == {"THREATENED", "FORTRESS", "FACTORY", "OUTPOST"}
+
+    easy_zero = _make_planet(owner=-1, ships=0)
+    easy_ratio = _make_planet(owner=-1, ships=10)
+    hard = _make_planet(owner=-1, ships=100)
+    neutral_results = {
+        classify_neutral(easy_zero, 1),
+        classify_neutral(easy_ratio, int(10 * PARAMS["weak_ratio"]) + 1),
+        classify_neutral(hard, 10),
+    }
+    assert neutral_results == {"EASY_NEUTRAL", "HARD_NEUTRAL"}
+
+    zero_defenders = _make_planet(owner=1, ships=0, production=0)
+    soft = _make_planet(owner=1, ships=5, production=1)
+    contested = _make_planet(owner=1, ships=5, production=1)
+    hardened = _make_planet(owner=1, ships=5, production=1)
+    eta = 10
+    contested_params = {**PARAMS, "contested_ratio": 1.1, "weak_ratio": 2.0}
+    enemy_results = {
+        classify_enemy(zero_defenders, ships_to_send=1, eta=eta),
+        classify_enemy(soft, int(15 * PARAMS["weak_ratio"]) + 1, eta),
+        classify_enemy(contested, int(15 * 1.5), eta, params=contested_params),
+        classify_enemy(hardened, int(15 * PARAMS["contested_ratio"]) - 1, eta),
+    }
+    assert enemy_results == {"SOFT_ENEMY", "CONTESTED_ENEMY", "HARDENED_ENEMY"}
+
+    assert own_results - {"THREATENED"} == set(SRC_CLASSES)
+    assert neutral_results | enemy_results == set(TGT_CLASSES)
 
 
 def test_params_type_matches_param_space():
