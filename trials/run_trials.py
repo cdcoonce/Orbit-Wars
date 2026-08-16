@@ -58,7 +58,11 @@ _best_win_rate: float = 0.0
 def write_champion(params: dict) -> None:
     """Atomically write params to champion.py via temp-file + os.replace.
 
-    Must be called while holding _lock to avoid concurrent temp-file collision.
+    objective() calls this while holding _lock, not to protect the temp file
+    (the per-thread temp name already prevents that collision) but to
+    serialize the on-disk os.replace against the in-process _current_champion
+    update that follows it, keeping the two in sync across concurrent
+    promotions.
     """
     for k, v in params.items():
         if isinstance(v, float) and not math.isfinite(v):
