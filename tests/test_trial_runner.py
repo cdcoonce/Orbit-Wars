@@ -138,7 +138,8 @@ class TestRunGames:
         call_log = []
 
         def mock_run_game(
-            challenger_params, champion_params, challenger_player=0, timeout=60
+            challenger_params, champion_params, challenger_player=0, timeout=60,
+            seed=None,
         ):
             call_log.append(challenger_player)
             return "draw"
@@ -154,7 +155,7 @@ class TestRunGames:
 
         outcomes = ["challenger", "champion", "draw", "challenger"]
 
-        def mock_run_game(cp, chp, challenger_player=0, timeout=60):
+        def mock_run_game(cp, chp, challenger_player=0, timeout=60, seed=None):
             return outcomes.pop(0)
 
         with patch("trials.game_runner.run_game", mock_run_game):
