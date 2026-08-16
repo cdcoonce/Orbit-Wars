@@ -11,6 +11,8 @@ against the committed doc so a `src/config.py` change without a regenerated
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from src.config import PARAMS
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -44,6 +46,19 @@ def test_validate_keys_does_not_raise():
     src/config.py changes without generate_config.py being updated to match."""
     mod = _load_generate_config()
     mod.validate_keys()  # raises ValueError on any drift
+
+
+def test_validate_keys_raises_when_param_missing_from_groups():
+    """A PARAMS key with no GROUPS entry must make validate_keys() raise —
+    catches the case where build_table would silently omit it from the doc."""
+    mod = _load_generate_config()
+    target_key = sorted(set(PARAMS.keys()) - mod.FIXED_KEYS)[0]
+    for _, keys in mod.GROUPS:
+        if target_key in keys:
+            keys.remove(target_key)
+            break
+    with pytest.raises(ValueError, match="missing from GROUPS"):
+        mod.validate_keys()
 
 
 def test_every_params_key_covered_by_exactly_one_group_and_has_impact():
