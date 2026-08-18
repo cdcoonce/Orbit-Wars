@@ -41,10 +41,9 @@ class TestPlanExpansionWithCometIds:
         assert len(moves) == 0
 
     def test_comet_zero_multiplier_makes_score_zero_so_no_attack(self):
-        """score = effective_production / (eta+1)^2; if effective_production=0 score=0,
-        which is not > -inf, so no best_target is selected when ALL targets are zero-scored.
-        Wait — actually 0 > -inf is True, so score=0 IS selected. Instead test that a
-        non-comet beats a comet when both are candidates for a FORTRESS."""
+        """A FORTRESS with two equally-attractive easy-neutral targets — one comet
+        (comet_value_multiplier=0.0) and one regular — picks the regular target,
+        since the comet's effective production is zeroed."""
         params = {**PARAMS, "comet_value_multiplier": 0.0}
         fortress = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
         # Two easy neutrals adjacent: comet (production=3) vs regular (production=3)
