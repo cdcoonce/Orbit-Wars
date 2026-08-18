@@ -552,6 +552,62 @@ def test_handle_threats_skips_when_too_slow():
     assert len(moves) == 0
 
 
+def test_handle_threats_skips_reinforcement_below_min_garrison():
+    # min_garrison is reused here as a minimum reinforcement size (see comment at
+    # strategy.py handle_threats): ships_to_send=5 < min_garrison=6, so the guard
+    # skips this reinforcement even though the source's own garrison is untouched.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 6,
+        "defense_reinforce_fraction": 0.1,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 5,
+    }
+    flat = int(50 * 0.1)  # 5 — below min_garrison(6)
+    assert flat < params["min_garrison"]
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert moves == []
+
+
+def test_handle_threats_reinforces_when_at_min_garrison_boundary():
+    # Companion to the skip test above: ships_to_send == min_garrison exactly
+    # clears the guard (`< min_garrison` only rejects strictly smaller sends),
+    # so a reinforcement move IS emitted.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 5,
+        "defense_reinforce_fraction": 0.1,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 5,
+    }
+    flat = int(50 * 0.1)  # 5 — exactly at min_garrison(5)
+    assert flat == params["min_garrison"]
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+    assert moves[0][2] == flat
+
+
 def test_handle_threats_skips_outpost():
     threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
     outpost = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=1)

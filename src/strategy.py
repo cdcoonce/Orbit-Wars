@@ -181,6 +181,11 @@ def handle_threats(
             # when magnitude >= flat both forms agree; when magnitude < flat both reduce to flat.
             cap = source.ships - params["min_garrison"]
             ships_to_send = max(flat, min(magnitude, cap))
+            # min_garrison is reused here as a minimum reinforcement size, not a
+            # garrison-protection check: this skips sending fewer than min_garrison
+            # ships as not worth the trip. It does NOT protect the source's own
+            # garrison — the cap above can already leave source.ships below
+            # min_garrison (see test_handle_threats_flat_baseline_can_leave_source_below_min_garrison).
             if ships_to_send < params["min_garrison"]:
                 continue
             future_x, future_y, eta = intercept(
