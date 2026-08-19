@@ -50,7 +50,7 @@ IMPACT: dict[str, str] = {
     "min_garrison": "Raise → keep more ships at home before attacking",
     "aggression_max": "Raise → more ships sent earlier in game",
     "aggression_min": "Raise → more ships sent later in game",
-    "game_length": "Fixed: 500 — reflects Kaggle competition rule, not tunable",
+    "game_length": f"Fixed: {PARAMS['game_length']} — reflects Kaggle competition rule, not tunable",
     "min_garrison_early": "Raise → more conservative in early game",
     "garrison_ramp_turns": "Raise → take longer to reach full garrison threshold",
     "distance_power_early": "Raise → penalise distant targets more in early game",

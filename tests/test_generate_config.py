@@ -89,6 +89,17 @@ def test_every_params_key_covered_by_exactly_one_group_and_has_impact():
     assert not stale_impact, f"IMPACT key(s) absent from PARAMS (stale): {sorted(stale_impact)}"
 
 
+def test_impact_game_length_derived_from_params(monkeypatch):
+    """IMPACT['game_length'] must be built from PARAMS['game_length'], not a
+    hardcoded literal — changing PARAMS must change the generated text."""
+    import src.config as config_module
+
+    monkeypatch.setitem(config_module.PARAMS, "game_length", 999)
+    mod = _load_generate_config()
+    assert "999" in mod.IMPACT["game_length"]
+    assert "500" not in mod.IMPACT["game_length"]
+
+
 def test_generated_section_matches_committed_doc():
     """build_generated_section() output must equal the committed AUTO-GENERATED
     block in config.md — an un-regenerated doc fails CI."""
