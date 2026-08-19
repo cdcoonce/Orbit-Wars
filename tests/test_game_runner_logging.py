@@ -58,30 +58,7 @@ class TestRunGameBrokenPoolRecovery:
 
         assert result == "draw"
 
-    def test_broken_pool_is_reset_so_next_call_gets_a_fresh_pool(self, caplog):
-        """After a broken pool is caught, _pool is cleared so _get_pool() rebuilds it."""
-        import trials.game_runner as game_runner
-
-        broken_pool = MagicMock()
-        broken_pool.submit.side_effect = BrokenProcessPool("worker process died")
-
-        fresh_future = MagicMock()
-        fresh_future.result.return_value = "challenger"
-        fresh_pool = MagicMock()
-        fresh_pool.submit.return_value = fresh_future
-
-        game_runner._pool = broken_pool
-        try:
-            with patch(
-                "trials.game_runner.concurrent.futures.ProcessPoolExecutor",
-                return_value=fresh_pool,
-            ), caplog.at_level(logging.ERROR, logger="trials.game_runner"):
-                first_result = game_runner.run_game(PARAMS, PARAMS)
-                assert first_result == "draw"
-                assert game_runner._pool is None
-
-                second_result = game_runner.run_game(PARAMS, PARAMS)
-                assert second_result == "challenger"
-                assert game_runner._pool is fresh_pool
-        finally:
-            game_runner._pool = None
+    # Pool-reset-and-rebuild coverage (including the log-level assertions)
+    # lives in test_trial_runner.py::TestRunGameBrokenPoolSelfHeals
+    # ::test_poisoned_pool_is_replaced_and_next_call_gets_real_result, which
+    # exercises the same scenario plus the rebuild-budget globals.
