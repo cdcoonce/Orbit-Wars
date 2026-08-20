@@ -56,7 +56,7 @@ Gotcha: caller must call `build_state` before each lookahead branch that needs a
 
 ---
 
-### `step_state(state, move, player, angular_velocity, initial_planets, opponent_fn) -> GameState`
+### `step_state(state, move, player, angular_velocity, opponent_fn=None) -> GameState`
 
 ```python
 def step_state(
@@ -64,7 +64,6 @@ def step_state(
     move,
     player: int,
     angular_velocity: float,
-    initial_planets,
     opponent_fn=None,
 ) -> GameState:
 ```
