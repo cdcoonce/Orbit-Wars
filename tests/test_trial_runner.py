@@ -13,6 +13,38 @@ from conftest import assert_covers_params
 from src.config import PARAMS
 
 
+@pytest.fixture
+def restore_pool_state():
+    """Snapshot game_runner's pool-rebuild counters, restore them after the test.
+
+    The counters start the test zeroed so each test sees a fresh rebuild budget.
+    Callers that also mutate `game_runner._pool` remain responsible for
+    resetting that attribute themselves — its setup value differs per test.
+    """
+    import trials.game_runner as game_runner
+
+    original_rebuilds = game_runner._consecutive_pool_rebuilds
+    original_exhausted = game_runner._pool_rebuilds_exhausted
+    game_runner._consecutive_pool_rebuilds = 0
+    game_runner._pool_rebuilds_exhausted = False
+    yield game_runner
+    game_runner._consecutive_pool_rebuilds = original_rebuilds
+    game_runner._pool_rebuilds_exhausted = original_exhausted
+
+
+@pytest.fixture
+def restore_champion_state():
+    """Snapshot run_trials._current_champion under _lock, restore it after the test."""
+    from trials import run_trials
+
+    with run_trials._lock:
+        original = dict(run_trials._current_champion)
+    yield original
+    with run_trials._lock:
+        run_trials._current_champion.clear()
+        run_trials._current_champion.update(original)
+
+
 # ---------------------------------------------------------------------------
 # make_agent
 # ---------------------------------------------------------------------------
@@ -198,10 +230,12 @@ class TestRunGameTimeout:
 
 
 class TestRunGameBrokenPoolSelfHeals:
-    def test_poisoned_pool_is_replaced_and_next_call_gets_real_result(self, caplog):
+    def test_poisoned_pool_is_replaced_and_next_call_gets_real_result(
+        self, caplog, restore_pool_state
+    ):
         """A poisoned (broken) pool must be discarded so the next run_game call is
         served by a *different* executor object that can actually play a game."""
-        import trials.game_runner as game_runner
+        game_runner = restore_pool_state
 
         poisoned_pool = MagicMock()
         poisoned_pool.submit.side_effect = concurrent.futures.process.BrokenProcessPool(
@@ -214,8 +248,6 @@ class TestRunGameBrokenPoolSelfHeals:
         fresh_pool.submit.return_value = fresh_future
 
         game_runner._pool = poisoned_pool
-        game_runner._consecutive_pool_rebuilds = 0
-        game_runner._pool_rebuilds_exhausted = False
         try:
             with (
                 patch(
@@ -233,18 +265,16 @@ class TestRunGameBrokenPoolSelfHeals:
                 assert game_runner._pool is fresh_pool
         finally:
             game_runner._pool = None
-            game_runner._consecutive_pool_rebuilds = 0
-            game_runner._pool_rebuilds_exhausted = False
 
         # The rebuild is announced on its own log path, not the generic
         # "Worker raised an unexpected exception" fallback.
         assert "rebuild" in caplog.text.lower()
         assert "unexpected exception" not in caplog.text.lower()
 
-    def test_repeated_unrecoverable_breaks_stop_rebuilding(self):
+    def test_repeated_unrecoverable_breaks_stop_rebuilding(self, restore_pool_state):
         """A deterministically-fatal worker must not cause the pool to be rebuilt
         forever — rebuild attempts are capped."""
-        import trials.game_runner as game_runner
+        game_runner = restore_pool_state
 
         always_broken_pool = MagicMock()
         always_broken_pool.submit.side_effect = (
@@ -260,8 +290,6 @@ class TestRunGameBrokenPoolSelfHeals:
             return always_broken_pool
 
         game_runner._pool = always_broken_pool
-        game_runner._consecutive_pool_rebuilds = 0
-        game_runner._pool_rebuilds_exhausted = False
         try:
             with patch(
                 "trials.game_runner.concurrent.futures.ProcessPoolExecutor",
@@ -274,25 +302,23 @@ class TestRunGameBrokenPoolSelfHeals:
                 assert game_runner._pool is not always_broken_pool
         finally:
             game_runner._pool = None
-            game_runner._consecutive_pool_rebuilds = 0
-            game_runner._pool_rebuilds_exhausted = False
 
         assert len(construct_calls) <= game_runner.MAX_CONSECUTIVE_POOL_REBUILDS
 
-    def test_concurrent_reports_of_one_broken_pool_count_as_one_rebuild(self):
+    def test_concurrent_reports_of_one_broken_pool_count_as_one_rebuild(
+        self, restore_pool_state
+    ):
         """Optuna's threads all see BrokenProcessPool from the *same* dead executor.
 
         Those duplicate reports must not each consume rebuild budget (which would
         strand the dead pool in place) nor discard the replacement pool.
         """
-        import trials.game_runner as game_runner
+        game_runner = restore_pool_state
 
         broken_pool = MagicMock()
         replacement_pool = MagicMock()
 
         game_runner._pool = broken_pool
-        game_runner._consecutive_pool_rebuilds = 0
-        game_runner._pool_rebuilds_exhausted = False
         try:
             game_runner._discard_broken_pool(broken_pool)
             assert game_runner._pool is None
@@ -309,8 +335,6 @@ class TestRunGameBrokenPoolSelfHeals:
             assert game_runner._pool_rebuilds_exhausted is False
         finally:
             game_runner._pool = None
-            game_runner._consecutive_pool_rebuilds = 0
-            game_runner._pool_rebuilds_exhausted = False
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +542,9 @@ class TestPrintSummary:
 
 
 class TestObjectiveStaleChampionGuard:
-    def test_stale_snapshot_does_not_overwrite_newer_champion(self):
+    def test_stale_snapshot_does_not_overwrite_newer_champion(
+        self, restore_champion_state
+    ):
         """Stale-snapshot race: promotion skipped when _current_champion changed mid-trial.
 
         Race reproduced: worker A snapshots v1, then worker B promotes v2 during
@@ -530,40 +556,31 @@ class TestObjectiveStaleChampionGuard:
         v1 = {**PARAMS, "fortress_min_ships": 10}
         v2 = {**PARAMS, "fortress_min_ships": 20}
 
-        original = dict(run_trials._current_champion)
         with run_trials._lock:
             run_trials._current_champion.clear()
             run_trials._current_champion.update(v1)
 
-        try:
-
-            def mock_run_games(challenger_params, champ_params, n_games, seed):
-                # Simulate concurrent worker B promoting v2 while A is playing.
-                with run_trials._lock:
-                    run_trials._current_champion.clear()
-                    run_trials._current_champion.update(v2)
-                return (run_trials.PROMOTION_THRESHOLD, [])
-
-            mock_trial = MagicMock()
-            mock_trial.number = 99
-            mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(
-                PARAMS.get(k, lo)
-            )
-            mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
-                PARAMS.get(k, lo)
-            )
-
-            with patch("trials.run_trials.run_games", mock_run_games):
-                with patch("trials.run_trials.write_champion") as mock_write:
-                    run_trials.objective(mock_trial)
-
-            # Stale challenger must not overwrite the stronger champion v2.
-            mock_write.assert_not_called()
-            assert run_trials._current_champion == v2
-        finally:
+        def mock_run_games(challenger_params, champ_params, n_games, seed):
+            # Simulate concurrent worker B promoting v2 while A is playing.
             with run_trials._lock:
                 run_trials._current_champion.clear()
-                run_trials._current_champion.update(original)
+                run_trials._current_champion.update(v2)
+            return (run_trials.PROMOTION_THRESHOLD, [])
+
+        mock_trial = MagicMock()
+        mock_trial.number = 99
+        mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(PARAMS.get(k, lo))
+        mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
+            PARAMS.get(k, lo)
+        )
+
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion") as mock_write:
+                run_trials.objective(mock_trial)
+
+        # Stale challenger must not overwrite the stronger champion v2.
+        mock_write.assert_not_called()
+        assert run_trials._current_champion == v2
 
 
 # ---------------------------------------------------------------------------
@@ -581,58 +598,44 @@ class TestPromotionConfirmation:
         )
         return mock_trial
 
-    def test_failed_confirmation_does_not_promote(self):
+    def test_failed_confirmation_does_not_promote(self, restore_champion_state):
         """Trial run clears the threshold (0.70) but confirmation fails (0.30):
         no promotion, no champion mutation."""
         from trials import run_trials
 
-        original = dict(run_trials._current_champion)
-        try:
-            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
-            with patch("trials.run_trials.run_games", mock_run_games):
-                with patch("trials.run_trials.write_champion") as mock_write:
-                    run_trials.objective(self._make_trial())
+        mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion") as mock_write:
+                run_trials.objective(self._make_trial())
 
-            mock_write.assert_not_called()
-            assert run_trials._current_champion == original
-        finally:
-            with run_trials._lock:
-                run_trials._current_champion.clear()
-                run_trials._current_champion.update(original)
+        mock_write.assert_not_called()
+        assert run_trials._current_champion == restore_champion_state
 
-    def test_confirmed_promotion_calls_write_champion_once(self):
+    def test_confirmed_promotion_calls_write_champion_once(
+        self, restore_champion_state
+    ):
         """Both the trial run and the confirmation clear the threshold: promote once."""
         from trials import run_trials
 
-        original = dict(run_trials._current_champion)
-        try:
-            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.70, [])])
-            with patch("trials.run_trials.run_games", mock_run_games):
-                with patch("trials.run_trials.write_champion") as mock_write:
-                    run_trials.objective(self._make_trial())
+        mock_run_games = MagicMock(side_effect=[(0.70, []), (0.70, [])])
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion") as mock_write:
+                run_trials.objective(self._make_trial())
 
-            mock_write.assert_called_once()
-        finally:
-            with run_trials._lock:
-                run_trials._current_champion.clear()
-                run_trials._current_champion.update(original)
+        mock_write.assert_called_once()
 
-    def test_returns_trial_win_rate_not_confirmation_win_rate(self):
+    def test_returns_trial_win_rate_not_confirmation_win_rate(
+        self, restore_champion_state
+    ):
         """The confirmation result must never feed back into the Optuna return value."""
         from trials import run_trials
 
-        original = dict(run_trials._current_champion)
-        try:
-            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
-            with patch("trials.run_trials.run_games", mock_run_games):
-                with patch("trials.run_trials.write_champion"):
-                    result = run_trials.objective(self._make_trial())
+        mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion"):
+                result = run_trials.objective(self._make_trial())
 
-            assert result == pytest.approx(0.70)
-        finally:
-            with run_trials._lock:
-                run_trials._current_champion.clear()
-                run_trials._current_champion.update(original)
+        assert result == pytest.approx(0.70)
 
     def test_confirm_seed_base_disjoint_from_trial_seeds(self):
         """CONFIRM_SEED_BASE must exceed every seed any trial 0..N_TRIALS-1 can consume."""
@@ -640,41 +643,31 @@ class TestPromotionConfirmation:
 
         assert CONFIRM_SEED_BASE > N_TRIALS * N_GAMES
 
-    def test_failed_confirmation_does_not_flag_trial_as_promoted(self):
+    def test_failed_confirmation_does_not_flag_trial_as_promoted(
+        self, restore_champion_state
+    ):
         """A rejected challenger must not be recorded as promoted."""
         from trials import run_trials
 
-        original = dict(run_trials._current_champion)
-        try:
-            trial = self._make_trial()
-            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
-            with patch("trials.run_trials.run_games", mock_run_games):
-                with patch("trials.run_trials.write_champion"):
-                    run_trials.objective(trial)
+        trial = self._make_trial()
+        mock_run_games = MagicMock(side_effect=[(0.70, []), (0.30, [])])
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion"):
+                run_trials.objective(trial)
 
-            trial.set_user_attr.assert_not_called()
-        finally:
-            with run_trials._lock:
-                run_trials._current_champion.clear()
-                run_trials._current_champion.update(original)
+        trial.set_user_attr.assert_not_called()
 
-    def test_confirmed_promotion_flags_trial_as_promoted(self):
+    def test_confirmed_promotion_flags_trial_as_promoted(self, restore_champion_state):
         """A confirmed promotion records the flag the callback reads."""
         from trials import run_trials
 
-        original = dict(run_trials._current_champion)
-        try:
-            trial = self._make_trial()
-            mock_run_games = MagicMock(side_effect=[(0.70, []), (0.70, [])])
-            with patch("trials.run_trials.run_games", mock_run_games):
-                with patch("trials.run_trials.write_champion"):
-                    run_trials.objective(trial)
+        trial = self._make_trial()
+        mock_run_games = MagicMock(side_effect=[(0.70, []), (0.70, [])])
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion"):
+                run_trials.objective(trial)
 
-            trial.set_user_attr.assert_called_once_with("promoted", True)
-        finally:
-            with run_trials._lock:
-                run_trials._current_champion.clear()
-                run_trials._current_champion.update(original)
+        trial.set_user_attr.assert_called_once_with("promoted", True)
 
     def _run_callback(self, caplog, user_attrs):
         from trials import run_trials
