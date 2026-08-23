@@ -71,9 +71,20 @@ def _normalize_stdlib_import(raw: str) -> str:
     return f"{head.rstrip()} {names}"
 
 
-def strip_imports(source: str) -> str:
+def _strip_relative_and_kaggle(source: str) -> str:
+    """Strip relative then kaggle imports, in that order.
+
+    The order is load-bearing: STDLIB_IMPORT_RE's `^from \\w` alternative must
+    never see kaggle lines, which only holds because kaggle is stripped here
+    before any stdlib-import handling runs.
+    """
     source = RELATIVE_IMPORT_RE.sub("", source)
     source = KAGGLE_IMPORT_RE.sub("", source)
+    return source
+
+
+def strip_imports(source: str) -> str:
+    source = _strip_relative_and_kaggle(source)
     source = STDLIB_IMPORT_RE.sub("", source)
     return source
 
@@ -87,7 +98,7 @@ def build() -> Path:
     for path in SRC_FILES:
         source = path.read_text()
         # Strip relative and kaggle first so STDLIB_IMPORT_RE cannot see kaggle lines.
-        partial = KAGGLE_IMPORT_RE.sub("", RELATIVE_IMPORT_RE.sub("", source))
+        partial = _strip_relative_and_kaggle(source)
         for match in STDLIB_IMPORT_RE.finditer(partial):
             line = _normalize_stdlib_import(match.group())
             if line not in seen:
