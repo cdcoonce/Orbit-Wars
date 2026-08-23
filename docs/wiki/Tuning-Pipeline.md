@@ -70,7 +70,7 @@ for i in range(n_games):
 ```
 
 - `challenger_player=i % 2` alternates who plays as player 0 (first-mover). Over 40 games the challenger plays 20 games as P0 and 20 as P1 — any first-move advantage cancels out.
-- Each `run_game` spawns a `ThreadPoolExecutor(max_workers=1)` and enforces `timeout=60s`. A timeout or uncaught exception returns `"draw"`, preventing a hanging game from blocking an Optuna worker indefinitely.
+- `run_game` submits to a lazily-created, module-level shared `ProcessPoolExecutor` (`trials/game_runner.py::_get_pool`) and enforces `timeout=60s`. It's process-based rather than thread-based because the Kaggle engine seeds Python's _global_ `random` module with no seed config of its own — separate processes each get an independent global RNG, so per-game seeding stays isolated and reproducible under Optuna's `n_jobs=4` thread pool (see the `game_runner.py` module docstring). A timeout or uncaught exception returns `"draw"`, preventing a hanging game from blocking an Optuna worker indefinitely.
 - Each agent closure captures its own `initial_planets` state so parallel games don't share mutable caches.
 - Win rate = `wins / n_games` (draws count as zero wins for the challenger).
 
