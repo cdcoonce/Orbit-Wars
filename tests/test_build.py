@@ -96,6 +96,36 @@ def test_no_relative_imports_survive(built_submission):
     assert leftover is None, f"leftover relative import: {leftover.group(0)!r}"
 
 
+def test_strip_relative_and_kaggle_helper_exists_and_used():
+    """The relative-then-kaggle strip order must be expressed in exactly one
+    place, so `build()` and `strip_imports()` can never desync."""
+    spec = importlib.util.spec_from_file_location("build", BUILD_SCRIPT)
+    build_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_mod)
+
+    assert hasattr(build_mod, "_strip_relative_and_kaggle")
+
+    sample = (
+        "from .foo import bar\n"
+        "from kaggle_environments.envs.orbit_wars.orbit_wars import (\n"
+        "    Fleet,\n"
+        ")\n"
+        "import os\n"
+        "x = 1\n"
+    )
+    result = build_mod._strip_relative_and_kaggle(sample)
+    assert "from ." not in result
+    assert "kaggle_environments" not in result
+    assert "import os" in result
+    assert "x = 1" in result
+
+    # RELATIVE_IMPORT_RE.sub/KAGGLE_IMPORT_RE.sub must only be applied inside
+    # the helper — a second call site would let the strip order desync again.
+    source_text = BUILD_SCRIPT.read_text()
+    assert source_text.count("RELATIVE_IMPORT_RE.sub(") == 1
+    assert source_text.count("KAGGLE_IMPORT_RE.sub(") == 1
+
+
 def test_no_duplicate_stdlib_imports(built_submission):
     """Each stdlib import must appear exactly once in the bundle."""
     stdlib_lines = [
