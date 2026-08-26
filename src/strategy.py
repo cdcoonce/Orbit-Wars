@@ -153,6 +153,8 @@ def handle_threats(
     own_classes: dict,
     angular_velocity: float,
     params: dict = PARAMS,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
 ) -> list[list]:
     moves = []
     already_used: set[int] = set()
@@ -189,8 +191,15 @@ def handle_threats(
             if ships_to_send < params["min_garrison"]:
                 continue
             future_x, future_y, eta = intercept(
-                source, target, angular_velocity, ships_to_send
+                source,
+                target,
+                angular_velocity,
+                ships_to_send,
+                comet_ids,
+                comet_velocities,
             )
+            if future_x is None:
+                continue
             if eta <= threat.eta - params["eta_buffer"]:
                 if path_crosses_sun(source.x, source.y, future_x, future_y):
                     continue
@@ -595,7 +604,13 @@ def plan_moves(
     own_classes = {p.id: classify_own(p, threatened_ids, params) for p in owned}
 
     defense_moves = handle_threats(
-        threats, owned, own_classes, angular_velocity, params
+        threats,
+        owned,
+        own_classes,
+        angular_velocity,
+        params,
+        comet_ids,
+        comet_velocities,
     )
 
     if should_play_defensive(

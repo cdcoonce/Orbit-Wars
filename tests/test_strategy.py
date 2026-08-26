@@ -861,6 +861,79 @@ def test_handle_threats_skips_reinforcement_whose_path_crosses_sun():
     assert clear_moves[0][0] == fortress_clear.id
 
 
+def test_handle_threats_comet_target_uses_linear_velocity_intercept():
+    """handle_threats must thread comet_ids/comet_velocities into its intercept()
+    call so a reinforcement aimed at an owned comet under threat uses the
+    linear-velocity path (intercept()'s comet branch) instead of silently
+    falling back to orbital-iteration prediction (comet_ids=frozenset() default)
+    — see issue #202. Analogous to test_comet_intercept_uses_linear_velocity but
+    exercised through handle_threats.
+
+    Geometry mirrors the sun-clear case above (y=90, off the CENTER line) so the
+    sun-crossing gate can't interfere.
+    """
+    comet = make_planet_at(id=1, x=60.0, y=90.0, owner=0, ships=5, production=1)
+    fortress = make_planet_at(id=2, x=10.0, y=90.0, owner=0, ships=100, production=4)
+    # Diagonal drift (not purely horizontal) so the linear-predicted aim point
+    # is off the source->comet's initial ray — otherwise the linear and the
+    # orbital-fallback (static) aim points would coincidentally share an angle
+    # from the source even though their positions differ.
+    vel = (-1.0, -1.0)
+    comet_ids = {1}
+    comet_velocities = {1: vel}
+
+    # defense_incoming_multiplier=0.0 collapses magnitude to 0, so ships_to_send
+    # is a pure function of defense_reinforce_fraction, predictable without
+    # re-deriving handle_threats' internal formula.
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 0,
+    }
+    ships_to_send = int(fortress.ships * params["defense_reinforce_fraction"])
+
+    # Oracle: what the linear-velocity comet path actually predicts.
+    expected_fx, expected_fy, expected_eta = intercept(
+        fortress,
+        comet,
+        angular_velocity=0.03,
+        ships_to_send=ships_to_send,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+    assert expected_fx is not None
+
+    # Contrast: what the orbital-iteration fallback (no comet threading) would
+    # predict instead -- must differ, or this test can't distinguish the fix
+    # from the pre-fix default-args fallback.
+    orbital_fx, orbital_fy, _ = intercept(
+        fortress, comet, angular_velocity=0.03, ships_to_send=ships_to_send
+    )
+    assert (expected_fx, expected_fy) != (orbital_fx, orbital_fy)
+
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=expected_eta)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+
+    moves = handle_threats(
+        threats,
+        [comet, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+
+    assert len(moves) == 1
+    source_id, angle, ships_sent = moves[0]
+    assert source_id == fortress.id
+    assert ships_sent == ships_to_send
+    assert angle == angle_to_target(fortress.x, fortress.y, expected_fx, expected_fy)
+    assert angle != angle_to_target(fortress.x, fortress.y, orbital_fx, orbital_fy)
+
+
 # --- plan_expansion ---
 
 
@@ -1384,6 +1457,41 @@ def test_plan_moves_defending_source_does_not_also_expand():
     assert fortress_move_count == 1, (
         f"fortress double-spent its garrison: appeared in {fortress_move_count} moves"
     )
+
+
+def test_plan_moves_threads_comet_ids_and_velocities_into_handle_threats(monkeypatch):
+    """plan_moves must forward its own comet_ids/comet_velocities through to
+    handle_threats — see issue #202. Spies on handle_threats to capture the
+    forwarded args rather than re-deriving comet intercept geometry."""
+    import src.strategy as strategy
+
+    owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    comet_ids = {5}
+    comet_velocities = {5: (1.0, 0.0)}
+
+    calls = []
+    original = strategy.handle_threats
+
+    def spy(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(strategy, "handle_threats", spy)
+
+    strategy.plan_moves(
+        [owned],
+        fleets=[],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    forwarded = list(args) + list(kwargs.values())
+    assert comet_ids in forwarded
+    assert comet_velocities in forwarded
 
 
 def test_plan_expansion_late_game_agg_scales_sends_and_inflates_floor():
