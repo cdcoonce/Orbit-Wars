@@ -1843,6 +1843,39 @@ class TestBlendedBest:
         ]
         assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7, 3.0, 4.0)
 
+    def test_all_equal_lookahead_uses_greedy_without_dividing_by_zero(self):
+        from src.strategy import _blended_best
+
+        nl_values = []
+
+        class RecordingScore(float):
+            """Lookahead score that records the nl quotient computed from it."""
+
+            def __sub__(self, other):
+                return RecordingScore(float(self) - float(other))
+
+            def __add__(self, other):
+                return RecordingScore(float(self) + float(other))
+
+            def __truediv__(self, other):
+                quotient = float(self) / float(other)
+                nl_values.append(quotient)
+                return quotient
+
+        # hi_l == lo_l would be a ZeroDivisionError without the 1e-9 guard;
+        # lookahead terms (nl) collapse to 0 for every candidate, so greedy
+        # score decides the winner. Only the lookahead scores are
+        # RecordingScore, so the recorded quotients are exactly the
+        # per-candidate nl values — ng is computed from plain floats.
+        candidates = [
+            (1.0, RecordingScore(5.0), "weak_greedy", 0.3, 1.0, 2.0),
+            (9.0, RecordingScore(5.0), "strong_greedy", 0.7, 3.0, 4.0),
+        ]
+        assert _blended_best(candidates, blend=0.5) == ("strong_greedy", 0.7, 3.0, 4.0)
+        assert nl_values == [0.0, 0.0], (
+            f"nl must collapse to 0 for every candidate when hi_l == lo_l, got {nl_values}"
+        )
+
     def test_blended_winner_differs_from_greedy_winner(self):
         from src.strategy import _blended_best
 
