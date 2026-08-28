@@ -642,9 +642,52 @@ def test_handle_threats_already_used_not_reused():
         angular_velocity=0.03,
         params=params,
     )
-    # Fortress assigned to first threat, then blocked for second → only 1 move
+    # Both threats tie on eta and incoming_ships, so the priority sort is stable
+    # and preserves input order: fortress goes to the first-listed threat, then
+    # is blocked (already_used) for the second → only 1 move.
     assert len(moves) == 1
     assert moves[0][0] == 2
+
+
+def test_handle_threats_prioritizes_urgent_threat_over_list_order():
+    # Two threats compete for the single eligible fortress. threatened_far has a
+    # much smaller eta (more urgent) than threatened_near, but is listed SECOND —
+    # so incidental list order would pick threatened_near. handle_threats must
+    # sort by urgency (ascending eta) and give the fortress to threatened_far,
+    # regardless of which order the threats list is passed in.
+    threatened_near = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    threatened_far = make_planet(id=3, owner=0, x=70.0, y=90.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    # Angle from fortress (70, 50) to threatened_far (70, 90): straight up.
+    expected_angle = angle_to_target(70.0, 50.0, 70.0, 90.0)
+
+    for threats in (
+        [
+            Threat(planet_id=1, incoming_ships=30, eta=30),
+            Threat(planet_id=3, incoming_ships=30, eta=25),
+        ],
+        [
+            Threat(planet_id=3, incoming_ships=30, eta=25),
+            Threat(planet_id=1, incoming_ships=30, eta=30),
+        ],
+    ):
+        moves = handle_threats(
+            threats,
+            [threatened_near, fortress, threatened_far],
+            own_classes,
+            angular_velocity=0.03,
+            params=params,
+        )
+        assert len(moves) == 1
+        assert moves[0][0] == 2
+        assert moves[0][1] == pytest.approx(expected_angle, abs=1e-6)
 
 
 def test_handle_threats_identical_at_zero_multiplier():
