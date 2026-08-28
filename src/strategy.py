@@ -158,6 +158,12 @@ def handle_threats(
 ) -> list[list]:
     moves = []
     already_used: set[int] = set()
+    # Scarce FORTRESS/FACTORY sources are single-use (already_used below), so
+    # process the most urgent threats first: soonest eta (a slow threat has more
+    # future turns to be covered), then largest incoming_ships as a tiebreak.
+    # Otherwise incidental detect_threats iteration order could let a smaller,
+    # far-later threat claim the only eligible source ahead of a bigger, sooner one.
+    threats = sorted(threats, key=lambda t: (t.eta, -t.incoming_ships))
     for threat in threats:
         target = next((p for p in owned if p.id == threat.planet_id), None)
         if target is None:
