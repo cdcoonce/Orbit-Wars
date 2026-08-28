@@ -1,6 +1,7 @@
 """Tests for trials/benchmark.py ORIGINAL_DEFAULTS integrity."""
 
 from conftest import assert_covers_params
+from src.config import PARAMS
 from trials.game_runner import tally_results
 
 
@@ -39,6 +40,23 @@ class TestOriginalDefaults:
         assert ORIGINAL_DEFAULTS["weak_ratio"] == 1.5
         assert ORIGINAL_DEFAULTS["stationary_value_bonus"] == 1
         assert ORIGINAL_DEFAULTS["min_garrison"] == 15
+
+    def test_every_frac_key_has_explicit_override(self):
+        """Every frac_* key in PARAMS must be explicitly overridden, not inherited from the tuned merge.
+
+        ORIGINAL_DEFAULTS is `{**PARAMS, <hand-picked overrides>}`, so any frac_*
+        key without an explicit entry in HAND_TUNED_OVERRIDES silently leaks the
+        current tuned PARAMS value into the "original" benchmark arm. This
+        happened for frac_fortress_hardened_enemy after dc7f697 removed
+        ("FORTRESS", "HARDENED_ENEMY") from SKIP_COMBOS and introduced the knob.
+        """
+        from trials.benchmark import HAND_TUNED_OVERRIDES
+
+        frac_keys = {key for key in PARAMS if key.startswith("frac_")}
+        missing = frac_keys - set(HAND_TUNED_OVERRIDES)
+        assert not missing, (
+            f"frac_* keys missing an explicit ORIGINAL_DEFAULTS override: {sorted(missing)}"
+        )
 
 
 class TestBenchmarkSeed:
