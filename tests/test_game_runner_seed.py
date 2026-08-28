@@ -2,8 +2,10 @@
 
 The Kaggle engine builds every map from the process-global ``random`` module,
 so reproducible self-play hinges on two things: a fixed seed must determine the
-map, and concurrent trials (``run_trials.py`` runs Optuna with ``n_jobs=4``, a
-thread pool) must not clobber one another's RNG. The tests below pin both.
+map, and concurrent trials (``run_trials.py`` runs Optuna with
+``n_jobs=N_WORKERS``, a thread pool; see ``N_WORKERS`` in
+``trials/run_trials.py``) must not clobber one another's RNG. The tests below
+pin both.
 """
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -72,8 +74,9 @@ class TestProcessIsolation:
 
         Threads in one process share a single global ``random`` instance, so if
         ``run_game`` seeded in-thread it would corrupt sibling Optuna workers
-        (``n_jobs=4``). Isolating the game in its own process is what makes
-        per-trial seeding reproducible under parallelism.
+        (``n_jobs=N_WORKERS``, see ``N_WORKERS`` in ``trials/run_trials.py``).
+        Isolating the game in its own process is what makes per-trial seeding
+        reproducible under parallelism.
         """
         from trials.game_runner import run_game
 
@@ -94,8 +97,9 @@ class TestProcessIsolation:
 class TestReproducibility:
     def test_concurrent_same_seed_is_reproducible(self):
         """The same seed played concurrently from several threads — exactly how
-        run_trials.py drives games under n_jobs=4 — must yield identical results
-        every time. Satisfies "run_games(seed=S) returns identical results across
+        run_trials.py drives games under n_jobs=N_WORKERS (see N_WORKERS in
+        trials/run_trials.py) — must yield identical results every time.
+        Satisfies "run_games(seed=S) returns identical results across
         invocations" while exercising the threaded path that previously broke it.
         """
         from trials.game_runner import run_games

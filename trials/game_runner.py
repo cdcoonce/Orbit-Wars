@@ -3,8 +3,10 @@
 The Kaggle ``orbit_wars`` engine builds every map (planet groups, ships,
 ``angular_velocity``) and spawns comets from Python's *global* ``random``
 module, and it exposes no seed config. Threads within one process share that
-single global RNG, so ``run_trials.py`` — which runs Optuna with ``n_jobs=4``
-(a thread pool) — would have concurrent games clobber one another's seed.
+single global RNG, so ``run_trials.py`` — which runs Optuna with
+``n_jobs=N_WORKERS`` (a thread pool; see ``N_WORKERS`` in
+``trials/run_trials.py``) — would have concurrent games clobber one another's
+seed.
 
 To make seeding reproducible *and* keep that parallelism, each game runs in a
 worker of a shared :class:`ProcessPoolExecutor`. Separate processes have
