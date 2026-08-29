@@ -46,7 +46,7 @@ Source planet: 52 ships, production=5.
 ## Step 3: Probe Ships
 
 ```python
-probe_ships = source.ships // 2  # = 52 // 2 = 26
+probe_ships = source.ships  # = 52 (full fleet, not halved)
 ```
 
 Used only for initial classification — not the actual send count.
@@ -75,9 +75,9 @@ Opponent response is frozen from the current board state. `blend=0` prevents rec
 ### 5a. Classification
 
 ```python
-classify_neutral(target, probe_ships=26)
+classify_neutral(target, probe_ships=52)
 # target.ships = 8
-# ratio = 26 / 8 = 3.25  >  weak_ratio (1.15)
+# ratio = 52 / 8 = 6.5  >  weak_ratio (1.15)
 # → "EASY_NEUTRAL"
 ```
 
@@ -143,38 +143,40 @@ lookahead_score_A = score_state(state, player=0, ship_weight=0.087)
 ### 6a. Classification
 
 ```python
-_, _, probe_eta = intercept(source, target, angular_velocity, probe_ships=26)
+_, _, probe_eta = intercept(source, target, angular_velocity, probe_ships=52)
 # probe_eta = 3 turns  (stationary target)
-classify_enemy(target, ships_to_send=26, eta=3)
+classify_enemy(target, ships_to_send=52, eta=3)
 # expected_defenders = 11 + 4*3 = 23
-# ratio = 26 / 23 = 1.13  >  weak_ratio (1.15)?  → No
-# ratio (1.13) > contested_ratio (0.84)?  → Yes  → "CONTESTED_ENEMY"
+# ratio = 52 / 23 = 2.26  >  weak_ratio (1.15)  → "SOFT_ENEMY"
 ```
 
-Wait — `("FACTORY", "CONTESTED_ENEMY")` IS in SKIP_COMBOS. Skip.
+Using the full fleet for the probe (not half) means an adjacent FACTORY correctly
+sees this planet as SOFT rather than CONTESTED — the half-fleet probe would have
+computed `ratio = 26 / 23 = 1.13`, just under `weak_ratio`, misclassifying it as
+`CONTESTED_ENEMY`.
 
-So let's use the actual send fraction for the enemy classification at the actual send count:
+### 6b. SKIP_COMBOS check
+
+`("FACTORY", "SOFT_ENEMY")` — not in SKIP_COMBOS. Proceed.
+
+### 6c. Ships to send
 
 ```python
 fraction = params["frac_factory_soft_enemy"]  # = 0.678
 ships_to_send = max(1, int(52 * 0.678 * 0.900))  # = int(31.7) = 31
-_, _, eta = intercept(source, target, angular_velocity, 31)  # eta = 3
-classify_enemy(target, ships_to_send=31, eta=3)
-# expected_defenders = 11 + 4*3 = 23
-# ratio = 31 / 23 = 1.35  >  weak_ratio (1.15)  → "SOFT_ENEMY"
 ```
 
-`("FACTORY", "SOFT_ENEMY")` — not in SKIP_COMBOS. Proceed.
-
-### 6b. Validity
+### 6d. Intercept + validity
 
 ```python
+_, _, eta = intercept(source, target, angular_velocity, 31)  # eta = 3
 can_capture(31, target, eta=3)
+# expected_defenders = 11 + 4*3 = 23
 # 31 > 23  → True
 # stationary planet — path_crosses_sun check passes
 ```
 
-### 6c. Greedy score
+### 6e. Greedy score
 
 ```python
 eff_prod = float(4)  # not a comet
@@ -182,7 +184,7 @@ bonus = params["stationary_value_bonus"]  # = 2  (stationary planet)
 greedy_score_B = (4 + 2) / (3 + 1)**2  # = 6 / 16 = 0.375
 ```
 
-### 6d. Lookahead score
+### 6f. Lookahead score
 
 After 2 simulated turns, the enemy planet has been contested but opponent hasn't had time to respond fully. Net production advantage is better than candidate A.
 
