@@ -41,7 +41,7 @@ Returns `"THREATENED"` if any `Threat` in the list targets this planet. Otherwis
 def classify_neutral(target: Planet, ships_to_send: int, params: dict = PARAMS) -> str:
 ```
 
-Returns `"EASY_NEUTRAL"` if `target.ships == 0` or `ships_to_send / target.ships > weak_ratio`. Otherwise `"HARD_NEUTRAL"`. Uses the probe fleet size (`source.ships // 2`) for the ratio, not the actual send amount.
+Returns `"EASY_NEUTRAL"` if `target.ships == 0` or `ships_to_send / target.ships > weak_ratio`. Otherwise `"HARD_NEUTRAL"`. Uses the full source fleet (`source.ships`) for the ratio, not the actual send amount.
 
 ### `classify_enemy(target, ships_to_send, eta, params) -> str`
 

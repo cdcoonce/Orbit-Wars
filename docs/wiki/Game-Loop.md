@@ -19,7 +19,7 @@ flowchart TD
     K -- "False" --> M["Exclude defense-used planets\nfrom expansion pool"]
     M --> N["plan_expansion(owned, neutrals, enemies,\nown_classes, angular_velocity, agg, params, ...)"]
     N --> O["For each non-THREATENED source planet\nwith ships >= min_garrison/agg"]
-    O --> P["probe_ships = source.ships // 2"]
+    O --> P["probe_ships = source.ships"]
     P --> Q["Pre-compute opponent_fn once\n(plan_moves with blend=0 on opp player)"]
     Q --> R["For each candidate target"]
     R --> S{"target.owner == -1?"}
@@ -101,7 +101,7 @@ If `turn >= endgame_threshold_turn` (451) AND `my_total_ships / enemy_total_ship
 Planets already used for defense are excluded. For each remaining owned planet:
 
 - Skip if `source.ships < min_garrison / agg`
-- `probe_ships = source.ships // 2` (used for classification only)
+- `probe_ships = source.ships` (the full fleet, used for classification only)
 - Opponent response is pre-computed once per source (not per candidate) using `plan_moves` with `lookahead_blend=0` to avoid recursion
 
 For each candidate target:
