@@ -717,12 +717,36 @@ def classify_enemy(
     return "HARDENED_ENEMY"
 
 
+def _predict_owned_position(
+    planet: Planet,
+    angular_velocity: float,
+    t: int,
+    comet_ids: set,
+    comet_velocities: dict | None,
+) -> tuple[float, float]:
+    """Predict an owned planet's position ``t`` turns out, comet-aware.
+
+    A captured comet keeps advancing along its comet path rather than
+    orbiting (the engine never rotates an id in comet_pid_set), so it needs
+    the same linear velocity extrapolation intercept() uses for comet
+    targets. Falls back to predict_planet_position's orbital/static model
+    when the planet isn't a comet, or no velocity estimate is available yet.
+    """
+    if planet.id in comet_ids:
+        vel = (comet_velocities or {}).get(planet.id)
+        if vel:
+            return planet.x + vel[0] * t, planet.y + vel[1] * t
+    return predict_planet_position(planet, angular_velocity, t)
+
+
 def detect_threats(
     my_planets: list[Planet],
     fleets: list[Fleet],
     player: int,
     angular_velocity: float,
     params: dict = PARAMS,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
 ) -> list:
     # Aggregate every inbound fleet per planet: planet_id -> [summed_ships, earliest_eta].
     # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
@@ -742,7 +766,9 @@ def detect_threats(
     planet_positions: dict[tuple[int, int], tuple[float, float]] = {}
     if any(fleet.owner != player for fleet in fleets):
         planet_positions = {
-            (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
+            (planet.id, t): _predict_owned_position(
+                planet, angular_velocity, t - 1, comet_ids, comet_velocities
+            )
             for t in range(1, params["threat_eta_window"] + 1)
             for planet in my_planets
         }
@@ -1243,7 +1269,9 @@ def plan_moves(
         return []
 
     agg = aggression(turn, params)
-    threats = detect_threats(owned, fleets, player, angular_velocity, params)
+    threats = detect_threats(
+        owned, fleets, player, angular_velocity, params, comet_ids, comet_velocities
+    )
     threatened_ids = {t.planet_id for t in threats}
     own_classes = {p.id: classify_own(p, threatened_ids, params) for p in owned}
 
