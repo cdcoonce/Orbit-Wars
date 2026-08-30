@@ -237,6 +237,21 @@ def _build_and_import_submission(tmp_path):
     return mod
 
 
+def _assert_docstring_not_stale(docstring, bundled_names):
+    """Shared check: if docstring names any bundled module, it must name all of
+    them — used both against the real build.py docstring and, in
+    test_module_docstring_not_stale_detects_stale_subset, against a
+    constructed stale docstring to confirm the `if named:` branch actually
+    fires."""
+    named = {name for name in bundled_names if name in docstring}
+    if named:
+        missing = sorted(bundled_names - named)
+        assert not missing, (
+            f"build.py docstring names some modules ({sorted(named)}) "
+            f"but omits: {missing}"
+        )
+
+
 def test_module_docstring_not_stale():
     """build.py module docstring must not name a stale subset of bundled modules.
 
@@ -251,14 +266,20 @@ def test_module_docstring_not_stale():
     docstring = build_mod.__doc__ or ""
     bundled_names = {Path(p).name for p in build_mod.SRC_FILES}
 
-    # If the docstring mentions any bundled module by name, all must be present.
-    named = {name for name in bundled_names if name in docstring}
-    if named:
-        missing = sorted(bundled_names - named)
-        assert not missing, (
-            f"build.py docstring names some modules ({sorted(named)}) "
-            f"but omits: {missing}"
-        )
+    _assert_docstring_not_stale(docstring, bundled_names)
+
+
+def test_module_docstring_not_stale_detects_stale_subset():
+    """The `if named:` guard in _assert_docstring_not_stale must actually fire
+    when a docstring names only a subset of the bundled modules — regression
+    test for the vacuous-assertion bug where the real build.py docstring never
+    names any filename, so `named` was always empty and the guarded assertion
+    never ran."""
+    bundled_names = {"math_utils.py", "config.py", "lookahead.py"}
+    stale_docstring = "Reads math_utils.py and config.py in dependency order."
+
+    with pytest.raises(AssertionError, match="but omits"):
+        _assert_docstring_not_stale(stale_docstring, bundled_names)
 
 
 def test_multiline_stdlib_import_bundled_correctly(tmp_path):
