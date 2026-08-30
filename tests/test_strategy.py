@@ -14,6 +14,7 @@ from src.math_utils import _min_dist_pt_to_segment
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
+from src.math_utils import fleet_speed
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
@@ -475,6 +476,65 @@ def test_detect_threats_skips_precompute_without_enemy_fleets(monkeypatch):
     )
     assert threats_empty == []
     assert threats_own_only == []
+
+
+def test_detect_threats_comet_aware_catches_threat_orbital_math_misses():
+    """An owned comet keeps moving along its comet path even after capture (see
+    issue #210) — detect_threats must predict its future position via linear
+    velocity extrapolation, not predict_planet_position's orbital/static model.
+
+    Comet planet at (90, 50) is static under orbital math (orbital_radius=40,
+    40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50)), but drifts along
+    velocity (0, 5)/turn. An enemy fleet travels the horizontal line y=70,
+    timed so its position at t-1=3 lands exactly on the comet's true drifted
+    position (90, 65) — within threat_radius — while the static (90, 50)
+    orbital prediction stays ~20 units away (threat_radius ~7.36) the entire
+    window, so the pre-fix code never flags this as a threat.
+    """
+    comet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    speed = fleet_speed(10)
+    start_x = 90.0 - 5 * speed
+    fleet = make_fleet(id=0, owner=1, x=start_x, y=70.0, angle=0.0, ships=10)
+    comet_ids = {1}
+    comet_velocities = {1: (0.0, 5.0)}
+
+    orbital_threats = detect_threats(
+        [comet], [fleet], player=0, angular_velocity=0.03
+    )
+    assert orbital_threats == [], (
+        "sanity check: orbital/static prediction must NOT see this as a threat, "
+        "or this test can't distinguish the fix from the pre-fix behavior"
+    )
+
+    comet_threats = detect_threats(
+        [comet],
+        [fleet],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+    assert len(comet_threats) == 1
+    assert comet_threats[0].planet_id == 1
+
+
+def test_detect_threats_comet_without_velocity_falls_back_to_orbital():
+    # No velocity estimate yet (first sighting) — comet_ids alone must not change
+    # behavior; falls back to the existing orbital/static prediction.
+    comet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    speed = fleet_speed(10)
+    start_x = 90.0 - 5 * speed
+    fleet = make_fleet(id=0, owner=1, x=start_x, y=70.0, angle=0.0, ships=10)
+
+    threats = detect_threats(
+        [comet],
+        [fleet],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids={1},
+        comet_velocities={},
+    )
+    assert threats == []
 
 
 def test_handle_threats_scales_against_combined_incoming():
@@ -1520,6 +1580,41 @@ def test_plan_moves_threads_comet_ids_and_velocities_into_handle_threats(monkeyp
         return original(*args, **kwargs)
 
     monkeypatch.setattr(strategy, "handle_threats", spy)
+
+    strategy.plan_moves(
+        [owned],
+        fleets=[],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    forwarded = list(args) + list(kwargs.values())
+    assert comet_ids in forwarded
+    assert comet_velocities in forwarded
+
+
+def test_plan_moves_threads_comet_ids_and_velocities_into_detect_threats(monkeypatch):
+    """plan_moves must forward its own comet_ids/comet_velocities through to
+    detect_threats — see issue #210. Spies on detect_threats to capture the
+    forwarded args rather than re-deriving comet threat-detection geometry."""
+    import src.strategy as strategy
+
+    owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    comet_ids = {5}
+    comet_velocities = {5: (1.0, 0.0)}
+
+    calls = []
+    original = strategy.detect_threats
+
+    def spy(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(strategy, "detect_threats", spy)
 
     strategy.plan_moves(
         [owned],
