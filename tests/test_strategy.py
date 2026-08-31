@@ -98,6 +98,32 @@ def test_intercept_converges_to_orbiting_target_future_position():
     assert turns_to_arrive(source.x, source.y, future_x, future_y, ships) == eta
 
 
+def test_intercept_non_convergent_loop_returns_consistent_position(monkeypatch):
+    """When the fixed-point loop exhausts ETA_CONVERGENCE_ITERS without ever
+    hitting new_eta == eta, the returned future_x/future_y must still match
+    the returned eta — not the eta from the prior iteration."""
+    import src.strategy as mod
+
+    av = 0.02
+    source = make_planet(id=0, x=20.0, y=50.0)
+    target = make_planet(id=1, x=70.0, y=50.0)
+    ships = 20
+
+    call_count = [0]
+
+    def never_converging_turns_to_arrive(sx, sy, tx, ty, ships_to_send):
+        call_count[0] += 1
+        return call_count[0]  # strictly increasing -> never equals the prior eta
+
+    monkeypatch.setattr(mod, "turns_to_arrive", never_converging_turns_to_arrive)
+
+    future_x, future_y, eta = intercept(source, target, av, ships)
+
+    expected_x, expected_y = predict_planet_position(target, av, eta)
+    assert abs(future_x - expected_x) < 1e-9
+    assert abs(future_y - expected_y) < 1e-9
+
+
 def test_intercept_stationary_target_returns_current_position():
     """Contrast case: a target outside ROTATION_RADIUS_LIMIT never moves, so the
     loop returns its unchanged current position."""
