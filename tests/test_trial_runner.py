@@ -506,6 +506,21 @@ class TestLoadGuardedStudy:
         assert list(tmp_path.glob("study.db.stale*"))
         assert len(study.trials) == 0
 
+    def test_stored_fingerprint_returns_none_when_study_name_absent(self, tmp_path):
+        """Storage exists but holds no study under STUDY_NAME -> None, no raise."""
+        from trials import run_trials
+
+        db = tmp_path / "study.db"
+        storage_url = f"sqlite:///{db}"
+
+        optuna.create_study(
+            study_name="some-other-study",
+            storage=storage_url,
+            direction="maximize",
+        )
+
+        assert run_trials._stored_fingerprint(storage_url) is None
+
 
 class TestPrintSummary:
     def test_no_completed_trials_does_not_raise(self, tmp_path, capsys):
