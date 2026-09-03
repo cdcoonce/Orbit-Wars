@@ -612,6 +612,34 @@ def test_handle_threats_skips_when_too_slow():
     assert len(moves) == 0
 
 
+def test_handle_threats_reinforces_imminent_threat_under_eta_buffer():
+    # Regression for issue #212: threat.eta(3) < eta_buffer(5) made the old gate
+    # `eta <= threat.eta - eta_buffer` = `eta <= -2` mathematically unsatisfiable
+    # (intercept/turns_to_arrive always return eta >= 1), so imminent threats got
+    # zero defense no matter how close the FORTRESS source was.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # Adjacent fortress at (88, 50): distance=2, arrives in 1 turn — strictly
+    # before the threat lands (eta=3).
+    close_fortress = make_planet(id=2, owner=0, x=88.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=3)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, close_fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+
+
 def test_handle_threats_skips_reinforcement_below_min_garrison():
     # min_garrison is reused here as a minimum reinforcement size (see comment at
     # strategy.py handle_threats): ships_to_send=5 < min_garrison=6, so the guard
