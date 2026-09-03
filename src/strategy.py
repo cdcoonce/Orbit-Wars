@@ -232,7 +232,16 @@ def handle_threats(
             )
             if future_x is None:
                 continue
-            if eta <= threat.eta - params["eta_buffer"]:
+            # Clamp the buffer to what's available: for an imminent threat
+            # (threat.eta < eta_buffer) intercept()/turns_to_arrive() always
+            # return eta >= 1 (max(1, math.ceil(...)) in math_utils.py), so
+            # `eta <= threat.eta - eta_buffer` goes negative and is never
+            # satisfiable — it silently vetoed all defense against close-range
+            # attacks. Clamping preserves the buffer's purpose (reject a
+            # reinforcement that arrives with no margin to spare) without
+            # disabling defense entirely when eta_buffer exceeds threat.eta.
+            effective_buffer = min(params["eta_buffer"], threat.eta - 1)
+            if eta <= threat.eta - effective_buffer:
                 if path_crosses_sun(source.x, source.y, future_x, future_y):
                     continue
                 angle = angle_to_target(source.x, source.y, future_x, future_y)
