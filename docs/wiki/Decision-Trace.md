@@ -28,7 +28,7 @@ agg = 0.917 - 0.094 * (0.917 - 0.737)  # = 0.900
 
 Source planet: 52 ships, production=5.
 
-> **Assumed params for this trace:** `fortress_min_ships=60` (Optuna-tuned value; default is 20). This reflects a realistic tuned champion that prefers fewer but better-defended FORTRESS planets.
+> **Assumed params for this trace:** `fortress_min_ships=60` (Optuna-tuned value; default is 31). This reflects a realistic tuned champion that prefers fewer but better-defended FORTRESS planets.
 
 ```python
 # classify_own(source, threats=[], params)
@@ -36,7 +36,7 @@ Source planet: 52 ships, production=5.
 # Step 2: FORTRESS?
 #   ships (52) >= fortress_min_ships (60)?  → No (52 < 60) → not FORTRESS
 # Step 3: FACTORY?
-#   production (5) >= factory_min_production (4)?  → Yes → FACTORY
+#   production (5) >= factory_min_production (5)?  → Yes → FACTORY
 ```
 
 `src_class = "FACTORY"`
