@@ -1,6 +1,6 @@
 ## Overview
 
-`src/lookahead.py` is a lightweight 1–N turn forward simulator used by `plan_expansion` to score candidate moves beyond the greedy heuristic. It defines three mutable dataclasses that mirror the Kaggle engine's immutable namedtuples, plus three functions: `build_state`, `step_state`, and `score_state`.
+`src/lookahead.py` is a lightweight 1–N turn forward simulator used by `plan_expansion` to score candidate moves beyond the greedy heuristic. It defines three mutable dataclasses that mirror the Kaggle engine's immutable namedtuples, plus five public functions: `build_state`, `step_state`, `step_state_multi`, `score_state`, and `score_candidate_lookahead` — the last of which is the actual multi-turn rollout entry point `plan_expansion` calls in production.
 
 Cross-links: [Strategy](strategy.md) | [Config](config.md) | [Home](../Home.md)
 
@@ -56,7 +56,7 @@ Gotcha: caller must call `build_state` before each lookahead branch that needs a
 
 ---
 
-### `step_state(state, move, player, angular_velocity, initial_planets, opponent_fn) -> GameState`
+### `step_state(state, move, player, angular_velocity, opponent_fn=None) -> GameState`
 
 ```python
 def step_state(
@@ -64,7 +64,6 @@ def step_state(
     move,
     player: int,
     angular_velocity: float,
-    initial_planets,
     opponent_fn=None,
 ) -> GameState:
 ```
@@ -96,6 +95,22 @@ sequenceDiagram
 
 ---
 
+### `step_state_multi(state, moves, player, angular_velocity, opponent_fn=None) -> GameState`
+
+```python
+def step_state_multi(
+    state: GameState,
+    moves,
+    player: int,
+    angular_velocity: float,
+    opponent_fn=None,
+) -> GameState:
+```
+
+Simulates **one turn** forward like `step_state`, but launches a _list_ of `[planet_id, angle, ships]` moves for `player` instead of a single optional move — `step_state` is now a thin wrapper that calls this with a zero-or-one-element list. `score_candidate_lookahead` uses it directly to advance both sides' full planned move lists on turns 2..N of a rollout.
+
+---
+
 ### `score_state(state, player, ship_weight) -> float`
 
 ```python
@@ -109,6 +124,26 @@ score = (my_prod - enemy_prod) + ship_weight * (my_ships - enemy_ships)
 ```
 
 Only counts ships on planets (not in-flight fleets). `ship_weight` controls how much raw ship count matters vs production differential; in real play it is always `lookahead_ship_weight` from PARAMS (`src/config.py`), passed explicitly by `score_candidate_lookahead` — the signature's `ship_weight=0.01` is only a fallback for direct/unit-test calls. Neutral planets are excluded from both sides.
+
+---
+
+### `score_candidate_lookahead(initial_planets, fleets, turn, candidate_move, player, angular_velocity, opponent_fn, params, plan_moves_fn) -> float`
+
+```python
+def score_candidate_lookahead(
+    initial_planets,
+    fleets,
+    turn: int,
+    candidate_move,
+    player: int,
+    angular_velocity: float,
+    opponent_fn,
+    params,
+    plan_moves_fn,
+) -> float:
+```
+
+The actual production entry point `plan_expansion` calls to score a candidate move. Builds a state, applies `candidate_move` plus the opponent's response for T+1 via `step_state`, then rolls forward `params["lookahead_turns"] - 1` more turns via `step_state_multi` — both sides re-planning with pure-greedy `plan_moves_fn` calls (`lookahead_blend` forced to `0.0` so the opponent never recurses into its own lookahead) — and returns `score_state` from `player`'s perspective. `plan_moves_fn` is injected rather than imported so `lookahead.py` never depends on `strategy.py`, avoiding a circular import.
 
 ---
 

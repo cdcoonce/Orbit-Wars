@@ -9,11 +9,11 @@ from src.config import PARAMS
 from trials.game_runner import run_games, tally_results
 from trials.champion import CHAMPION_PARAMS
 
-# Start from the full current defaults so every key strategy.py indexes with
-# params[...] is present (new ramp params get added here automatically), then
-# override only the hand-tuned originals this benchmark is meant to compare against.
-ORIGINAL_DEFAULTS = {
-    **PARAMS,
+# Hand-tuned originals this benchmark is meant to compare against. Every new
+# frac_* knob (e.g. from a SKIP_COMBOS removal) must get an explicit entry here
+# — otherwise the **PARAMS spread below silently leaks the current tuned value
+# into the "original" arm. See test_every_frac_key_has_explicit_override.
+HAND_TUNED_OVERRIDES = {
     "fortress_min_ships": 40,
     "fortress_min_production": 3,
     "factory_min_production": 3,
@@ -24,6 +24,7 @@ ORIGINAL_DEFAULTS = {
     "frac_fortress_hard_neutral": 0.75,
     "frac_fortress_soft_enemy": 0.65,
     "frac_fortress_contested_enemy": 0.75,
+    "frac_fortress_hardened_enemy": 0.85,
     "frac_factory_easy_neutral": 0.50,
     "frac_factory_soft_enemy": 0.50,
     "frac_outpost_easy_neutral": 0.40,
@@ -44,6 +45,11 @@ ORIGINAL_DEFAULTS = {
     "lookahead_blend": 0.5,
     "lookahead_ship_weight": 0.01,
 }
+
+# Start from the full current defaults so every key strategy.py indexes with
+# params[...] is present (new ramp params get added here automatically), then
+# apply the hand-tuned overrides above.
+ORIGINAL_DEFAULTS = {**PARAMS, **HAND_TUNED_OVERRIDES}
 
 
 BENCHMARK_SEED = 0

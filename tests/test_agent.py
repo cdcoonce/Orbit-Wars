@@ -88,3 +88,26 @@ def test_turn_zero_clears_stale_positions_from_previous_game(captured_velocities
 
     # First sighting of the new game: no velocity, not a cross-game garbage delta.
     assert captured_velocities[-1] == {}
+
+
+def test_departed_comet_resets_velocity_tracking_on_return(captured_velocities):
+    """A comet that drops out mid-game and later returns must not yield a stale delta.
+
+    Turns 0-1 see comet id 1 and establish a velocity. Turn 2 omits it from
+    ``comet_planet_ids`` (it departs), so its position is dropped from tracking.
+    When it reappears at turn 3, it must be treated as a first sighting (no
+    velocity) rather than producing a garbage delta against its turn-1 position.
+    """
+    agent(make_obs([make_planet(id=1, owner=-1, x=70.0, y=50.0, ships=0)],
+                   comet_planet_ids=[1], step=0))
+    agent(make_obs([make_planet(id=1, owner=-1, x=72.0, y=51.0, ships=0)],
+                   comet_planet_ids=[1], step=1))
+
+    # Comet departs: absent from comet_planet_ids for this turn.
+    agent(make_obs([], comet_planet_ids=[], step=2))
+
+    # Comet returns at a new position.
+    agent(make_obs([make_planet(id=1, owner=-1, x=10.0, y=10.0, ships=0)],
+                   comet_planet_ids=[1], step=3))
+
+    assert captured_velocities[-1] == {}

@@ -79,12 +79,36 @@ def classify_enemy(
     return "HARDENED_ENEMY"
 
 
+def _predict_owned_position(
+    planet: Planet,
+    angular_velocity: float,
+    t: int,
+    comet_ids: set,
+    comet_velocities: dict | None,
+) -> tuple[float, float]:
+    """Predict an owned planet's position ``t`` turns out, comet-aware.
+
+    A captured comet keeps advancing along its comet path rather than
+    orbiting (the engine never rotates an id in comet_pid_set), so it needs
+    the same linear velocity extrapolation intercept() uses for comet
+    targets. Falls back to predict_planet_position's orbital/static model
+    when the planet isn't a comet, or no velocity estimate is available yet.
+    """
+    if planet.id in comet_ids:
+        vel = (comet_velocities or {}).get(planet.id)
+        if vel:
+            return planet.x + vel[0] * t, planet.y + vel[1] * t
+    return predict_planet_position(planet, angular_velocity, t)
+
+
 def detect_threats(
     my_planets: list[Planet],
     fleets: list[Fleet],
     player: int,
     angular_velocity: float,
     params: dict = PARAMS,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
 ) -> list:
     # Aggregate every inbound fleet per planet: planet_id -> [summed_ships, earliest_eta].
     # Multiple enemy fleets converging on one planet collapse into a SINGLE threat so
@@ -104,7 +128,9 @@ def detect_threats(
     planet_positions: dict[tuple[int, int], tuple[float, float]] = {}
     if any(fleet.owner != player for fleet in fleets):
         planet_positions = {
-            (planet.id, t): predict_planet_position(planet, angular_velocity, t - 1)
+            (planet.id, t): _predict_owned_position(
+                planet, angular_velocity, t - 1, comet_ids, comet_velocities
+            )
             for t in range(1, params["threat_eta_window"] + 1)
             for planet in my_planets
         }
@@ -153,9 +179,17 @@ def handle_threats(
     own_classes: dict,
     angular_velocity: float,
     params: dict = PARAMS,
+    comet_ids: set = frozenset(),
+    comet_velocities: dict | None = None,
 ) -> list[list]:
     moves = []
     already_used: set[int] = set()
+    # Scarce FORTRESS/FACTORY sources are single-use (already_used below), so
+    # process the most urgent threats first: soonest eta (a slow threat has more
+    # future turns to be covered), then largest incoming_ships as a tiebreak.
+    # Otherwise incidental detect_threats iteration order could let a smaller,
+    # far-later threat claim the only eligible source ahead of a bigger, sooner one.
+    threats = sorted(threats, key=lambda t: (t.eta, -t.incoming_ships))
     for threat in threats:
         target = next((p for p in owned if p.id == threat.planet_id), None)
         if target is None:
@@ -181,12 +215,33 @@ def handle_threats(
             # when magnitude >= flat both forms agree; when magnitude < flat both reduce to flat.
             cap = source.ships - params["min_garrison"]
             ships_to_send = max(flat, min(magnitude, cap))
+            # min_garrison is reused here as a minimum reinforcement size, not a
+            # garrison-protection check: this skips sending fewer than min_garrison
+            # ships as not worth the trip. It does NOT protect the source's own
+            # garrison — the cap above can already leave source.ships below
+            # min_garrison (see test_handle_threats_flat_baseline_can_leave_source_below_min_garrison).
             if ships_to_send < params["min_garrison"]:
                 continue
             future_x, future_y, eta = intercept(
-                source, target, angular_velocity, ships_to_send
+                source,
+                target,
+                angular_velocity,
+                ships_to_send,
+                comet_ids,
+                comet_velocities,
             )
-            if eta <= threat.eta - params["eta_buffer"]:
+            if future_x is None:
+                continue
+            # Clamp the buffer to what's available: for an imminent threat
+            # (threat.eta < eta_buffer) intercept()/turns_to_arrive() always
+            # return eta >= 1 (max(1, math.ceil(...)) in math_utils.py), so
+            # `eta <= threat.eta - eta_buffer` goes negative and is never
+            # satisfiable — it silently vetoed all defense against close-range
+            # attacks. Clamping preserves the buffer's purpose (reject a
+            # reinforcement that arrives with no margin to spare) without
+            # disabling defense entirely when eta_buffer exceeds threat.eta.
+            effective_buffer = min(params["eta_buffer"], threat.eta - 1)
+            if eta <= threat.eta - effective_buffer:
                 if path_crosses_sun(source.x, source.y, future_x, future_y):
                     continue
                 angle = angle_to_target(source.x, source.y, future_x, future_y)
@@ -585,12 +640,20 @@ def plan_moves(
         return []
 
     agg = aggression(turn, params)
-    threats = detect_threats(owned, fleets, player, angular_velocity, params)
+    threats = detect_threats(
+        owned, fleets, player, angular_velocity, params, comet_ids, comet_velocities
+    )
     threatened_ids = {t.planet_id for t in threats}
     own_classes = {p.id: classify_own(p, threatened_ids, params) for p in owned}
 
     defense_moves = handle_threats(
-        threats, owned, own_classes, angular_velocity, params
+        threats,
+        owned,
+        own_classes,
+        angular_velocity,
+        params,
+        comet_ids,
+        comet_velocities,
     )
 
     if should_play_defensive(

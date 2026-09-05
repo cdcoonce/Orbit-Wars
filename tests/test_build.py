@@ -96,6 +96,36 @@ def test_no_relative_imports_survive(built_submission):
     assert leftover is None, f"leftover relative import: {leftover.group(0)!r}"
 
 
+def test_strip_relative_and_kaggle_helper_exists_and_used():
+    """The relative-then-kaggle strip order must be expressed in exactly one
+    place, so `build()` and `strip_imports()` can never desync."""
+    spec = importlib.util.spec_from_file_location("build", BUILD_SCRIPT)
+    build_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_mod)
+
+    assert hasattr(build_mod, "_strip_relative_and_kaggle")
+
+    sample = (
+        "from .foo import bar\n"
+        "from kaggle_environments.envs.orbit_wars.orbit_wars import (\n"
+        "    Fleet,\n"
+        ")\n"
+        "import os\n"
+        "x = 1\n"
+    )
+    result = build_mod._strip_relative_and_kaggle(sample)
+    assert "from ." not in result
+    assert "kaggle_environments" not in result
+    assert "import os" in result
+    assert "x = 1" in result
+
+    # RELATIVE_IMPORT_RE.sub/KAGGLE_IMPORT_RE.sub must only be applied inside
+    # the helper — a second call site would let the strip order desync again.
+    source_text = BUILD_SCRIPT.read_text()
+    assert source_text.count("RELATIVE_IMPORT_RE.sub(") == 1
+    assert source_text.count("KAGGLE_IMPORT_RE.sub(") == 1
+
+
 def test_no_duplicate_stdlib_imports(built_submission):
     """Each stdlib import must appear exactly once in the bundle."""
     stdlib_lines = [
@@ -207,6 +237,21 @@ def _build_and_import_submission(tmp_path):
     return mod
 
 
+def _assert_docstring_not_stale(docstring, bundled_names):
+    """Shared check: if docstring names any bundled module, it must name all of
+    them — used both against the real build.py docstring and, in
+    test_module_docstring_not_stale_detects_stale_subset, against a
+    constructed stale docstring to confirm the `if named:` branch actually
+    fires."""
+    named = {name for name in bundled_names if name in docstring}
+    if named:
+        missing = sorted(bundled_names - named)
+        assert not missing, (
+            f"build.py docstring names some modules ({sorted(named)}) "
+            f"but omits: {missing}"
+        )
+
+
 def test_module_docstring_not_stale():
     """build.py module docstring must not name a stale subset of bundled modules.
 
@@ -221,14 +266,20 @@ def test_module_docstring_not_stale():
     docstring = build_mod.__doc__ or ""
     bundled_names = {Path(p).name for p in build_mod.SRC_FILES}
 
-    # If the docstring mentions any bundled module by name, all must be present.
-    named = {name for name in bundled_names if name in docstring}
-    if named:
-        missing = sorted(bundled_names - named)
-        assert not missing, (
-            f"build.py docstring names some modules ({sorted(named)}) "
-            f"but omits: {missing}"
-        )
+    _assert_docstring_not_stale(docstring, bundled_names)
+
+
+def test_module_docstring_not_stale_detects_stale_subset():
+    """The `if named:` guard in _assert_docstring_not_stale must actually fire
+    when a docstring names only a subset of the bundled modules — regression
+    test for the vacuous-assertion bug where the real build.py docstring never
+    names any filename, so `named` was always empty and the guarded assertion
+    never ran."""
+    bundled_names = {"math_utils.py", "config.py", "lookahead.py"}
+    stale_docstring = "Reads math_utils.py and config.py in dependency order."
+
+    with pytest.raises(AssertionError, match="but omits"):
+        _assert_docstring_not_stale(stale_docstring, bundled_names)
 
 
 def test_multiline_stdlib_import_bundled_correctly(tmp_path):

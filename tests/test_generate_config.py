@@ -11,6 +11,8 @@ against the committed doc so a `src/config.py` change without a regenerated
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from src.config import PARAMS
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -46,6 +48,19 @@ def test_validate_keys_does_not_raise():
     mod.validate_keys()  # raises ValueError on any drift
 
 
+def test_validate_keys_raises_when_param_missing_from_groups():
+    """A PARAMS key with no GROUPS entry must make validate_keys() raise —
+    catches the case where build_table would silently omit it from the doc."""
+    mod = _load_generate_config()
+    target_key = sorted(set(PARAMS.keys()) - mod.FIXED_KEYS)[0]
+    for _, keys in mod.GROUPS:
+        if target_key in keys:
+            keys.remove(target_key)
+            break
+    with pytest.raises(ValueError, match="missing from GROUPS"):
+        mod.validate_keys()
+
+
 def test_every_params_key_covered_by_exactly_one_group_and_has_impact():
     """Every non-fixed PARAMS key must appear in exactly one GROUPS entry and
     have an IMPACT description; no GROUPS/IMPACT key may be absent from PARAMS."""
@@ -72,6 +87,17 @@ def test_every_params_key_covered_by_exactly_one_group_and_has_impact():
 
     stale_impact = set(mod.IMPACT.keys()) - set(PARAMS.keys())
     assert not stale_impact, f"IMPACT key(s) absent from PARAMS (stale): {sorted(stale_impact)}"
+
+
+def test_impact_game_length_derived_from_params(monkeypatch):
+    """IMPACT['game_length'] must be built from PARAMS['game_length'], not a
+    hardcoded literal — changing PARAMS must change the generated text."""
+    import src.config as config_module
+
+    monkeypatch.setitem(config_module.PARAMS, "game_length", 999)
+    mod = _load_generate_config()
+    assert "999" in mod.IMPACT["game_length"]
+    assert "500" not in mod.IMPACT["game_length"]
 
 
 def test_generated_section_matches_committed_doc():

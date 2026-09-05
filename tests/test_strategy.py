@@ -14,6 +14,7 @@ from src.math_utils import _min_dist_pt_to_segment
 from src.math_utils import path_crosses_sun
 from src.math_utils import angle_to_target
 from src.math_utils import predict_planet_position, turns_to_arrive
+from src.math_utils import fleet_speed
 from src.strategy import classify_own
 from src.strategy import classify_enemy, classify_neutral
 from src.strategy import detect_threats
@@ -477,6 +478,65 @@ def test_detect_threats_skips_precompute_without_enemy_fleets(monkeypatch):
     assert threats_own_only == []
 
 
+def test_detect_threats_comet_aware_catches_threat_orbital_math_misses():
+    """An owned comet keeps moving along its comet path even after capture (see
+    issue #210) — detect_threats must predict its future position via linear
+    velocity extrapolation, not predict_planet_position's orbital/static model.
+
+    Comet planet at (90, 50) is static under orbital math (orbital_radius=40,
+    40+SUN_RADIUS(10)=50 >= ROTATION_RADIUS_LIMIT(50)), but drifts along
+    velocity (0, 5)/turn. An enemy fleet travels the horizontal line y=70,
+    timed so its position at t-1=3 lands exactly on the comet's true drifted
+    position (90, 65) — within threat_radius — while the static (90, 50)
+    orbital prediction stays ~20 units away (threat_radius ~7.36) the entire
+    window, so the pre-fix code never flags this as a threat.
+    """
+    comet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    speed = fleet_speed(10)
+    start_x = 90.0 - 5 * speed
+    fleet = make_fleet(id=0, owner=1, x=start_x, y=70.0, angle=0.0, ships=10)
+    comet_ids = {1}
+    comet_velocities = {1: (0.0, 5.0)}
+
+    orbital_threats = detect_threats(
+        [comet], [fleet], player=0, angular_velocity=0.03
+    )
+    assert orbital_threats == [], (
+        "sanity check: orbital/static prediction must NOT see this as a threat, "
+        "or this test can't distinguish the fix from the pre-fix behavior"
+    )
+
+    comet_threats = detect_threats(
+        [comet],
+        [fleet],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+    assert len(comet_threats) == 1
+    assert comet_threats[0].planet_id == 1
+
+
+def test_detect_threats_comet_without_velocity_falls_back_to_orbital():
+    # No velocity estimate yet (first sighting) — comet_ids alone must not change
+    # behavior; falls back to the existing orbital/static prediction.
+    comet = make_planet(id=1, owner=0, x=90.0, y=50.0)
+    speed = fleet_speed(10)
+    start_x = 90.0 - 5 * speed
+    fleet = make_fleet(id=0, owner=1, x=start_x, y=70.0, angle=0.0, ships=10)
+
+    threats = detect_threats(
+        [comet],
+        [fleet],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids={1},
+        comet_velocities={},
+    )
+    assert threats == []
+
+
 def test_handle_threats_scales_against_combined_incoming():
     # Downstream: feeding two converging fleets through detect_threats yields a single
     # threat whose summed incoming_ships drives magnitude-aware reinforcement — handle_threats
@@ -552,6 +612,90 @@ def test_handle_threats_skips_when_too_slow():
     assert len(moves) == 0
 
 
+def test_handle_threats_reinforces_imminent_threat_under_eta_buffer():
+    # Regression for issue #212: threat.eta(3) < eta_buffer(5) made the old gate
+    # `eta <= threat.eta - eta_buffer` = `eta <= -2` mathematically unsatisfiable
+    # (intercept/turns_to_arrive always return eta >= 1), so imminent threats got
+    # zero defense no matter how close the FORTRESS source was.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # Adjacent fortress at (88, 50): distance=2, arrives in 1 turn — strictly
+    # before the threat lands (eta=3).
+    close_fortress = make_planet(id=2, owner=0, x=88.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=3)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    moves = handle_threats(
+        threats,
+        [threatened, close_fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+
+
+def test_handle_threats_skips_reinforcement_below_min_garrison():
+    # min_garrison is reused here as a minimum reinforcement size (see comment at
+    # strategy.py handle_threats): ships_to_send=5 < min_garrison=6, so the guard
+    # skips this reinforcement even though the source's own garrison is untouched.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 6,
+        "defense_reinforce_fraction": 0.1,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 5,
+    }
+    flat = int(50 * 0.1)  # 5 — below min_garrison(6)
+    assert flat < params["min_garrison"]
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert moves == []
+
+
+def test_handle_threats_reinforces_when_at_min_garrison_boundary():
+    # Companion to the skip test above: ships_to_send == min_garrison exactly
+    # clears the guard (`< min_garrison` only rejects strictly smaller sends),
+    # so a reinforcement move IS emitted.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=20)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 5,
+        "defense_reinforce_fraction": 0.1,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 5,
+    }
+    flat = int(50 * 0.1)  # 5 — exactly at min_garrison(5)
+    assert flat == params["min_garrison"]
+    moves = handle_threats(
+        threats,
+        [threatened, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(moves) == 1
+    assert moves[0][0] == 2
+    assert moves[0][2] == flat
+
+
 def test_handle_threats_skips_outpost():
     threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
     outpost = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=1)
@@ -586,9 +730,52 @@ def test_handle_threats_already_used_not_reused():
         angular_velocity=0.03,
         params=params,
     )
-    # Fortress assigned to first threat, then blocked for second → only 1 move
+    # Both threats tie on eta and incoming_ships, so the priority sort is stable
+    # and preserves input order: fortress goes to the first-listed threat, then
+    # is blocked (already_used) for the second → only 1 move.
     assert len(moves) == 1
     assert moves[0][0] == 2
+
+
+def test_handle_threats_prioritizes_urgent_threat_over_list_order():
+    # Two threats compete for the single eligible fortress. threatened_far has a
+    # much smaller eta (more urgent) than threatened_near, but is listed SECOND —
+    # so incidental list order would pick threatened_near. handle_threats must
+    # sort by urgency (ascending eta) and give the fortress to threatened_far,
+    # regardless of which order the threats list is passed in.
+    threatened_near = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    threatened_far = make_planet(id=3, owner=0, x=70.0, y=90.0, ships=20, production=2)
+    fortress = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "eta_buffer": 5,
+    }
+    # Angle from fortress (70, 50) to threatened_far (70, 90): straight up.
+    expected_angle = angle_to_target(70.0, 50.0, 70.0, 90.0)
+
+    for threats in (
+        [
+            Threat(planet_id=1, incoming_ships=30, eta=30),
+            Threat(planet_id=3, incoming_ships=30, eta=25),
+        ],
+        [
+            Threat(planet_id=3, incoming_ships=30, eta=25),
+            Threat(planet_id=1, incoming_ships=30, eta=30),
+        ],
+    ):
+        moves = handle_threats(
+            threats,
+            [threatened_near, fortress, threatened_far],
+            own_classes,
+            angular_velocity=0.03,
+            params=params,
+        )
+        assert len(moves) == 1
+        assert moves[0][0] == 2
+        assert moves[0][1] == pytest.approx(expected_angle, abs=1e-6)
 
 
 def test_handle_threats_identical_at_zero_multiplier():
@@ -803,6 +990,79 @@ def test_handle_threats_skips_reinforcement_whose_path_crosses_sun():
     )
     assert len(clear_moves) == 1
     assert clear_moves[0][0] == fortress_clear.id
+
+
+def test_handle_threats_comet_target_uses_linear_velocity_intercept():
+    """handle_threats must thread comet_ids/comet_velocities into its intercept()
+    call so a reinforcement aimed at an owned comet under threat uses the
+    linear-velocity path (intercept()'s comet branch) instead of silently
+    falling back to orbital-iteration prediction (comet_ids=frozenset() default)
+    — see issue #202. Analogous to test_comet_intercept_uses_linear_velocity but
+    exercised through handle_threats.
+
+    Geometry mirrors the sun-clear case above (y=90, off the CENTER line) so the
+    sun-crossing gate can't interfere.
+    """
+    comet = make_planet_at(id=1, x=60.0, y=90.0, owner=0, ships=5, production=1)
+    fortress = make_planet_at(id=2, x=10.0, y=90.0, owner=0, ships=100, production=4)
+    # Diagonal drift (not purely horizontal) so the linear-predicted aim point
+    # is off the source->comet's initial ray — otherwise the linear and the
+    # orbital-fallback (static) aim points would coincidentally share an angle
+    # from the source even though their positions differ.
+    vel = (-1.0, -1.0)
+    comet_ids = {1}
+    comet_velocities = {1: vel}
+
+    # defense_incoming_multiplier=0.0 collapses magnitude to 0, so ships_to_send
+    # is a pure function of defense_reinforce_fraction, predictable without
+    # re-deriving handle_threats' internal formula.
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 0,
+    }
+    ships_to_send = int(fortress.ships * params["defense_reinforce_fraction"])
+
+    # Oracle: what the linear-velocity comet path actually predicts.
+    expected_fx, expected_fy, expected_eta = intercept(
+        fortress,
+        comet,
+        angular_velocity=0.03,
+        ships_to_send=ships_to_send,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+    assert expected_fx is not None
+
+    # Contrast: what the orbital-iteration fallback (no comet threading) would
+    # predict instead -- must differ, or this test can't distinguish the fix
+    # from the pre-fix default-args fallback.
+    orbital_fx, orbital_fy, _ = intercept(
+        fortress, comet, angular_velocity=0.03, ships_to_send=ships_to_send
+    )
+    assert (expected_fx, expected_fy) != (orbital_fx, orbital_fy)
+
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=expected_eta)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS"}
+
+    moves = handle_threats(
+        threats,
+        [comet, fortress],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+
+    assert len(moves) == 1
+    source_id, angle, ships_sent = moves[0]
+    assert source_id == fortress.id
+    assert ships_sent == ships_to_send
+    assert angle == angle_to_target(fortress.x, fortress.y, expected_fx, expected_fy)
+    assert angle != angle_to_target(fortress.x, fortress.y, orbital_fx, orbital_fy)
 
 
 # --- plan_expansion ---
@@ -1330,6 +1590,76 @@ def test_plan_moves_defending_source_does_not_also_expand():
     )
 
 
+def test_plan_moves_threads_comet_ids_and_velocities_into_handle_threats(monkeypatch):
+    """plan_moves must forward its own comet_ids/comet_velocities through to
+    handle_threats — see issue #202. Spies on handle_threats to capture the
+    forwarded args rather than re-deriving comet intercept geometry."""
+    import src.strategy as strategy
+
+    owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    comet_ids = {5}
+    comet_velocities = {5: (1.0, 0.0)}
+
+    calls = []
+    original = strategy.handle_threats
+
+    def spy(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(strategy, "handle_threats", spy)
+
+    strategy.plan_moves(
+        [owned],
+        fleets=[],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    forwarded = list(args) + list(kwargs.values())
+    assert comet_ids in forwarded
+    assert comet_velocities in forwarded
+
+
+def test_plan_moves_threads_comet_ids_and_velocities_into_detect_threats(monkeypatch):
+    """plan_moves must forward its own comet_ids/comet_velocities through to
+    detect_threats — see issue #210. Spies on detect_threats to capture the
+    forwarded args rather than re-deriving comet threat-detection geometry."""
+    import src.strategy as strategy
+
+    owned = make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4)
+    comet_ids = {5}
+    comet_velocities = {5: (1.0, 0.0)}
+
+    calls = []
+    original = strategy.detect_threats
+
+    def spy(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(strategy, "detect_threats", spy)
+
+    strategy.plan_moves(
+        [owned],
+        fleets=[],
+        player=0,
+        angular_velocity=0.03,
+        comet_ids=comet_ids,
+        comet_velocities=comet_velocities,
+    )
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    forwarded = list(args) + list(kwargs.values())
+    assert comet_ids in forwarded
+    assert comet_velocities in forwarded
+
+
 def test_plan_expansion_late_game_agg_scales_sends_and_inflates_floor():
     """With agg < 1 (late-game regime), plan_expansion applies agg in two directions:
     (a) every send is multiplied by agg (scaled down), and
@@ -1678,6 +2008,39 @@ class TestBlendedBest:
             (5.0, 9.0, "strong_look", 0.7, 3.0, 4.0),
         ]
         assert _blended_best(candidates, blend=0.5) == ("strong_look", 0.7, 3.0, 4.0)
+
+    def test_all_equal_lookahead_uses_greedy_without_dividing_by_zero(self):
+        from src.strategy import _blended_best
+
+        nl_values = []
+
+        class RecordingScore(float):
+            """Lookahead score that records the nl quotient computed from it."""
+
+            def __sub__(self, other):
+                return RecordingScore(float(self) - float(other))
+
+            def __add__(self, other):
+                return RecordingScore(float(self) + float(other))
+
+            def __truediv__(self, other):
+                quotient = float(self) / float(other)
+                nl_values.append(quotient)
+                return quotient
+
+        # hi_l == lo_l would be a ZeroDivisionError without the 1e-9 guard;
+        # lookahead terms (nl) collapse to 0 for every candidate, so greedy
+        # score decides the winner. Only the lookahead scores are
+        # RecordingScore, so the recorded quotients are exactly the
+        # per-candidate nl values — ng is computed from plain floats.
+        candidates = [
+            (1.0, RecordingScore(5.0), "weak_greedy", 0.3, 1.0, 2.0),
+            (9.0, RecordingScore(5.0), "strong_greedy", 0.7, 3.0, 4.0),
+        ]
+        assert _blended_best(candidates, blend=0.5) == ("strong_greedy", 0.7, 3.0, 4.0)
+        assert nl_values == [0.0, 0.0], (
+            f"nl must collapse to 0 for every candidate when hi_l == lo_l, got {nl_values}"
+        )
 
     def test_blended_winner_differs_from_greedy_winner(self):
         from src.strategy import _blended_best

@@ -1,3 +1,5 @@
+import math
+
 from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet
 
 from src.endgame import total_ships, should_play_defensive
@@ -198,6 +200,51 @@ class TestPlanMovesDefensiveIntegration:
         assert len(moves_normal) > 0
         # Defensive mode with no threats produces no moves (expansion skipped, no threats)
         assert moves_defensive == []
+
+    def test_plan_moves_defensive_still_reinforces_threats(self):
+        """Defensive mode suppresses expansion but must still dispatch reinforcement:
+        handle_threats runs before the should_play_defensive early return in
+        plan_moves, so a threatened planet still gets reinforced even when
+        expansion is skipped."""
+        # Fortress-class planet (ships >= fortress_min_ships, production >=
+        # fortress_min_production) able to reinforce.
+        fortress = make_planet(id=0, owner=1, x=70.0, y=50.0, ships=200, production=4)
+        # Owned planet under attack by an inbound enemy fleet.
+        threatened = make_planet(id=3, owner=1, x=90.0, y=50.0, ships=20, production=2)
+        # Low-ship enemy planet keeps the ship ratio well above lead_margin even
+        # with the attacking fleet's ships also counted toward the enemy total.
+        enemy_planet = make_planet(
+            id=2, owner=2, x=10.0, y=50.0, ships=5, production=1
+        )
+        # Enemy fleet heading toward `threatened` (arrives at eta=10), giving the
+        # fortress at x=70 (arrives at eta=6) time to intercept first.
+        enemy_fleet = make_fleet(
+            id=0, owner=2, x=116.0, y=50.0, angle=math.pi, ships=10
+        )
+        planets = [fortress, threatened, enemy_planet]
+        fleets = [enemy_fleet]
+
+        params = dict(PARAMS)
+        params["endgame_threshold_turn"] = 450
+        params["endgame_lead_margin"] = 1.2
+        # Small eta_buffer so the fortress's ~6-turn reinforcement clears the
+        # ~10-turn threat eta (default eta_buffer=8 would reject it as too slow).
+        params["eta_buffer"] = 2
+
+        moves = plan_moves(
+            planets,
+            fleets,
+            player=1,
+            angular_velocity=0.0,
+            turn=460,
+            params=params,
+        )
+
+        # Defensive mode must still reinforce -- only expansion is suppressed.
+        assert len(moves) > 0
+        reinforcement_sources = {m[0] for m in moves}
+        assert threatened.id not in reinforcement_sources
+        assert fortress.id in reinforcement_sources
 
     def test_plan_moves_expands_when_losing_past_threshold(self):
         """Even past threshold turn, bot does NOT go defensive when losing."""

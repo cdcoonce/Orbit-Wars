@@ -19,7 +19,7 @@ flowchart TD
     K -- "False" --> M["Exclude defense-used planets\nfrom expansion pool"]
     M --> N["plan_expansion(owned, neutrals, enemies,\nown_classes, angular_velocity, agg, params, ...)"]
     N --> O["For each non-THREATENED source planet\nwith ships >= min_garrison/agg"]
-    O --> P["probe_ships = source.ships // 2"]
+    O --> P["probe_ships = source.ships"]
     P --> Q["Pre-compute opponent_fn once\n(plan_moves with blend=0 on opp player)"]
     Q --> R["For each candidate target"]
     R --> S{"target.owner == -1?"}
@@ -77,20 +77,20 @@ Default range: 0.917 → 0.737 over 500 turns. Higher early-game aggression mean
 
 ### 4. Threat Detection (`detect_threats`)
 
-For every enemy fleet, projects its position forward for `t ∈ [1, threat_eta_window]` turns (default 17). If the projected position is within `threat_radius` (default 5.27) of a predicted planet position, a `Threat(planet_id, incoming_ships, eta)` is appended.
+For every enemy fleet, projects its position forward for `t ∈ [1, threat_eta_window]` turns (default 15). If the projected position is within `threat_radius` (default 7.36) of a predicted planet position, a `Threat(planet_id, incoming_ships, eta)` is appended.
 
 ### 5. Own-Planet Classification (`classify_own`)
 
 Applied to every owned planet. Priority order:
 
 1. **THREATENED** — if any `Threat.planet_id` matches
-2. **FORTRESS** — `ships >= fortress_min_ships` (20) AND `production >= fortress_min_production` (2)
-3. **FACTORY** — `production >= factory_min_production` (2)
+2. **FORTRESS** — `ships >= fortress_min_ships` (31) AND `production >= fortress_min_production` (2)
+3. **FACTORY** — `production >= factory_min_production` (5)
 4. **OUTPOST** — everything else
 
 ### 6. Threat Handling (`handle_threats`)
 
-For each `Threat`, finds FORTRESS or FACTORY sources that can arrive before the attacker (with `eta_buffer` turns of slack). Sends `defense_reinforce_fraction` (60%) of source ships. Each source is used at most once.
+For each `Threat`, finds FORTRESS or FACTORY sources that can arrive before the attacker (with `eta_buffer` turns of slack). Sends `defense_reinforce_fraction` (34.77%) of source ships. Each source is used at most once.
 
 ### 7. Endgame Exit (`should_play_defensive`)
 
@@ -101,7 +101,7 @@ If `turn >= endgame_threshold_turn` (451) AND `my_total_ships / enemy_total_ship
 Planets already used for defense are excluded. For each remaining owned planet:
 
 - Skip if `source.ships < min_garrison / agg`
-- `probe_ships = source.ships // 2` (used for classification only)
+- `probe_ships = source.ships` (the full fleet, used for classification only)
 - Opponent response is pre-computed once per source (not per candidate) using `plan_moves` with `lookahead_blend=0` to avoid recursion
 
 For each candidate target:
@@ -131,8 +131,8 @@ Each emitted move is `[planet_id: int, angle: float, ships: int]`. The Kaggle en
 | `game_length`            | 500     | Aggression denominator                                      |
 | `aggression_max`         | 0.917   | Early-game aggression                                       |
 | `aggression_min`         | 0.737   | Late-game aggression                                        |
-| `threat_eta_window`      | 17      | Turns ahead to scan for threats                             |
-| `threat_radius`          | 5.27    | Proximity threshold for threat detection                    |
+| `threat_eta_window`      | 15      | Turns ahead to scan for threats                             |
+| `threat_radius`          | 7.36    | Proximity threshold for threat detection                    |
 | `min_garrison`           | 28      | Min ships before a planet launches                          |
 | `min_garrison_early`     | 6       | Min garrison at turn 0 (ramps to `min_garrison` by turn 35) |
 | `endgame_threshold_turn` | 451     | Turn to enter defensive mode                                |

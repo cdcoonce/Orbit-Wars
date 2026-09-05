@@ -12,7 +12,9 @@ does for PROMOTION_THRESHOLD.
 import re
 from pathlib import Path
 
-from trials.run_trials import N_GAMES
+import pytest
+
+from trials.run_trials import N_GAMES, N_TRIALS, N_WORKERS
 
 REPO_ROOT = Path(__file__).parent.parent
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
@@ -108,6 +110,38 @@ class TestNGamesWikiConsistency:
                 assert str(half) in line, (
                     f"stale per-side game count in alternation description: {line!r}"
                 )
+
+
+class TestNWorkersNTrialsWikiConsistency:
+    """Tuning-Pipeline.md must stay consistent with the N_WORKERS/N_TRIALS code
+    constants (issue #201).
+
+    N_GAMES and PROMOTION_THRESHOLD already have pinning tests in this table;
+    N_WORKERS and N_TRIALS were documented alongside them with no equivalent
+    guard, so either could silently drift with no CI signal. Mirrors
+    TestNGamesWikiConsistency.test_constants_table_n_games_matches_code, using
+    one parametrized test for both constants per the doc-constant-pinning
+    convention above.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [("N_WORKERS", N_WORKERS), ("N_TRIALS", N_TRIALS)],
+    )
+    def test_constants_table_matches_code(self, name, value):
+        """The Constants table Value cell must equal the code constant exactly."""
+        text = TUNING_PIPELINE.read_text()
+        expected = str(value)
+        found = False
+        for line in text.splitlines():
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) < 2 or cells[0].strip("`") != name:
+                continue
+            found = True
+            assert cells[1] == expected, (
+                f"stale {name} in Constants table: {line!r} (want {expected})"
+            )
+        assert found, f"{name} not found in Constants table of {TUNING_PIPELINE}"
 
 
 class TestFullConstantVerificationConvention:
