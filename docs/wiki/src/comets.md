@@ -23,7 +23,7 @@ The `or []` guard handles two failure modes cleanly:
 - Key present but value is `None`: same path.
 - Key present with a list: `list or []` → the list (truthy) → `set(list)`.
 
-Always returns a `set`, never `None` or a list. Called once per turn in `agent.py` and forwarded to `plan_moves` and `value_tier`.
+Always returns a `set`, never `None` or a list. Called once per turn in `agent.py` and forwarded to `plan_moves` as `comet_ids`.
 
 ---
 
