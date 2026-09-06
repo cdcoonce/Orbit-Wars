@@ -130,6 +130,13 @@ def objective(trial: optuna.Trial) -> float:
         seed=trial.number * N_GAMES,
     )
 
+    # Record the real promotion outcome on the trial: clearing
+    # PROMOTION_THRESHOLD does not imply a promotion, since the confirmation run
+    # and the stale-snapshot guard below can both skip write_champion. Default to
+    # False so every trial carries the outcome; overwritten with True only once
+    # write_champion has actually run.
+    trial.set_user_attr("promoted", False)
+
     if win_rate >= PROMOTION_THRESHOLD:
         # Confirm on a much larger, disjoint seed range before promoting — best-of-
         # N_TRIALS selection on n=N_GAMES measurements clears PROMOTION_THRESHOLD by
