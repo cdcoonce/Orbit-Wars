@@ -1,3 +1,4 @@
+from kaggle_environments import make
 from kaggle_environments.envs.orbit_wars.orbit_wars import Planet
 
 from src.config import PARAMS, PARAM_SPACE, SKIP_COMBOS
@@ -27,6 +28,12 @@ def _expected_frac_keys():
 
 def test_param_space_covers_all_tunable_params():
     assert set(PARAM_SPACE.keys()) == set(PARAMS.keys()) - {"game_length"}
+
+
+def test_game_length_matches_engine_episode_steps():
+    # Guards PARAMS["game_length"] against drift from the engine's authoritative
+    # episodeSteps default (kaggle_environments/envs/orbit_wars/orbit_wars.json).
+    assert PARAMS["game_length"] == make("orbit_wars").configuration.episodeSteps
 
 
 def test_every_non_skipped_combo_has_frac_param():
