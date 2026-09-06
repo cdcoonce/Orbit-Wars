@@ -10,9 +10,15 @@ Full architecture details: [.claude/docs/project.md](.claude/docs/project.md)
 ```bash
 uv run pytest tests/ --ignore=tests/test_trial_runner.py   # fast test suite (no optuna)
 uv run pytest tests/ -v                                     # full suite (requires optuna)
+uv run pytest tests/ -m "not slow"                          # skip the slow-marked tests (e.g. turn-latency)
 uv run python run_game.py                                   # local game vs starter agent
 uv run python trials/run_trials.py                         # Optuna self-play tuning (~30-60 min)
 ```
+
+`tests/test_turn_latency.py` plays 100 self-play turns through a real engine
+board to measure `src.agent.plan_turn` wall time against the competition's
+`actTimeout`; it takes a few seconds (vs. sub-second for most tests), so it's
+marked `@pytest.mark.slow` — skip it with `-m "not slow"` above.
 
 ## Build & Submit
 

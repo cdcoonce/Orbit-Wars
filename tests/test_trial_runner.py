@@ -597,6 +597,65 @@ class TestObjectiveStaleChampionGuard:
         mock_write.assert_not_called()
         assert run_trials._current_champion == v2
 
+    def test_stale_snapshot_race_is_not_flagged_or_logged_as_promoted(
+        self, restore_champion_state, caplog
+    ):
+        """Same stale-snapshot race as above, but checks the *reporting* side:
+        a promotion skipped by the guard must be recorded as promoted=False on
+        the trial, and the callback must not log it as [PROMOTED].
+        """
+        from trials import run_trials
+
+        v1 = {**PARAMS, "fortress_min_ships": 10}
+        v2 = {**PARAMS, "fortress_min_ships": 20}
+
+        with run_trials._lock:
+            run_trials._current_champion.clear()
+            run_trials._current_champion.update(v1)
+
+        def mock_run_games(challenger_params, champ_params, n_games, seed):
+            # Simulate concurrent worker B promoting v2 while A is playing.
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(v2)
+            return (run_trials.PROMOTION_THRESHOLD, [])
+
+        mock_trial = MagicMock()
+        mock_trial.number = 99
+        mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(PARAMS.get(k, lo))
+        mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
+            PARAMS.get(k, lo)
+        )
+
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion"):
+                win_rate = run_trials.objective(mock_trial)
+
+        # objective() must record the real outcome — a promotion the
+        # stale-snapshot guard skipped is promoted=False, never True.
+        recorded = {
+            call.args[0]: call.args[1]
+            for call in mock_trial.set_user_attr.call_args_list
+        }
+        assert recorded["promoted"] is False
+
+        # The callback reads that recorded outcome instead of re-deriving one
+        # from win_rate, so the skipped trial must not be tagged [PROMOTED] even
+        # though its win_rate cleared the threshold.
+        frozen = MagicMock()
+        frozen.number = mock_trial.number
+        frozen.value = win_rate
+        frozen.user_attrs = recorded
+
+        previous_best = run_trials._best_win_rate
+        try:
+            with caplog.at_level(logging.INFO):
+                run_trials._make_callback()(MagicMock(), frozen)
+        finally:
+            run_trials._best_win_rate = previous_best
+
+        assert "[PROMOTED]" not in caplog.text
+
 
 # ---------------------------------------------------------------------------
 # objective — confirmation-run promotion gate (issue #259)
@@ -661,7 +720,7 @@ class TestPromotionConfirmation:
     def test_failed_confirmation_does_not_flag_trial_as_promoted(
         self, restore_champion_state
     ):
-        """A rejected challenger must not be recorded as promoted."""
+        """A rejected challenger must be recorded as not promoted."""
         from trials import run_trials
 
         trial = self._make_trial()
@@ -670,7 +729,7 @@ class TestPromotionConfirmation:
             with patch("trials.run_trials.write_champion"):
                 run_trials.objective(trial)
 
-        trial.set_user_attr.assert_not_called()
+        trial.set_user_attr.assert_called_once_with("promoted", False)
 
     def test_confirmed_promotion_flags_trial_as_promoted(self, restore_champion_state):
         """A confirmed promotion records the flag the callback reads."""
@@ -682,7 +741,7 @@ class TestPromotionConfirmation:
             with patch("trials.run_trials.write_champion"):
                 run_trials.objective(trial)
 
-        trial.set_user_attr.assert_called_once_with("promoted", True)
+        assert trial.set_user_attr.call_args_list[-1].args == ("promoted", True)
 
     def _run_callback(self, caplog, user_attrs):
         from trials import run_trials

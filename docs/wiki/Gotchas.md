@@ -36,7 +36,7 @@ Cross-links: [Home](Home.md) | [Strategy](src/strategy.md) | [Lookahead](src/loo
 
 ## Strategy (`src/strategy.py`)
 
-**Garrison ramp direction** — `min_garrison_early` is the garrison threshold at turn 0, and it is typically LOW (default 6). A low threshold means planets attack with fewer ships on hand — **more aggressive** early game. The threshold ramps UP to `min_garrison` (default 28) over `garrison_ramp_turns` turns — **more conservative** over time. "Early" does not mean "cautious". → [strategy](src/strategy.md)
+**Garrison ramp direction** — `min_garrison_early` is the garrison threshold at turn 0, and it is typically LOW (default 13, see `min_garrison_early` in `src/config.py`). A low threshold means planets attack with fewer ships on hand — **more aggressive** early game. The threshold ramps UP to `min_garrison` (default 26, see `min_garrison` in `src/config.py`) over `garrison_ramp_turns` turns — **more conservative** over time. "Early" does not mean "cautious". → [strategy](src/strategy.md)
 
 **`handle_threats` min_garrison guard** — before sending any reinforcement, the candidate ship count is compared against the raw `params["min_garrison"]` value, NOT the ramped or aggression-adjusted value. This is distinct from `plan_expansion`'s garrison check. A reinforcement is skipped if `ships_to_send < min_garrison` regardless of turn number or aggression level. → [strategy](src/strategy.md)
 
@@ -54,6 +54,6 @@ opponent_fn = lambda state: _opp_moves
 
 The `m=_opp_moves` default-arg captures the value at lambda creation time. Without it, all candidates from the same source planet would share a closure over the loop variable, causing them all to use the last iteration's opponent moves. → [strategy](src/strategy.md)
 
-**SKIP_COMBOS** — 7 `(source_class, target_class)` pairs are hard-blocked and never generate moves: `FORTRESS→HARDENED_ENEMY`, `FACTORY→HARD_NEUTRAL`, `FACTORY→CONTESTED_ENEMY`, `FACTORY→HARDENED_ENEMY`, `OUTPOST→HARD_NEUTRAL`, `OUTPOST→CONTESTED_ENEMY`, `OUTPOST→HARDENED_ENEMY`. Adding a new class combo requires two updates: (1) add it to `SKIP_COMBOS` or it will be attempted, AND (2) add the `frac_<src>_<tgt>` key to `PARAMS` — `plan_expansion` does `params.get(f"frac_{src}_{tgt}")` and silently skips the combo if the key is absent. → [strategy](src/strategy.md)
+**SKIP_COMBOS** — 6 `(source_class, target_class)` pairs are hard-blocked and never generate moves: `FACTORY→HARD_NEUTRAL`, `FACTORY→CONTESTED_ENEMY`, `FACTORY→HARDENED_ENEMY`, `OUTPOST→HARD_NEUTRAL`, `OUTPOST→CONTESTED_ENEMY`, `OUTPOST→HARDENED_ENEMY`. Adding a new class combo requires two updates: (1) add it to `SKIP_COMBOS` or it will be attempted, AND (2) add the `frac_<src>_<tgt>` key to `PARAMS` — `plan_expansion` does `params.get(f"frac_{src}_{tgt}")` and silently skips the combo if the key is absent. → [strategy](src/strategy.md)
 
 **Normalized blend** — when lookahead blending is active, greedy scores and lookahead scores are min-max normalized **independently across all candidates for the current source planet** before combining. Raw score magnitudes are NOT compared directly. A lookahead score of 0.5 and a greedy score of 100 can both normalize to any value in `[0, 1]`. Debugging blend behavior requires inspecting normalized values, not raw ones. → [strategy](src/strategy.md)
