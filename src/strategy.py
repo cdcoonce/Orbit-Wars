@@ -194,6 +194,10 @@ def handle_threats(
         target = next((p for p in owned if p.id == threat.planet_id), None)
         if target is None:
             continue
+        # best tracks the nearest eligible source found so far as
+        # (eta, source.id, angle, ships_to_send); ties break on the lower planet
+        # id so allocation stays deterministic under seeded self-play (issue #230).
+        best = None
         for source in owned:
             if source.id == threat.planet_id or source.id in already_used:
                 continue
@@ -244,10 +248,13 @@ def handle_threats(
             if eta <= threat.eta - effective_buffer:
                 if path_crosses_sun(source.x, source.y, future_x, future_y):
                     continue
-                angle = angle_to_target(source.x, source.y, future_x, future_y)
-                moves.append([source.id, angle, ships_to_send])
-                already_used.add(source.id)
-                break
+                if best is None or (eta, source.id) < (best[0], best[1]):
+                    angle = angle_to_target(source.x, source.y, future_x, future_y)
+                    best = (eta, source.id, angle, ships_to_send)
+        if best is not None:
+            _, source_id, angle, ships_to_send = best
+            moves.append([source_id, angle, ships_to_send])
+            already_used.add(source_id)
     return moves
 
 
