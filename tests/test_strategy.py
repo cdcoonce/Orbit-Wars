@@ -2302,6 +2302,51 @@ def test_build_opponent_fn_returns_frozen_plan_moves_result():
     assert opponent_fn(state=None) == expected_moves
 
 
+def test_build_opponent_fn_called_once_per_plan_expansion_call(monkeypatch):
+    import src.strategy as strategy
+
+    # Stub the helper out entirely so the count is plan_expansion's own calls,
+    # not the nested plan_moves the real helper runs for the opponent side.
+    # lookahead_turns=1 leaves the rollout no extra turns to simulate, so
+    # candidate scoring cannot re-enter plan_expansion either.
+    calls = []
+
+    def counting_build_opponent_fn(*args, **kwargs):
+        calls.append(args)
+        return lambda state: []
+
+    monkeypatch.setattr(strategy, "_build_opponent_fn", counting_build_opponent_fn)
+
+    owned = [
+        make_planet(id=0, owner=0, x=70.0, y=50.0, ships=60, production=4),
+        make_planet(id=1, owner=0, x=30.0, y=50.0, ships=60, production=4),
+    ]
+    enemies = [
+        make_planet(id=2, owner=1, x=72.0, y=50.0, ships=1, production=1),
+        make_planet(id=3, owner=1, x=32.0, y=50.0, ships=1, production=1),
+    ]
+    params = {**PARAMS, "lookahead_blend": 0.5, "lookahead_turns": 1}
+
+    moves = plan_expansion(
+        owned,
+        [],
+        enemies,
+        {0: "FORTRESS", 1: "FORTRESS"},
+        angular_velocity=0.03,
+        params=params,
+        initial_planets=owned + enemies,
+        fleets=[],
+        player=0,
+        turn=0,
+    )
+
+    # Both sources reached the send path, so both iterations of the
+    # `for source in owned:` loop ran...
+    assert len(moves) == 2
+    # ...yet the opponent plan was built once, hoisted out of that loop.
+    assert len(calls) == 1
+
+
 # --- _generate_candidates ---
 
 
