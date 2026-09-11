@@ -1,4 +1,4 @@
-"""Tests that run_game logs worker exceptions while preserving draw-scoring."""
+"""Tests that run_game logs worker exceptions while scoring them as 'error', not 'draw'."""
 import concurrent.futures
 import logging
 from concurrent.futures.process import BrokenProcessPool
@@ -9,7 +9,7 @@ from src.config import PARAMS
 
 class TestRunGameExceptionLogging:
     def test_injected_exception_is_swallowed_and_logged(self, caplog):
-        """An injected non-timeout exception is both swallowed (returns 'draw') and logged."""
+        """An injected non-timeout exception is both swallowed (returns 'error') and logged."""
         from trials.game_runner import run_game
 
         mock_future = MagicMock()
@@ -22,12 +22,12 @@ class TestRunGameExceptionLogging:
              caplog.at_level(logging.ERROR, logger="trials.game_runner"):
             result = run_game(PARAMS, PARAMS)
 
-        assert result == "draw"
+        assert result == "error"
         assert len(caplog.records) >= 1
         assert "KeyError" in caplog.text or "missing_param" in caplog.text
 
-    def test_timeout_is_silent_draw(self, caplog):
-        """TimeoutError path remains a separate, silent draw — no error logged."""
+    def test_timeout_is_silent_error(self, caplog):
+        """TimeoutError path remains a separate, silent error — no log emitted."""
         from trials.game_runner import run_game
 
         mock_future = MagicMock()
@@ -40,12 +40,12 @@ class TestRunGameExceptionLogging:
              caplog.at_level(logging.WARNING, logger="trials.game_runner"):
             result = run_game(PARAMS, PARAMS)
 
-        assert result == "draw"
+        assert result == "error"
         assert len(caplog.records) == 0
 
 
 class TestRunGameBrokenPoolRecovery:
-    def test_broken_pool_on_submit_is_swallowed_and_scored_draw(self, caplog):
+    def test_broken_pool_on_submit_is_swallowed_and_scored_error(self, caplog):
         """A BrokenProcessPool raised from submit() (not future.result()) is caught."""
         import trials.game_runner as game_runner
 
@@ -56,7 +56,7 @@ class TestRunGameBrokenPoolRecovery:
              caplog.at_level(logging.ERROR, logger="trials.game_runner"):
             result = game_runner.run_game(PARAMS, PARAMS)
 
-        assert result == "draw"
+        assert result == "error"
 
     # Pool-reset-and-rebuild coverage (including the log-level assertions)
     # lives in test_trial_runner.py::TestRunGameBrokenPoolSelfHeals

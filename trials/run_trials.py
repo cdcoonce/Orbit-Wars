@@ -22,12 +22,20 @@ import optuna
 
 from src.config import PARAM_SPACE, PARAMS
 from trials.champion import CHAMPION_PARAMS
-from trials.game_runner import run_games
+from trials.game_runner import run_games, tally_results
 
 N_GAMES = 40
 N_WORKERS = 4
 N_TRIALS = 200
 PROMOTION_THRESHOLD = 0.65
+
+# A burst of timeouts/worker exceptions (run_game's 'error' result — see
+# trials/game_runner.py) within one trial's N_GAMES depresses win_rate without
+# saying anything about param quality, silently poisoning the Optuna signal
+# (issue #232). More than this many 'error' games in a single trial run is
+# logged as a WARNING naming the trial number, so a corrupted run is visible
+# instead of read as a bad param region.
+MAX_TRIAL_ERRORS = 3
 
 # Best-of-N_TRIALS selection on noisy n=N_GAMES measurements is a winner's-curse
 # machine: at N_GAMES=40, best-of-200 clears PROMOTION_THRESHOLD by luck alone
@@ -123,12 +131,20 @@ def objective(trial: optuna.Trial) -> float:
     # Derive a per-trial base seed from trial.number so every trial is
     # reproducible and its paired games share generated maps. Scale by N_GAMES
     # so distinct trials never reuse another trial's map seeds.
-    win_rate, _ = run_games(
+    win_rate, results = run_games(
         challenger_params,
         current_champ,
         n_games=N_GAMES,
         seed=trial.number * N_GAMES,
     )
+
+    error_count = tally_results(results)["error"]
+    if error_count > MAX_TRIAL_ERRORS:
+        logger.warning(
+            "Trial %d: %d/%d games failed to run (timeout or worker exception) — "
+            "win_rate=%.2f may be depressed by infrastructure failures, not param quality",
+            trial.number, error_count, N_GAMES, win_rate,
+        )
 
     # Record the real promotion outcome on the trial: clearing
     # PROMOTION_THRESHOLD does not imply a promotion, since the confirmation run
