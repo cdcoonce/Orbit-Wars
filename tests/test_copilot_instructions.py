@@ -61,6 +61,17 @@ class TestCopilotInstructionsCoverConventions:
             "equality branches must test the exact boundary, never a loose elif."
         )
 
+    def test_covers_named_field_records(self):
+        text = _copilot_text().lower()
+        assert (
+            "named-field" in text or "positionally-indexed" in text
+        ) and ("namedtuple" in text or "dataclass" in text), (
+            "Copilot instructions must restate the named-field records "
+            "convention: fixed-arity records of distinct fields must be a "
+            "tuple with named unpacking or a NamedTuple/dataclass, never a "
+            "positionally-indexed list."
+        )
+
     def test_covers_tuned_constant_update_rule(self):
         text = _copilot_text().lower()
         assert "grep" in text and "cite" in text, (
