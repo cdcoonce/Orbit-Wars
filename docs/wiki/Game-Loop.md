@@ -73,7 +73,7 @@ t = min(turn, game_length) / game_length
 agg = aggression_max - t * (aggression_max - aggression_min)
 ```
 
-Default range: 0.917 → 0.737 over 500 turns. Higher early-game aggression means lower effective `min_garrison` and more ships sent per move.
+Default range: 0.980 → 0.488 over 500 turns. Higher early-game aggression means lower effective `min_garrison` and more ships sent per move.
 
 ### 4. Threat Detection (`detect_threats`)
 
@@ -94,7 +94,7 @@ For each `Threat`, finds FORTRESS or FACTORY sources that can arrive before the 
 
 ### 7. Endgame Exit (`should_play_defensive`)
 
-If `turn >= endgame_threshold_turn` (451) AND `my_total_ships / enemy_total_ships >= lead_margin` (1.41): returns only `defense_moves`. Expansion is skipped entirely — locks in a winning position.
+If `turn >= endgame_threshold_turn` (445) AND `my_total_ships / enemy_total_ships >= lead_margin` (1.61): returns only `defense_moves`. Expansion is skipped entirely — locks in a winning position.
 
 ### 8. Expansion (`plan_expansion`)
 
@@ -129,15 +129,15 @@ Each emitted move is `[planet_id: int, angle: float, ships: int]`. The Kaggle en
 | Param                    | Default | Role                                                        |
 | ------------------------ | ------- | ----------------------------------------------------------- |
 | `game_length`            | 500     | Aggression denominator                                      |
-| `aggression_max`         | 0.917   | Early-game aggression                                       |
-| `aggression_min`         | 0.737   | Late-game aggression                                        |
+| `aggression_max`         | 0.980   | Early-game aggression                                       |
+| `aggression_min`         | 0.488   | Late-game aggression                                        |
 | `threat_eta_window`      | 15      | Turns ahead to scan for threats                             |
 | `threat_radius`          | 7.36    | Proximity threshold for threat detection                    |
-| `min_garrison`           | 28      | Min ships before a planet launches                          |
-| `min_garrison_early`     | 6       | Min garrison at turn 0 (ramps to `min_garrison` by turn 35) |
-| `endgame_threshold_turn` | 451     | Turn to enter defensive mode                                |
-| `endgame_lead_margin`    | 1.41    | Ship ratio to trigger defensive mode                        |
-| `lookahead_blend`        | 0.484   | Weight on lookahead score (0 = greedy only)                 |
-| `lookahead_turns`        | 2       | Simulation depth                                            |
+| `min_garrison`           | 26      | Min ships before a planet launches                          |
+| `min_garrison_early`     | 13      | Min garrison at turn 0 (ramps to `min_garrison` by turn 32) |
+| `endgame_threshold_turn` | 445     | Turn to enter defensive mode                                |
+| `endgame_lead_margin`    | 1.61    | Ship ratio to trigger defensive mode                        |
+| `lookahead_blend`        | 0.903   | Weight on lookahead score (0 = greedy only)                 |
+| `lookahead_turns`        | 5       | Simulation depth                                            |
 
 All params are in [`src/config.py`](src/config.md) and tunable via Optuna — see [Tuning-Pipeline](Tuning-Pipeline.md).
