@@ -10,9 +10,15 @@ Full architecture details: [.claude/docs/project.md](.claude/docs/project.md)
 ```bash
 uv run pytest tests/ --ignore=tests/test_trial_runner.py   # fast test suite (no optuna)
 uv run pytest tests/ -v                                     # full suite (requires optuna)
+uv run pytest tests/ -m "not slow"                          # skip the slow-marked tests (e.g. turn-latency)
 uv run python run_game.py                                   # local game vs starter agent
 uv run python trials/run_trials.py                         # Optuna self-play tuning (~30-60 min)
 ```
+
+`tests/test_turn_latency.py` plays 100 self-play turns through a real engine
+board to measure `src.agent.plan_turn` wall time against the competition's
+`actTimeout`; it takes a few seconds (vs. sub-second for most tests), so it's
+marked `@pytest.mark.slow` — skip it with `-m "not slow"` above.
 
 ## Build & Submit
 
@@ -53,10 +59,21 @@ and #120 — the build was required by the suite and rejected by the reviewer).
 
 ### Boundary-split guard rule
 
-When a single `<=` (or `>=`) guard on a boundary value is decomposed into multiple
-`if`/`elif` branches (e.g. `> 0`, `== 0`, `else`), follow these two rules:
+This rule applies whenever any predicate in `src/` is narrowed, split into
+multiple branches, or gets a new branch inserted ahead of an existing one —
+combat resolution, threat/defense gating, capture feasibility, position
+guards, or any other ordered-quantity guard. Combat resolution is the
+motivating example below, not the rule's scope. When a single `<=` (or `>=`)
+guard on a boundary value is decomposed into multiple `if`/`elif` branches
+(e.g. `> 0`, `== 0`, `else`), follow these three rules:
 
-1. **Equality branches must test the exact boundary (`== 0`), never a loose `elif`.**
+1. **Enumerate the full ordered domain before writing the branches.** Write
+   out the `<`, `==`, and `>` partition of the guarded quantity and state
+   which branch owns each part. Confirm every part is reachable by a test
+   before moving on — a partition with an unowned or untested part is the
+   defect.
+
+2. **Equality branches must test the exact boundary (`== 0`), never a loose `elif`.**
    A loose `elif winner == planet.owner` silently fires when `surviving < 0` — the
    incumbent may be the largest _single_ stack yet still lose to the _combined_
    attackers. The strictly-negative case must either fall through to the `else`
@@ -66,10 +83,15 @@ When a single `<=` (or `>=`) guard on a boundary value is decomposed into multip
    _Motivating failure:_ PR #72 combat-resolution in `step_state` — an
    `elif winner == planet.owner` branch fired on `surviving < 0` (10 vs 6+6 = −2),
    incorrectly retaining the planet for the incumbent. Fix: guard on
-   `surviving == 0` exactly.
+   `surviving == 0` exactly. The reviewer's finding: "The new
+   `elif winner == planet.owner` branch will also run when `surviving` is
+   negative (e.g., multi-party combat where the incumbent has the largest
+   single stack but loses to the combined attackers)... the original
+   behavior correctly neutralized on `surviving <= 0`."
 
-2. **Every such split must ship a regression test covering the strictly-negative
-   (or strictly-greater) case**, not just the boundary value itself. A test that
+3. **Every such split must ship a regression test covering every domain part
+   that changed hands**, not just the boundary value itself — explicitly
+   including the strictly-negative and strictly-greater parts. A test that
    only exercises `surviving == 0` cannot catch a guard that also fires for
    `surviving < 0`.
 

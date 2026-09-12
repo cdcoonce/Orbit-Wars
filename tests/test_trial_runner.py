@@ -198,17 +198,53 @@ class TestRunGames:
 
 
 # ---------------------------------------------------------------------------
+# run_games — worker exception surfaces as a distinct, tallyable 'error'
+# ---------------------------------------------------------------------------
+
+
+class TestRunGamesErrorTally:
+    def test_worker_exception_in_one_game_is_tallied_as_error(self):
+        """A real worker exception (via the pool, not a run_game mock) must be
+        tallied under a distinct 'error' key, and win_rate must keep the same
+        challenger/n_games formula it always used — infra failures are silent
+        to the denominator, not to the tally."""
+        from trials.game_runner import run_games, tally_results
+
+        outcomes = ["challenger", RuntimeError("worker died"), "champion", "challenger"]
+
+        def make_future(outcome):
+            future = MagicMock()
+            if isinstance(outcome, Exception):
+                future.result.side_effect = outcome
+            else:
+                future.result.return_value = outcome
+            return future
+
+        mock_pool = MagicMock()
+        mock_pool.submit.side_effect = [make_future(o) for o in outcomes]
+
+        with patch("trials.game_runner._get_pool", return_value=mock_pool):
+            win_rate, results = run_games(PARAMS, PARAMS, n_games=4)
+
+        tally = tally_results(results)
+        assert tally["error"] == 1
+        assert tally["challenger"] == 2
+        assert win_rate == pytest.approx(2 / 4)
+
+
+# ---------------------------------------------------------------------------
 # run_game — timeout
 # ---------------------------------------------------------------------------
 
 
 class TestRunGameTimeout:
-    def test_timeout_returns_draw(self):
-        """A game exceeding the timeout must return 'draw' without raising.
+    def test_timeout_returns_error(self):
+        """A game exceeding the timeout must return 'error' without raising.
 
         The game runs in a shared worker pool (see game_runner._get_pool); a
         slow game surfaces as a TimeoutError from ``future.result(timeout=...)``.
-        We mock that boundary so no real game is played.
+        We mock that boundary so no real game is played. 'error' keeps a
+        timeout distinguishable from a genuine engine-decided tie ('draw').
         """
         from trials.game_runner import run_game
 
@@ -221,7 +257,7 @@ class TestRunGameTimeout:
         with patch("trials.game_runner._get_pool", return_value=mock_pool):
             result = run_game(PARAMS, PARAMS)
 
-        assert result == "draw"
+        assert result == "error"
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +293,7 @@ class TestRunGameBrokenPoolSelfHeals:
                 caplog.at_level(logging.WARNING, logger="trials.game_runner"),
             ):
                 first_result = game_runner.run_game(PARAMS, PARAMS)
-                assert first_result == "draw"
+                assert first_result == "error"
                 assert game_runner._pool is not poisoned_pool
 
                 second_result = game_runner.run_game(PARAMS, PARAMS)
@@ -297,7 +333,7 @@ class TestRunGameBrokenPoolSelfHeals:
             ):
                 for _ in range(game_runner.MAX_CONSECUTIVE_POOL_REBUILDS + 5):
                     result = game_runner.run_game(PARAMS, PARAMS)
-                    assert result == "draw"
+                    assert result == "error"
                 # The dead executor is never left installed, even once rebuilds stop.
                 assert game_runner._pool is not always_broken_pool
         finally:
@@ -597,6 +633,116 @@ class TestObjectiveStaleChampionGuard:
         mock_write.assert_not_called()
         assert run_trials._current_champion == v2
 
+    def test_stale_snapshot_race_is_not_flagged_or_logged_as_promoted(
+        self, restore_champion_state, caplog
+    ):
+        """Same stale-snapshot race as above, but checks the *reporting* side:
+        a promotion skipped by the guard must be recorded as promoted=False on
+        the trial, and the callback must not log it as [PROMOTED].
+        """
+        from trials import run_trials
+
+        v1 = {**PARAMS, "fortress_min_ships": 10}
+        v2 = {**PARAMS, "fortress_min_ships": 20}
+
+        with run_trials._lock:
+            run_trials._current_champion.clear()
+            run_trials._current_champion.update(v1)
+
+        def mock_run_games(challenger_params, champ_params, n_games, seed):
+            # Simulate concurrent worker B promoting v2 while A is playing.
+            with run_trials._lock:
+                run_trials._current_champion.clear()
+                run_trials._current_champion.update(v2)
+            return (run_trials.PROMOTION_THRESHOLD, [])
+
+        mock_trial = MagicMock()
+        mock_trial.number = 99
+        mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(PARAMS.get(k, lo))
+        mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
+            PARAMS.get(k, lo)
+        )
+
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with patch("trials.run_trials.write_champion"):
+                win_rate = run_trials.objective(mock_trial)
+
+        # objective() must record the real outcome — a promotion the
+        # stale-snapshot guard skipped is promoted=False, never True.
+        recorded = {
+            call.args[0]: call.args[1]
+            for call in mock_trial.set_user_attr.call_args_list
+        }
+        assert recorded["promoted"] is False
+
+        # The callback reads that recorded outcome instead of re-deriving one
+        # from win_rate, so the skipped trial must not be tagged [PROMOTED] even
+        # though its win_rate cleared the threshold.
+        frozen = MagicMock()
+        frozen.number = mock_trial.number
+        frozen.value = win_rate
+        frozen.user_attrs = recorded
+
+        previous_best = run_trials._best_win_rate
+        try:
+            with caplog.at_level(logging.INFO):
+                run_trials._make_callback()(MagicMock(), frozen)
+        finally:
+            run_trials._best_win_rate = previous_best
+
+        assert "[PROMOTED]" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# objective — infrastructure-failure visibility (issue #232)
+# ---------------------------------------------------------------------------
+
+
+class TestObjectiveInfraFailureWarning:
+    def _make_trial(self, number):
+        mock_trial = MagicMock()
+        mock_trial.number = number
+        mock_trial.suggest_int.side_effect = lambda k, lo, hi: int(PARAMS.get(k, lo))
+        mock_trial.suggest_float.side_effect = lambda k, lo, hi: float(
+            PARAMS.get(k, lo)
+        )
+        return mock_trial
+
+    def test_warns_when_error_count_exceeds_threshold(
+        self, restore_champion_state, caplog
+    ):
+        """A burst of infra failures (timeouts/exceptions) within one trial must
+        surface as a WARNING naming the trial number and count, not silently
+        depress win_rate with no visible signal."""
+        from trials import run_trials
+
+        n_errors = run_trials.MAX_TRIAL_ERRORS + 1
+        results = ["error"] * n_errors + ["draw"] * (run_trials.N_GAMES - n_errors)
+        mock_run_games = MagicMock(return_value=(0.0, results))
+
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with caplog.at_level(logging.WARNING, logger="trials.run_trials"):
+                run_trials.objective(self._make_trial(number=7))
+
+        assert "Trial 7" in caplog.text
+        assert str(n_errors) in caplog.text
+
+    def test_no_warning_when_error_count_within_threshold(
+        self, restore_champion_state, caplog
+    ):
+        """Errors at or below the threshold must not trigger the warning."""
+        from trials import run_trials
+
+        n_errors = run_trials.MAX_TRIAL_ERRORS
+        results = ["error"] * n_errors + ["draw"] * (run_trials.N_GAMES - n_errors)
+        mock_run_games = MagicMock(return_value=(0.0, results))
+
+        with patch("trials.run_trials.run_games", mock_run_games):
+            with caplog.at_level(logging.WARNING, logger="trials.run_trials"):
+                run_trials.objective(self._make_trial(number=8))
+
+        assert caplog.text == ""
+
 
 # ---------------------------------------------------------------------------
 # objective — confirmation-run promotion gate (issue #259)
@@ -661,7 +807,7 @@ class TestPromotionConfirmation:
     def test_failed_confirmation_does_not_flag_trial_as_promoted(
         self, restore_champion_state
     ):
-        """A rejected challenger must not be recorded as promoted."""
+        """A rejected challenger must be recorded as not promoted."""
         from trials import run_trials
 
         trial = self._make_trial()
@@ -670,7 +816,7 @@ class TestPromotionConfirmation:
             with patch("trials.run_trials.write_champion"):
                 run_trials.objective(trial)
 
-        trial.set_user_attr.assert_not_called()
+        trial.set_user_attr.assert_called_once_with("promoted", False)
 
     def test_confirmed_promotion_flags_trial_as_promoted(self, restore_champion_state):
         """A confirmed promotion records the flag the callback reads."""
@@ -682,7 +828,7 @@ class TestPromotionConfirmation:
             with patch("trials.run_trials.write_champion"):
                 run_trials.objective(trial)
 
-        trial.set_user_attr.assert_called_once_with("promoted", True)
+        assert trial.set_user_attr.call_args_list[-1].args == ("promoted", True)
 
     def _run_callback(self, caplog, user_attrs):
         from trials import run_trials
