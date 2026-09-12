@@ -8,7 +8,10 @@ PARAM_SPACE and always current), these three pages drifted independently and
 even disagreed with each other (issue #215). This test pins the quoted figures
 to the live `src/config.py` PARAMS values so they cannot silently rot again.
 """
+import re
 from pathlib import Path
+
+import pytest
 
 from src.config import PARAMS
 
@@ -21,9 +24,37 @@ FACTORY_MIN_PRODUCTION = PARAMS["factory_min_production"]
 THREAT_ETA_WINDOW = PARAMS["threat_eta_window"]
 THREAT_RADIUS = PARAMS["threat_radius"]
 DEFENSE_REINFORCE_FRACTION = PARAMS["defense_reinforce_fraction"]
+GAME_LENGTH = PARAMS["game_length"]
+AGGRESSION_MAX = PARAMS["aggression_max"]
+AGGRESSION_MIN = PARAMS["aggression_min"]
+MIN_GARRISON = PARAMS["min_garrison"]
+MIN_GARRISON_EARLY = PARAMS["min_garrison_early"]
+ENDGAME_THRESHOLD_TURN = PARAMS["endgame_threshold_turn"]
+ENDGAME_LEAD_MARGIN = PARAMS["endgame_lead_margin"]
+LOOKAHEAD_BLEND = PARAMS["lookahead_blend"]
+LOOKAHEAD_TURNS = PARAMS["lookahead_turns"]
+GARRISON_RAMP_TURNS = PARAMS["garrison_ramp_turns"]
 
 THREAT_RADIUS_2DP = f"{THREAT_RADIUS:.2f}"
 DEFENSE_REINFORCE_PCT = f"{DEFENSE_REINFORCE_FRACTION * 100:.2f}%"
+AGGRESSION_MAX_3DP = f"{AGGRESSION_MAX:.3f}"
+AGGRESSION_MIN_3DP = f"{AGGRESSION_MIN:.3f}"
+ENDGAME_LEAD_MARGIN_2DP = f"{ENDGAME_LEAD_MARGIN:.2f}"
+LOOKAHEAD_BLEND_3DP = f"{LOOKAHEAD_BLEND:.3f}"
+
+# Table rows corrected by issue #407 (8 of 11 Key Parameters values had
+# drifted from src/config.py PARAMS). Parametrized per CLAUDE.md's
+# doc-invariant rule 4 so a future drift on any of these needs no new test.
+GAME_LOOP_TABLE_ROWS = [
+    ("aggression_max", AGGRESSION_MAX_3DP),
+    ("aggression_min", AGGRESSION_MIN_3DP),
+    ("min_garrison", str(MIN_GARRISON)),
+    ("min_garrison_early", str(MIN_GARRISON_EARLY)),
+    ("endgame_threshold_turn", str(ENDGAME_THRESHOLD_TURN)),
+    ("endgame_lead_margin", ENDGAME_LEAD_MARGIN_2DP),
+    ("lookahead_blend", LOOKAHEAD_BLEND_3DP),
+    ("lookahead_turns", str(LOOKAHEAD_TURNS)),
+]
 
 
 class TestHomeDoc:
@@ -66,6 +97,34 @@ class TestGameLoopDoc:
         text = (WIKI / "Game-Loop.md").read_text()
         assert f"| `threat_eta_window`      | {THREAT_ETA_WINDOW}      |" in text
         assert f"| `threat_radius`          | {THREAT_RADIUS_2DP}    |" in text
+
+    def test_aggression_range_prose_matches_params(self):
+        text = (WIKI / "Game-Loop.md").read_text()
+        expected = (
+            f"Default range: {AGGRESSION_MAX_3DP} → {AGGRESSION_MIN_3DP} "
+            f"over {GAME_LENGTH} turns."
+        )
+        assert expected in text
+
+    def test_endgame_exit_prose_matches_params(self):
+        text = (WIKI / "Game-Loop.md").read_text()
+        expected = (
+            f"`turn >= endgame_threshold_turn` ({ENDGAME_THRESHOLD_TURN}) AND "
+            f"`my_total_ships / enemy_total_ships >= lead_margin` "
+            f"({ENDGAME_LEAD_MARGIN_2DP})"
+        )
+        assert expected in text
+
+    @pytest.mark.parametrize("param_name,expected_value", GAME_LOOP_TABLE_ROWS)
+    def test_key_parameters_table_row_matches_params(self, param_name, expected_value):
+        text = (WIKI / "Game-Loop.md").read_text()
+        match = re.search(rf"^\| `{param_name}`\s*\| (\S+)\s*\|", text, re.MULTILINE)
+        assert match is not None, f"no table row found for `{param_name}` in Game-Loop.md"
+        assert match.group(1) == expected_value
+
+    def test_min_garrison_early_role_ramp_turn_matches_params(self):
+        text = (WIKI / "Game-Loop.md").read_text()
+        assert f"ramps to `min_garrison` by turn {GARRISON_RAMP_TURNS})" in text
 
 
 class TestDecisionTraceDoc:
