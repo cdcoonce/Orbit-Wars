@@ -45,8 +45,8 @@ _pool_rebuilds_exhausted = False
 def _get_pool() -> concurrent.futures.ProcessPoolExecutor | None:
     """Return the shared pool, building a fresh one if a previous one broke.
 
-    Returns None once the rebuild budget is exhausted, so callers score draws
-    instead of resubmitting to a dead executor.
+    Returns None once the rebuild budget is exhausted, so callers score
+    infrastructure errors instead of resubmitting to a dead executor.
     """
     global _pool
     with _pool_lock:
@@ -75,13 +75,13 @@ def _discard_broken_pool(broken: concurrent.futures.ProcessPoolExecutor) -> None
             logger.error(
                 "Worker pool broke %d times in a row (limit %d); giving up on "
                 "rebuilding to avoid spinning forever on a deterministically-"
-                "fatal worker — every remaining game scores as a draw",
+                "fatal worker — every remaining game scores as an error",
                 _consecutive_pool_rebuilds, MAX_CONSECUTIVE_POOL_REBUILDS,
             )
         else:
             logger.warning(
                 "Worker pool broke; rebuilding pool (attempt %d/%d) and "
-                "scoring this game as a draw",
+                "scoring this game as an error",
                 _consecutive_pool_rebuilds, MAX_CONSECUTIVE_POOL_REBUILDS,
             )
 
@@ -150,13 +150,17 @@ def run_game(
 
     Because the game runs in its own process, a ``seed`` reproducibly controls
     the map without disturbing the caller's RNG — so paired games (one seed,
-    challenger on each side) and concurrent trials stay deterministic. A game
-    exceeding ``timeout`` (or erroring) is scored a 'draw'.
+    challenger on each side) and concurrent trials stay deterministic.
+
+    A genuine engine-decided tie is scored 'draw'. A game that times out, hits
+    a broken pool, or raises any other worker exception is scored 'error' —
+    kept distinct from 'draw' so infrastructure failures don't silently pose
+    as tied games to callers tallying results.
     """
     global _consecutive_pool_rebuilds
     pool = _get_pool()
     if pool is None:
-        return "draw"
+        return "error"
     try:
         future = pool.submit(
             _play_game, challenger_params, champion_params, challenger_player, seed,
@@ -166,22 +170,24 @@ def run_game(
             _consecutive_pool_rebuilds = 0
         return result
     except concurrent.futures.TimeoutError:
-        return "draw"
+        return "error"
     except concurrent.futures.process.BrokenProcessPool:
         _discard_broken_pool(pool)
-        return "draw"
+        return "error"
     except Exception:
-        logger.exception("Worker raised an unexpected exception; scoring as draw")
-        return "draw"
+        logger.exception("Worker raised an unexpected exception; scoring as error")
+        return "error"
 
 
 def tally_results(results: list[str]) -> dict[str, int]:
-    """Count wins, losses, and draws from a results list.
+    """Count wins, losses, draws, and infrastructure errors from a results list.
 
-    Returns ``{"challenger": w, "champion": l, "draw": d}`` — all three keys
-    are always present, even when a result type does not appear in the list.
+    Returns ``{"challenger": w, "champion": l, "draw": d, "error": e}`` — all
+    four keys are always present, even when a result type does not appear in
+    the list. 'error' counts timeouts and worker exceptions (see
+    :func:`run_game`), kept separate from genuine 'draw' ties.
     """
-    base: dict[str, int] = {"challenger": 0, "champion": 0, "draw": 0}
+    base: dict[str, int] = {"challenger": 0, "champion": 0, "draw": 0, "error": 0}
     for r in results:
         base[r] += 1
     return base
@@ -204,7 +210,10 @@ def run_games(
     games use fresh, unseeded maps (legacy behaviour).
 
     Returns ``(win_rate, results)`` where results is a list of
-    'challenger' | 'champion' | 'draw' strings.
+    'challenger' | 'champion' | 'draw' | 'error' strings — pass ``results`` to
+    :func:`tally_results` to see the draw/error breakdown. ``win_rate`` keeps
+    counting 'error' games in its denominator like 'draw' always was, so a run
+    with zero infrastructure failures returns the same value as before.
     """
     results = []
     for i in range(n_games):

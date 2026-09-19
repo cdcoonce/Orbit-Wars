@@ -992,6 +992,112 @@ def test_handle_threats_skips_reinforcement_whose_path_crosses_sun():
     assert clear_moves[0][0] == fortress_clear.id
 
 
+def test_handle_threats_picks_nearer_source_over_lower_id():
+    # Regression for issue #230: handle_threats must select the eligible source
+    # with the lowest intercept ETA, not the first FORTRESS/FACTORY in `owned`
+    # list order. source_far (id=2, lower id) is farther from the threatened
+    # planet than source_near (id=4, higher id); both clear the eta_buffer gate,
+    # so the old first-in-list-order pick would wrongly take source_far.
+    threatened = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    # (90, 50) is static (orbital_radius=40, see test_is_stationary_true), so
+    # turns_to_arrive against its current position equals the real intercept ETA.
+    source_far = make_planet(id=2, owner=0, x=30.0, y=80.0, ships=50, production=4)
+    source_near = make_planet(id=4, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    threats = [Threat(planet_id=1, incoming_ships=30, eta=40)]
+    own_classes = {1: "THREATENED", 2: "FORTRESS", 4: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 5,
+    }
+    ships_to_send = int(50 * 0.5)  # 25 — flat baseline, identical for both sources
+    eta_far = turns_to_arrive(
+        source_far.x, source_far.y, threatened.x, threatened.y, ships_to_send
+    )
+    eta_near = turns_to_arrive(
+        source_near.x, source_near.y, threatened.x, threatened.y, ships_to_send
+    )
+    threshold = 40 - params["eta_buffer"]
+    # Preconditions: source_far is genuinely farther (higher ETA) than
+    # source_near despite its lower id, and both still clear the eta_buffer gate.
+    assert eta_near < eta_far <= threshold
+    assert path_crosses_sun(source_far.x, source_far.y, threatened.x, threatened.y) is False
+    assert path_crosses_sun(source_near.x, source_near.y, threatened.x, threatened.y) is False
+
+    moves = handle_threats(
+        threats,
+        [threatened, source_far, source_near],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assert len(moves) == 1
+    assert moves[0][0] == source_near.id
+
+
+def test_handle_threats_nearest_selection_avoids_stranding_a_threat():
+    # Regression for issue #230: greedy first-eligible-in-list-order allocation
+    # can strand a threat. Here threat1 has two eligible sources (near_source is
+    # the correct nearest pick, far_source is a slower-but-still-eligible
+    # alternative); threat2 can only be reached by far_source (near_source's
+    # straight-line path to target2 crosses the sun). The old code would iterate
+    # `owned` in list order, take far_source (listed first) for threat1 and
+    # strand threat2 with no eligible source left. Selecting the lowest-ETA
+    # source per threat must leave both defended.
+    target1 = make_planet(id=1, owner=0, x=90.0, y=50.0, ships=20, production=2)
+    target2 = make_planet(id=3, owner=0, x=10.0, y=50.0, ships=20, production=2)
+    # Both targets are static (orbital_radius=40, see test_is_stationary_true).
+    near_source = make_planet(id=2, owner=0, x=70.0, y=50.0, ships=50, production=4)
+    far_source = make_planet(id=4, owner=0, x=10.0, y=80.0, ships=50, production=4)
+    own_classes = {1: "THREATENED", 2: "FORTRESS", 3: "THREATENED", 4: "FORTRESS"}
+    params = {
+        **PARAMS,
+        "min_garrison": 10,
+        "defense_reinforce_fraction": 0.5,
+        "defense_incoming_multiplier": 0.0,
+        "eta_buffer": 5,
+    }
+    ships_to_send = int(50 * 0.5)  # 25
+
+    threat1 = Threat(planet_id=1, incoming_ships=30, eta=40)
+    threat2 = Threat(planet_id=3, incoming_ships=30, eta=45)
+    threshold1 = threat1.eta - params["eta_buffer"]
+    threshold2 = threat2.eta - params["eta_buffer"]
+
+    eta_near_to_1 = turns_to_arrive(
+        near_source.x, near_source.y, target1.x, target1.y, ships_to_send
+    )
+    eta_far_to_1 = turns_to_arrive(
+        far_source.x, far_source.y, target1.x, target1.y, ships_to_send
+    )
+    eta_far_to_2 = turns_to_arrive(
+        far_source.x, far_source.y, target2.x, target2.y, ships_to_send
+    )
+    # Preconditions setting the trap: threat1 has two eligible sources with
+    # near_source strictly nearer; threat2 is reachable only by far_source
+    # because near_source's path to target2 crosses the sun.
+    assert eta_near_to_1 < eta_far_to_1 <= threshold1
+    assert eta_far_to_2 <= threshold2
+    assert path_crosses_sun(near_source.x, near_source.y, target2.x, target2.y) is True
+    assert path_crosses_sun(far_source.x, far_source.y, target1.x, target1.y) is False
+    assert path_crosses_sun(far_source.x, far_source.y, target2.x, target2.y) is False
+
+    moves = handle_threats(
+        [threat1, threat2],
+        # far_source deliberately precedes near_source: list-order allocation
+        # consumes it on threat1 and leaves threat2 undefended.
+        [target1, target2, far_source, near_source],
+        own_classes,
+        angular_velocity=0.03,
+        params=params,
+    )
+    assigned = {m[0] for m in moves}
+    assert len(moves) == 2
+    assert assigned == {near_source.id, far_source.id}
+
+
 def test_handle_threats_comet_target_uses_linear_velocity_intercept():
     """handle_threats must thread comet_ids/comet_velocities into its intercept()
     call so a reinforcement aimed at an owned comet under threat uses the

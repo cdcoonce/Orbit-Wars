@@ -65,6 +65,27 @@ def test_import_has_no_side_effects(tmp_path):
     assert not (tmp_path / "submission.py").exists(), "import wrote submission.py"
 
 
+def test_build_works_from_different_cwd(tmp_path, tmp_path_factory):
+    """build.py resolves SRC_FILES and the output path from its own location,
+    not the caller's cwd — running it with cwd set elsewhere must still find
+    src/ next to build.py and write submission.py there, not into cwd."""
+    _isolated_repo(tmp_path)
+    other_cwd = tmp_path_factory.mktemp("elsewhere")
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "build.py")],
+        cwd=other_cwd,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"build.py failed:\n{result.stderr}"
+    assert (tmp_path / "submission.py").exists(), (
+        "build.py did not write submission.py next to build.py"
+    )
+    assert not (other_cwd / "submission.py").exists(), (
+        "build.py wrote submission.py into cwd instead of next to build.py"
+    )
+
+
 def test_build_function_returns_written_path(tmp_path):
     """build() writes submission.py and returns its path."""
     _isolated_repo(tmp_path)
@@ -300,8 +321,8 @@ def test_multiline_stdlib_import_bundled_correctly(tmp_path):
     # Inject the synthetic module into SRC_FILES in the copied build.py.
     build_text = (tmp_path / "build.py").read_text()
     build_text = build_text.replace(
-        'Path("src/agent.py"),',
-        'Path("src/agent.py"),\n    Path("src/_test_multiline.py"),',
+        'REPO_ROOT / "src/agent.py",',
+        'REPO_ROOT / "src/agent.py",\n    REPO_ROOT / "src/_test_multiline.py",',
     )
     (tmp_path / "build.py").write_text(build_text)
 

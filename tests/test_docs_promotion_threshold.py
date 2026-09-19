@@ -31,14 +31,17 @@ CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 # living reference; never policed.
 _EXCLUDED_PARTS = {".venv", "node_modules", ".claude", ".afk", "dev-cycle"}
 
+# Dated snapshots (archived plans, design specs) record the ORIGINAL figure
+# (55% / 0.55) on purpose — they are historical records, not living reference,
+# so both the percent-form and decimal-form stale-figure checks below exempt
+# them via `_living_doc_files()`.
+_HISTORICAL_PARTS = {"archive", "superpowers"}
 
-def _doc_files():
-    """Every tracked Markdown doc, skipping vendored/protected trees."""
-    return [
-        p
-        for p in REPO_ROOT.rglob("*.md")
-        if _EXCLUDED_PARTS.isdisjoint(p.parts)
-    ]
+
+def _living_doc_files():
+    """Living Markdown docs: skip vendored/protected trees and dated snapshots."""
+    skip = _EXCLUDED_PARTS | _HISTORICAL_PARTS
+    return [p for p in REPO_ROOT.rglob("*.md") if skip.isdisjoint(p.parts)]
 
 
 class TestClaudeMdThreshold:
@@ -61,21 +64,9 @@ class TestClaudeMdThreshold:
 class TestNoStaleFigureAnywhere:
     def test_no_doc_references_old_55_percent(self):
         """Acceptance criterion #3: no doc references the old 55% figure."""
-        offenders = [p for p in _doc_files() if "55%" in p.read_text()]
+        offenders = [p for p in _living_doc_files() if "55%" in p.read_text()]
         rel = sorted(str(p.relative_to(REPO_ROOT)) for p in offenders)
         assert not offenders, f"stale 55% figure still present in: {rel}"
-
-
-# Dated snapshots (archived plans, design specs) record the ORIGINAL figure
-# (0.55) on purpose — they are historical records, not living reference, so they
-# are exempt from the match-the-code decimal check below.
-_HISTORICAL_PARTS = {"archive", "superpowers"}
-
-
-def _living_doc_files():
-    """Living Markdown docs: skip vendored/protected trees and dated snapshots."""
-    skip = _EXCLUDED_PARTS | _HISTORICAL_PARTS
-    return [p for p in REPO_ROOT.rglob("*.md") if skip.isdisjoint(p.parts)]
 
 
 class TestThresholdDecimalMatchesCode:
