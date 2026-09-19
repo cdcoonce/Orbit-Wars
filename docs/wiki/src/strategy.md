@@ -118,19 +118,9 @@ Effect: early game uses a **low** garrison threshold, so planets attack with few
 def is_stationary(planet: Planet) -> bool:
 ```
 
-Returns `True` if `orbital_radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT`. Planets beyond the rotation limit sit still — they get a `stationary_value_bonus` added to their effective production for scoring.
+Returns `True` if `orbital_radius + SUN_RADIUS >= ROTATION_RADIUS_LIMIT`. Planets beyond the rotation limit sit still — they get a `stationary_value_bonus` added to their effective production (comet-adjusted, via `effective_production`) when scoring expansion candidates (see `src/strategy.py:406-410`).
 
----
-
-### `value_tier(planet, comet_ids, params) -> str`
-
-```python
-def value_tier(planet: Planet, comet_ids: set = frozenset(), params: dict = PARAMS) -> str:
-```
-
-Uses `effective_production` (comet-adjusted) plus `stationary_value_bonus` if applicable. Returns `"HIGH"`, `"MEDIUM"`, or `"LOW"`.
-
-Gotcha: OUTPOST-class planets are only allowed to target `"LOW"`-tier neutrals (see `plan_expansion` filter). This prevents outposts from wasting ships on valuable neutral planets they'll likely lose.
+Gotcha: OUTPOST-class planets are blocked from targeting `HARD_NEUTRAL`, `CONTESTED_ENEMY`, or `HARDENED_ENEMY` classes by `SKIP_COMBOS` (`src/config.py`), applied in `plan_expansion`'s candidate filter. This prevents outposts from wasting ships on targets they'll likely lose.
 
 ---
 
